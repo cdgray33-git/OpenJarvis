@@ -1,0 +1,83 @@
+﻿### Extracted Information and Insights
+
+#### Agent System Overview
+
+The document outlines the architecture of agents within OpenJarvis, detailing how they are integrated, registered, and utilized. Here's a summary:
+
+1. **Agent Registration**: 
+   - Agents are registered using `@AgentRegistry.register("name")`.
+   - This allows for dynamic discovery at runtime.
+   
+2. **Tool Integration**:
+   - Tools are used by agents through the `ToolUsingAgent` subclasses and dispatched via `ToolExecutor`.
+   - Built-in tools include `CalculatorTool`, `ThinkTool`, `RetrievalTool`, `LLMTool`, and `FileReadTool`.
+
+3. **Event Bus Integration**:
+   - All agents publish events like `AGENT_TURN_START` and `AGENT_TURN_END` for telemetry.
+   - Tool-related events (`TOOL_CALL_START`, `TOOL_CALL_END`) are also published.
+
+4. **Agent Lifecycle**:
+   - Agents follow a lifecycle where they start by emitting an event, process the query, and end by emitting another event.
+
+#### Channels Architecture
+
+The channels module is designed to handle messaging across various external platforms (e.g., Telegram, Discord, Slack).
+
+1. **BaseChannel ABC**:
+   - Defines six abstract methods: `connect`, `disconnect`, `send`, `status`, `list_channels`, `on_message`.
+   - Each platform-specific channel implements these methods directly.
+
+2. **Channel Lifecycle**:
+   - Channels transition through states such as DISCONNECTED, CONNECTING, CONNECTED, and ERROR.
+   - The listener loop runs in a background daemon thread to handle incoming messages.
+
+3. **Event Flow**:
+   - `CHANNEL_MESSAGE_RECEIVED` is published when a message is received from the platform.
+   - `CHANNEL_MESSAGE_SENT` is published when a message is successfully delivered to the platform.
+   - These events are handled by subscribers, enabling decoupling between channel implementations and consumers of these events.
+
+### Key Points
+
+- **Dynamic Registration**: Agents and channels are registered dynamically using decorators (`@AgentRegistry.register`, `@ChannelRegistry.register`). This facilitates extensibility and modularity.
+  
+- **Transport-Agnostic Design**: The channels module is designed to be transport-agnostic, allowing direct integration with various messaging platforms.
+
+- **Event-Driven Architecture**: Both agents and channels publish events through an event bus. This design promotes decoupling and enables flexible event-driven behavior.
+
+### Relevant Code Snippets
+
+1. **Agent Registration**:
+   ```python
+   @AgentRegistry.register("my-agent")
+   class MyAgent(BaseAgent):
+       agent_id = "my-agent"
+
+       def run(self, input, context=None, **kwargs):
+           ...
+   ```
+
+2. **ToolExecutor Execution Flow**:
+   ```python
+   class ToolExecutor:
+       def execute(self, tool_call: ToolCall) -> ToolResult:
+           """Parse arguments, dispatch to tool, measure latency, emit events."""
+   ```
+
+3. **BaseChannel Definition**:
+   ```mermaid
+   classDiagram
+       class BaseChannel {
+           <<abstract>>
+           +channel_id str
+           +connect() None
+           +disconnect() None
+           +send(channel, content, conversation_id, metadata) bool
+           +status() ChannelStatus
+           +list_channels() list~str~
+           +on_message(handler) None
+       }
+   ```
+
+### Summary
+
+The architecture of OpenJarvis emphasizes modularity, extensibility, and event-driven communication. Agents and channels are designed to be dynamically registered and integrated into the system, promoting flexibility and maintainability. The use of an event bus allows for decoupled message handling, making it easier to extend functionality without tight coupling between components.

@@ -1,0 +1,200 @@
+    - If no `tool_calls` are present, returns the content as the final answer
+4. If `max_turns` is exceeded, returns the last content or a warning message
+
+```python
+from openjarvis.agents.orchestrator import OrchestratorAgent
+from openjarvis.tools.calculator import CalculatorTool
+from openjarvis.tools.think import ThinkTool
+
+agent = OrchestratorAgent(
+    engine,
+    model="qwen3:8b",
+    tools=[CalculatorTool(), ThinkTool()],
+    bus=bus,
+    max_turns=10,
+)
+result = agent.run("What is 2^10 + 3^5?")
+# The agent may call the calculator tool, get "1267", then respond
+```
+
+### NativeReActAgent
+
+**Registry key:** `native_react` (alias: `react`)
+
+A ReAct (Reasoning + Acting) agent that implements a **Thought-Action-Observation** loop. Extends `ToolUsingAgent`. The LLM is prompted to output structured text with `Thought:`, `Action:`, `Action Input:`, and `Final Answer:` fields, which the agent parses to drive tool execution.
+
+```mermaid
+graph TD
+    Q["User Query"] --> SYS["Build system prompt<br/>with tool descriptions"]
+    SYS --> GEN["Generate response"]
+    GEN --> PARSE["Parse ReAct output"]
+    PARSE --> FINAL{"Final Answer?"}
+    FINAL -->|Yes| DONE["Return answer"]
+    FINAL -->|No| ACTION{"Has Action?"}
+    ACTION -->|No| DONE2["Return content as-is"]
+    ACTION -->|Yes| EXEC["Execute tool<br/>via ToolExecutor<br/>(case-insensitive)"]
+    EXEC --> OBS["Append Observation"]
+    OBS --> MAXCHECK{"Max turns<br/>exceeded?"}
+    MAXCHECK -->|No| GEN
+    MAXCHECK -->|Yes| TIMEOUT["Return max_turns_result"]
+```
+
+How it works:
+
+1. Builds a system prompt with enriched tool descriptions via `build_tool_descriptions()`. Parsing is case-insensitive.
+2. Generates a response and parses the ReAct-structured output
+3. If a `Final Answer:` is found, returns it
+4. If an `Action:` is found, executes the tool and feeds the result back as an `Observation:`
+5. Loops until a final answer is produced or `max_turns` is exceeded
+
+!!! note "Backward compatibility"
+    The old `from openjarvis.agents.react import ReActAgent` import path still works via a backward-compat shim. The registry alias `"react"` also maps to `NativeReActAgent`.
+
+```python
+from openjarvis.agents.native_react import NativeReActAgent
+
+agent = NativeReActAgent(
+    engine,
+    model="qwen3:8b",
+    tools=[CalculatorTool(), ThinkTool()],
+    max_turns=10,
+)
+result = agent.run("What is the square root of 256?")
+```
+
+### NativeOpenHandsAgent
+
+**Registry key:** `native_openhands`
+
+A CodeAct-style agent that generates and executes Python code. Extends `ToolUsingAgent`. It can also invoke tools via structured `Action:` / `Action Input:` output. URLs in the input are automatically pre-fetched and inlined for the LLM.
+
+How it works:
+
+1. Builds a detailed system prompt with enriched tool descriptions (via shared `build_tool_descriptions()` builder) and code execution instructions
+2. Pre-fetches any URLs in the user input, inlining the content directly
+3. For each turn:
+    - Generates a response and strips `<think>` tags
+    - If a `\`\`\`python` code block is found, executes it via `code_interpreter`
+    - If an `Action:` / `Action Input:` is found, dispatches the tool
+    - If neither is found, returns the content as the final answer
+4. Handles context window overflow with automatic truncation
+
+```python
+from openjarvis.agents.native_openhands import NativeOpenHandsAgent
+
+agent = NativeOpenHandsAgent(
+    engine,
+    model="qwen3:8b",
+    tools=[CalculatorTool(), WebSearchTool()],
+    max_turns=3,
+    max_tokens=2048,
+)
+result = agent.run("Summarize https://example.com/article")
+```
+
+### RLMAgent
+
+**Registry key:** `rlm`
+
+A Recursive Language Model agent based on the [RLM paper](https://arxiv.org/abs/2512.24601). Instead of passing long context directly in the LLM prompt, RLM stores context as a Python variable in a persistent REPL. A "Root LM" writes Python code to inspect, decompose, and process context using recursive sub-LM calls via `llm_query()` and `llm_batch()`. Extends `ToolUsingAgent`.
+
+```mermaid
+graph TD
+    Q["User Query +<br/>Context"] --> REPL["Create persistent REPL<br/>(context stored as variable)"]
+    REPL --> GEN["Generate code"]
+    GEN --> CODE{"Code block<br/>found?"}
+    CODE -->|No| DONE["Return content<br/>as final answer"]
+    CODE -->|Yes| EXEC["Execute in REPL"]
+    EXEC --> TERM{"FINAL() called?"}
+    TERM -->|Yes| RESULT["Return final answer"]
+    TERM -->|No| FEED["Feed output back<br/>as user message"]
+    FEED --> MAXCHECK{"Max turns<br/>exceeded?"}
+    MAXCHECK -->|No| GEN
+    MAXCHECK -->|Yes| TIMEOUT["Return max_turns_result"]
+```
+
+How it works:
+
+1. Creates a persistent REPL with `llm_query()` and `llm_batch()` callbacks. Tool descriptions are injected via the shared `build_tool_descriptions()` builder when tools are provided.
+2. Injects context from `AgentContext` metadata or memory results into the REPL as a variable
+3. Generates code and executes it in the REPL
+4. If `FINAL(value)` or `FINAL_VAR("name")` is called, returns the final answer
+5. If no code block is found, treats the content as a direct answer
+
+The agent supports configurable sub-model parameters for recursive calls:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sub_model` | same as `model` | Model for sub-LM calls |
+| `sub_temperature` | `0.3` | Temperature for sub-LM calls |
+| `sub_max_tokens` | `1024` | Max tokens for sub-LM calls |
+| `max_output_chars` | `10000` | Max REPL output characters |
+| `system_prompt` | `RLM_SYSTEM_PROMPT` | Override the system prompt |
+
+```python
+from openjarvis.agents.rlm import RLMAgent
+
+agent = RLMAgent(
+    engine,
+    model="qwen3:8b",
+    max_turns=10,
+    sub_model="qwen3:1.7b",  # smaller model for sub-queries
+    sub_temperature=0.3,
+)
+result = agent.run("Summarize this document", context=ctx)
+```
+
+### OpenHandsAgent (SDK)
+
+**Registry key:** `openhands`
+
+A thin wrapper around the real `openhands-sdk` package for AI-driven software development tasks. Extends `BaseAgent` directly (does not use `ToolUsingAgent` since tool management is handled by the SDK).
+
+!!! warning "Optional dependency"
+    This agent requires the `openhands-sdk` package (`uv sync --extra openhands`). The SDK requires Python 3.12+.
+
+How it works:
+
+1. Imports `openhands.sdk` at runtime (lazy import)
+2. Creates an LLM, Agent, and Conversation from the SDK
+3. Sends the user input as a message and runs the conversation
+4. Extracts the final message content from the conversation
+
+```python
+from openjarvis.agents.openhands import OpenHandsAgent
+
+agent = OpenHandsAgent(
+    engine,
+    model="gpt-4",
+    workspace="/path/to/project",
+    api_key="sk-...",
+)
+result = agent.run("Fix the failing test in test_utils.py")
+```
+
+### ClaudeCodeAgent
+
+**Registry key:** `claude_code`
+
+Wraps the `@anthropic-ai/claude-code` SDK via a bundled Node.js subprocess bridge. Unlike every other agent, inference is handled entirely by the Claude Agent SDK -- the OpenJarvis inference engine is not used. This makes `ClaudeCodeAgent` a true external agent, similar in spirit to `OpenHandsAgent` but implemented via subprocess rather than an importable Python SDK.
+
+```mermaid
+graph LR
+    Q["User Query"] --> PY["Python: build JSON request"]
+    PY --> SPAWN["Spawn: node dist/index.js"]
+    SPAWN --> NODE["Node.js runner<br/>@anthropic-ai/claude-code SDK"]
+    NODE --> SDK["Claude Agent SDK<br/>(cloud inference)"]
+    SDK --> NODE
+    NODE --> JSON["Sentinel-delimited JSON<br/>on stdout"]
+    JSON --> PARSE["Python: parse output"]
+    PARSE --> R["AgentResult"]
+```
+
+How it works:
+
+1. On first call, copies the bundled `claude_code_runner/` to `~/.openjarvis/claude_code_runner/` and runs `npm install --production` if `node_modules` is absent
+2. Builds a JSON request with `prompt`, `api_key`, `workspace`, `allowed_tools`, `system_prompt`, and `session_id`
+3. Spawns `node dist/index.js` and writes the request to stdin
+4. Reads stdout and extracts the JSON payload between `---OPENJARVIS_OUTPUT_START---` and `---OPENJARVIS_OUTPUT_END---` sentinels
+5. Falls back to treating all stdout as plain text content if sentinels are absent
+

@@ -1,0 +1,200 @@
+
+### Step 7: Tool Execution (Agent Mode Only)
+
+When the `OrchestratorAgent` receives tool calls in the model's response:
+
+1. Each tool call is dispatched to the `ToolExecutor`
+2. The executor publishes `TOOL_CALL_START`, executes the tool, publishes `TOOL_CALL_END`
+3. Tool results are appended to the message history as `TOOL` messages
+4. The updated messages are sent back to the engine for the next round
+5. This loop continues until the model responds without tool calls or `max_turns` is reached
+
+### Step 8: Telemetry Recording
+
+After every inference call, a `TelemetryRecord` is created and persisted:
+
+```python
+@dataclass(slots=True)
+class TelemetryRecord:
+    timestamp: float
+    model_id: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    latency_seconds: float
+    ttft: float              # Time to first token
+    cost_usd: float
+    energy_joules: float
+    power_watts: float
+    engine: str
+    agent: str
+    metadata: Dict[str, Any]
+```
+
+The `TelemetryStore` subscribes to `TELEMETRY_RECORD` events on the EventBus and writes records to `~/.openjarvis/telemetry.db`.
+
+### Step 9: Trace Recording
+
+When a `TraceCollector` is wrapping the agent, a complete `Trace` is built from the events captured during execution:
+
+1. All `INFERENCE_START`/`END` events become `GENERATE` steps
+2. All `TOOL_CALL_START`/`END` events become `TOOL_CALL` steps
+3. All `MEMORY_RETRIEVE` events become `RETRIEVE` steps
+4. A final `RESPOND` step captures the output
+5. The trace is saved to the `TraceStore` and `TRACE_COMPLETE` is published
+
+### Step 10: Response Delivery
+
+The final response is delivered to the user:
+
+- **CLI:** Printed to stdout (or as JSON with `--json`)
+- **SDK:** Returned as a string from `ask()` or as a dict from `ask_full()`
+
+---
+
+## EventBus Activity During a Query
+
+The following events are published during a typical query in agent mode:
+
+```
+AGENT_TURN_START    {agent: "orchestrator", input: "What is 2+2?"}
+INFERENCE_START     {model: "qwen3:8b", engine: "ollama", turn: 1}
+INFERENCE_END       {model: "qwen3:8b", engine: "ollama", turn: 1}
+TELEMETRY_RECORD    {model_id: "qwen3:8b", latency: 0.8, tokens: 150}
+TOOL_CALL_START     {tool: "calculator", arguments: {expression: "2+2"}}
+TOOL_CALL_END       {tool: "calculator", success: true, latency: 0.01}
+INFERENCE_START     {model: "qwen3:8b", engine: "ollama", turn: 2}
+INFERENCE_END       {model: "qwen3:8b", engine: "ollama", turn: 2}
+TELEMETRY_RECORD    {model_id: "qwen3:8b", latency: 0.5, tokens: 80}
+AGENT_TURN_END      {agent: "orchestrator", turns: 2, content_length: 12}
+TRACE_COMPLETE      {trace: Trace(...)}
+```
+
+---
+
+## SDK Query Flow
+
+The `Jarvis` class in `sdk.py` provides the same query flow through a Python API:
+
+```python
+from openjarvis import Jarvis
+
+j = Jarvis(model="qwen3:8b", engine_key="ollama")
+
+# Direct mode
+response = j.ask("Hello")
+
+# Agent mode with tools
+response = j.ask(
+    "What is 2^10?",
+    agent="orchestrator",
+    tools=["calculator"],
+)
+
+# Full result with metadata
+result = j.ask_full("Hello")
+# {
+#     "content": "Hello! How can I help you?",
+#     "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
+#     "model": "qwen3:8b",
+#     "engine": "ollama",
+# }
+
+j.close()
+```
+
+The SDK handles lazy engine initialization, telemetry setup, memory context injection, and resource cleanup internally. The `ask()` method delegates to `ask_full()` and extracts just the content string.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\security.md
+
+`$(security.md.Extension.TrimStart('.'))
+# Security Architecture
+
+The security module is a cross-cutting concern that wraps the inference pipeline rather than replacing it. Scanners run on raw text strings independently of any model or agent, and the `GuardrailsEngine` decorator composes them around any `InferenceEngine` backend without changing the engine's public interface.
+
+---
+
+## Design Principles
+
+- **Composable, not mandatory.** Security scanning is opt-in and composable. You wrap an engine with `GuardrailsEngine`; you do not configure a global interceptor.
+- **Scanner-agnostic.** The `BaseScanner` ABC defines a two-method interface (`scan`, `redact`). Any scanner can be plugged in, including user-defined ones.
+- **Fail-safe modes.** The three redaction modes (WARN, REDACT, BLOCK) cover a spectrum from visibility to enforcement, allowing gradual tightening without code changes.
+- **Audit by default.** The `AuditLogger` records security events to SQLite so that findings are traceable after the fact.
+
+---
+
+## Scanner Pipeline
+
+Each scan pass runs all registered scanners sequentially and merges their findings into a single `ScanResult`. The order of scanner execution does not affect correctness, only which patterns are reported first.
+
+```mermaid
+flowchart LR
+    A[Raw Text] --> B[SecretScanner.scan]
+    A --> C[PIIScanner.scan]
+    B --> D{Merge findings}
+    C --> D
+    D --> E[ScanResult]
+    E --> F{result.clean?}
+    F -- Yes --> G[Return text unchanged]
+    F -- No --> H{RedactionMode}
+    H -- WARN --> I[Publish SECURITY_ALERT\nReturn text unchanged]
+    H -- REDACT --> J[Run redact on all scanners\nReturn sanitized text]
+    H -- BLOCK --> K[Publish SECURITY_BLOCK\nRaise SecurityBlockError]
+```
+
+The redaction step in REDACT mode applies each scanner's `redact()` method in sequence. Later scanners see the already-redacted output of earlier ones, so patterns do not interfere.
+
+---
+
+## GuardrailsEngine Wrapper Pattern
+
+`GuardrailsEngine` implements the full `InferenceEngine` ABC and delegates every call to a wrapped engine instance. This means any engine — `OllamaEngine`, `VLLMEngine`, `LlamaCppEngine` — can be made security-aware without modifying the engine itself.
+
+```mermaid
+classDiagram
+    class InferenceEngine {
+        <<abstract>>
+        +generate(messages, model) dict
+        +stream(messages, model) AsyncIterator
+        +list_models() list
+        +health() bool
+    }
+    class OllamaEngine {
+        +generate(...)
+        +stream(...)
+    }
+    class GuardrailsEngine {
+        -_engine InferenceEngine
+        -_scanners list
+        -_mode RedactionMode
+        +generate(messages, model) dict
+        +stream(messages, model) AsyncIterator
+        +list_models() list
+        +health() bool
+    }
+    InferenceEngine <|-- OllamaEngine
+    InferenceEngine <|-- GuardrailsEngine
+    GuardrailsEngine o-- InferenceEngine : wraps
+```
+
+Because `GuardrailsEngine` is itself an `InferenceEngine`, it can be nested arbitrarily (for example, wrapped again in an instrumented engine) or passed to any code that accepts an engine.
+
+### generate() Call Sequence
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant G as GuardrailsEngine
+    participant S as Scanners
+    participant E as Wrapped Engine
+
+    C->>G: generate(messages, model)
+    G->>S: scan(message.content) for each message
+    S-->>G: ScanResult
+    alt findings detected
+        G->>G: _handle_findings(text, result, "input")
+        note over G: WARN: publish event, pass through
+        note over G: REDACT: run redact(), replace content
+        note over G: BLOCK: raise SecurityBlockError

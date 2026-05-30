@@ -1,0 +1,99 @@
+You are performing a full-system architecture audit and remediation planning review for a local cloned repository of OpenJarvis.
+
+This is NOT just a chat bug investigation.
+
+Primary goal:
+Help produce a working, documented OpenJarvis agent by analyzing the entire integrated system:
+- frontend
+- desktop/Tauri wrapper
+- backend server
+- model/provider integration
+- supporting services
+- installation and WSL2 documentation
+
+The app appears to have system-wide architecture drift, not just a single chat issue.
+
+Observed symptoms:
+1. Desktop splash screen can take about 2 minutes 30 seconds before UI appears.
+2. Tauri desktop launches backend using:
+   uv run jarvis serve --port 8010 --agent simple
+3. Some UI areas appear disconnected from the backend, including splash/startup components.
+4. Chat previously hung indefinitely, but after a frontend fallback patch it now at least returns errors instead of hanging.
+5. Current observed runtime errors include:
+   - Error: Failed to fetch
+   - Client error '400 Bad Request' for url 'http://172.16.33.200:11434/api/chat'
+6. This suggests some code paths still call Ollama directly while others go through the app backend.
+7. The repository includes documentation and installation materials including WSL2-related instructions.
+8. The desired outcome is a working, documented OpenJarvis solution, not just an isolated endpoint fix.
+
+Known manual changes already made:
+1. Added chatOnce(...) to frontend/src/lib/api.ts calling ${getBase()}/v1/chat/completions with stream: false
+2. Updated frontend/src/components/Chat/InputArea.tsx to import isTauri and chatOnce
+3. Wrapped the non-research streamChat(...) path in try/catch and in Tauri mode fall back to chatOnce(...)
+
+Observed desktop process behavior:
+- openjarvis-desktop.exe launches:
+  "C:\Users\Admin\.local\bin\uv.exe" run jarvis serve --port 8010 --agent simple
+
+Your tasks:
+1. Determine the actual active architecture in desktop mode and browser mode.
+2. Trace desktop startup lifecycle end-to-end, including splash, backend launch, readiness checks, and service initialization.
+3. Inventory all major frontend areas and the backend/service dependencies they require:
+   - splash/startup
+   - chat
+   - dashboard
+   - data sources
+   - agents
+   - logs
+   - settings
+   - telemetry/energy
+   - memory
+   - speech
+   - savings/leaderboard
+   - model management
+4. Build a matrix of frontend components/modules -> API modules -> backend routes -> provider/services.
+5. Identify all route mismatches, stale code paths, architecture drift, duplicated responsibilities, and inconsistent runtime assumptions.
+6. Identify all direct-to-provider call paths, especially any direct Ollama calls, and compare them with backend-mediated paths.
+7. Explain the most likely causes of:
+   - slow splash/startup
+   - Failed to fetch
+   - direct calls to Ollama /api/chat
+   - 400 Bad Request from Ollama
+   - components that appear not to communicate with the backend
+8. Distinguish required core services from optional/degradable services and identify which failures should block startup versus fail gracefully.
+9. Propose a prioritized remediation plan:
+   - immediate high-confidence fixes for stability
+   - medium-term cleanup
+   - architecture simplification opportunities
+10. Propose documentation updates so the repo accurately reflects:
+   - current architecture
+   - desktop startup/runtime behavior
+   - service responsibilities and dependencies
+   - local Ollama integration
+   - WSL2 setup and usage
+   - troubleshooting and diagnostics
+
+Constraints:
+- Be evidence-based.
+- Clearly separate confirmed findings, likely findings, and open questions.
+- Prefer minimal robust fixes over speculative rewrites.
+- Synthesize across modules and subsystems; do not merely summarize files one by one.
+- If multiple architectures coexist in the codebase, identify which one is actually active in desktop mode and which appears stale.
+- Call out undocumented assumptions and hidden coupling between components.
+
+Deliverables:
+A. Executive summary
+B. Actual active architecture map
+C. Startup lifecycle analysis
+D. UI-to-service dependency matrix
+E. Route/contract audit
+F. Drift and stale-path analysis
+G. Root cause analysis for observed failures
+H. Prioritized remediation plan
+I. Documentation/update plan
+J. Specific file-level patch suggestions
+K. Open questions requiring runtime verification
+
+End with:
+1. the minimum set of changes most likely to produce a stable working desktop app
+2. the minimum set of documentation updates needed to make the project maintainable

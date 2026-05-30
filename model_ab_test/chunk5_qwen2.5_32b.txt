@@ -1,0 +1,152 @@
+﻿It seems like the content has been cut off at the end of your input. To continue with the documentation for the `RouterPolicy` and `QueryAnalyzer`, I'll provide a more complete structure based on the context you've given.
+
+### RouterPolicy and QueryAnalyzer
+
+The `RouterPolicy` ABC and the `QueryAnalyzer` ABC are defined in `learning/_stubs.py`. These components play crucial roles in determining how queries are routed to appropriate models for processing. Here is an expanded view of these definitions:
+
+```python
+# learning/_stubs.py
+from abc import ABC, abstractmethod
+
+class RouterPolicy(ABC):
+    """
+    Abstract base class for router policies that determine which model should handle a given query.
+    """
+    
+    @abstractmethod
+    def choose_model(self, context: dict) -> str:
+        """
+        Selects the appropriate model to handle the provided query context.
+
+        :param context: Dictionary containing contextual information about the current request.
+        :return: The key of the selected model from the ModelRegistry.
+        """
+        pass
+
+
+class QueryAnalyzer(ABC):
+    """
+    Abstract base class for query analyzers that process and analyze incoming queries before routing them.
+    """
+    
+    @abstractmethod
+    def analyze_query(self, context: dict) -> dict:
+        """
+        Analyzes the provided query context to extract relevant information for model selection.
+
+        :param context: Dictionary containing contextual information about the current request.
+        :return: A dictionary of analyzed data that can be used by router policies.
+        """
+        pass
+```
+
+### HeuristicRouter and TraceDrivenPolicy
+
+The `HeuristicRouter` and `TraceDrivenPolicy` are concrete implementations that follow these abstract definitions. They leverage traces (records of past interactions) to guide the selection process:
+
+```python
+# learning/router.py
+from typing import List, Dict
+from .router_policy import RouterPolicy
+from ..intelligence import ModelRegistry
+
+class HeuristicRouter(RouterPolicy):
+    """
+    A heuristic-based router policy that selects models based on predefined rules.
+    """
+
+    def __init__(self, model_registry: ModelRegistry):
+        self.model_registry = model_registry
+
+    def choose_model(self, context: dict) -> str:
+        # Implement heuristic logic here
+        analyzed_context = DefaultQueryAnalyzer().analyze_query(context)
+        
+        for model_spec in self.model_registry.values():
+            if model_meets_criteria(model_spec, analyzed_context):
+                return model_spec['key']
+                
+        raise ValueError("No suitable model found.")
+
+def model_meets_criteria(model_spec: Dict[str, any], context: dict) -> bool:
+    # Define criteria based on the model specification and context
+    pass
+
+class TraceDrivenPolicy(RouterPolicy):
+    """
+    A trace-driven router policy that uses past interaction data to inform model selection.
+    """
+
+    def __init__(self, traces: List[Dict]):
+        self.traces = traces
+
+    def choose_model(self, context: dict) -> str:
+        # Implement logic using historical traces
+        analyzed_context = DefaultQueryAnalyzer().analyze_query(context)
+        
+        for trace in self.traces:
+            if trace_matches_criteria(trace, analyzed_context):
+                return trace['model_key']
+                
+        raise ValueError("No suitable model found based on past interactions.")
+
+def trace_matches_criteria(trace: Dict[str, any], context: dict) -> bool:
+    # Define criteria using historical trace data and current query context
+    pass
+```
+
+### DefaultQueryAnalyzer
+
+A default implementation of `QueryAnalyzer` that provides a basic set of analysis capabilities:
+
+```python
+# learning/router.py (continued)
+from .query_analyzer import QueryAnalyzer
+
+class DefaultQueryAnalyzer(QueryAnalyzer):
+    """
+    A default query analyzer that extracts essential information from the context.
+    """
+
+    def analyze_query(self, context: dict) -> dict:
+        # Implement basic analysis logic here
+        analyzed_data = {
+            'query_type': context.get('type', ''),
+            'priority_level': context.get('priority', 0),
+            # Add more relevant fields as needed
+        }
+        
+        return analyzed_data
+```
+
+### Integration with the Learning System
+
+The learning system integrates these components to provide intelligent routing and behavioral advice based on past interactions:
+
+```python
+# learning/__init__.py
+from .router_policy import RouterPolicy, IntelligenceLearningPolicy, AgentLearningPolicy
+from .query_analyzer import QueryAnalyzer
+from .heuristic_router import HeuristicRouter
+from .trace_driven_policy import TraceDrivenPolicy
+
+# Example usage
+def initialize_learning_system():
+    model_registry = ModelRegistry()
+    heuristic_router = HeuristicRouter(model_registry)
+    
+    # Load traces and create trace-driven policy
+    historical_traces = load_historical_traces_from_database()
+    trace_driven_policy = TraceDrivenPolicy(historical_traces)
+
+    return {
+        'heuristic_router': heuristic_router,
+        'trace_driven_policy': trace_driven_policy
+    }
+```
+
+### Conclusion
+
+By leveraging the `RouterPolicy`, `QueryAnalyzer`, and concrete implementations like `HeuristicRouter` and `TraceDrivenPolicy`, the learning system effectively manages model routing and agent behavior, ensuring that queries are handled intelligently based on historical interactions and predefined heuristics.
+
+Would you like to see more details or have any specific aspects you're interested in exploring further?

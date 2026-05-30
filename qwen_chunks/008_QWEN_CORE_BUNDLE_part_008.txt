@@ -1,0 +1,200 @@
+
+```python
+class _OpenAICompatibleEngine(InferenceEngine):
+    engine_id: str = ""
+    _default_host: str = "http://localhost:8000"
+
+    def __init__(self, host: str | None = None, *, timeout: float = 120.0):
+        self._host = (host or self._default_host).rstrip("/")
+        self._client = httpx.Client(base_url=self._host, timeout=timeout)
+```
+
+Key behaviors:
+
+- **Synchronous generation:** `POST /v1/chat/completions` with `stream=False`
+- **Streaming:** `POST /v1/chat/completions` with `stream=True`, parsing SSE `data:` lines
+- **Model listing:** `GET /v1/models`, extracting `data[].id`
+- **Health check:** `GET /v1/models` with a 2-second timeout
+- **Tool call fallback:** On HTTP 400 with tools in the payload, retries without tools (handles engines that do not support function calling)
+
+---
+
+## Configuration
+
+Engine hosts and defaults are configured in `~/.openjarvis/config.toml` using **nested per-engine sub-sections**:
+
+```toml
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://localhost:11434"
+
+[engine.vllm]
+host = "http://localhost:8000"
+
+[engine.sglang]
+host = "http://localhost:30000"
+
+# [engine.llamacpp]
+# host = "http://localhost:8080"
+# binary_path = ""
+
+# [engine.lemonade]
+# host = "http://localhost:8000"
+```
+
+The `EngineConfig` dataclass and its per-engine sub-dataclasses map these settings:
+
+| Config Class | Field | Default | Description |
+|---|---|---|---|
+| `EngineConfig` | `default` | `"ollama"` (hardware-dependent) | Preferred engine backend |
+| `OllamaEngineConfig` | `host` | `http://localhost:11434` | Ollama server URL |
+| `VLLMEngineConfig` | `host` | `http://localhost:8000` | vLLM server URL |
+| `SGLangEngineConfig` | `host` | `http://localhost:30000` | SGLang server URL |
+| `LlamaCppEngineConfig` | `host` | `http://localhost:8080` | llama.cpp server URL |
+| `LlamaCppEngineConfig` | `binary_path` | `""` | Path to llama.cpp binary (for managed mode) |
+| `LemonadeEngineConfig` | `host` | `http://localhost:8000` | Lemonade server URL |
+
+!!! note "Backward compatibility"
+    The old flat field names `ollama_host`, `vllm_host`, `llamacpp_host`, `llamacpp_path`, `sglang_host`, and `lemonade_host` under `[engine]` are still accepted as backward-compatible properties on `EngineConfig`. New configurations should use the nested sub-section format.
+
+---
+
+## Utility Functions
+
+### `messages_to_dicts()`
+
+Converts a sequence of `Message` objects to OpenAI-format dictionaries, handling tool calls and tool call IDs:
+
+```python
+from openjarvis.engine._base import messages_to_dicts
+from openjarvis.core.types import Message, Role
+
+messages = [Message(role=Role.USER, content="Hello")]
+dicts = messages_to_dicts(messages)
+# [{"role": "user", "content": "Hello"}]
+```
+
+### `EngineConnectionError`
+
+A custom exception raised when an engine is unreachable. All engine backends catch `httpx.ConnectError` and `httpx.TimeoutException` and re-raise as `EngineConnectionError`:
+
+```python
+from openjarvis.engine import EngineConnectionError
+
+try:
+    result = engine.generate(messages, model="qwen3:8b")
+except EngineConnectionError as exc:
+    print(f"Engine unavailable: {exc}")
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\intelligence.md
+
+`$(intelligence.md.Extension.TrimStart('.'))
+# Intelligence Primitive
+
+The Intelligence primitive represents **the model** — its identity, weights, quantization format, fallback chain, and the catalog of well-known models with detailed metadata. It no longer contains routing logic; query analysis and model selection have moved to the [Learning primitive](learning.md).
+
+---
+
+## Purpose
+
+The Intelligence primitive answers a single question: *what is the model?* It maintains a catalog of known models with metadata (parameter count, context length, VRAM requirements, supported engines) and provides helpers for registering built-in models and merging models discovered from running engines at runtime.
+
+The primitive provides three key capabilities:
+
+1. **Model catalog** -- a registry of well-known models with metadata (parameter count, context length, VRAM requirements, supported engines)
+2. **Auto-discovery** -- merging models discovered from running engines into the catalog
+3. **Model configuration** -- `IntelligenceConfig` captures the local model's identity, weight paths, quantization, and preferred engine
+
+!!! info "Routing has moved"
+    Query analysis (`build_routing_context`) and model selection (`HeuristicRouter`, `RouterPolicy` ABC) now live in the [Learning primitive](learning.md). Backward-compatible re-exports remain in `intelligence/_stubs.py` and `intelligence/router.py` so existing code continues to work.
+
+---
+
+## ModelSpec
+
+Every model in the system is described by a `ModelSpec` dataclass, defined in `core/types.py`:
+
+```python
+@dataclass(slots=True)
+class ModelSpec:
+    model_id: str                              # Unique identifier (e.g., "qwen3:8b")
+    name: str                                  # Human-readable name
+    parameter_count_b: float                   # Total parameters in billions
+    context_length: int                        # Maximum context window (tokens)
+    active_parameter_count_b: Optional[float]  # MoE active params (None for dense)
+    quantization: Quantization                 # Quantization format (none, fp8, int4, etc.)
+    min_vram_gb: float                         # Minimum VRAM required
+    supported_engines: Sequence[str]           # Which engines can run this model
+    provider: str                              # Model provider (e.g., "alibaba", "meta")
+    requires_api_key: bool                     # Whether cloud API key is needed
+    metadata: Dict[str, Any]                   # Additional metadata (pricing, architecture)
+```
+
+Models are registered in the `ModelRegistry`:
+
+```python
+from openjarvis.core.registry import ModelRegistry
+
+# Register a model
+ModelRegistry.register_value("qwen3:8b", ModelSpec(
+    model_id="qwen3:8b",
+    name="Qwen3 8B",
+    parameter_count_b=8.2,
+    context_length=32768,
+    supported_engines=("vllm", "ollama", "llamacpp", "sglang"),
+    provider="alibaba",
+))
+```
+
+---
+
+## Model Catalog
+
+The built-in model catalog is defined in `intelligence/model_catalog.py` as the `BUILTIN_MODELS` list. It includes models across three categories:
+
+### Local Models -- Dense
+
+| Model ID | Name | Parameters | Context | Supported Engines |
+|----------|------|-----------|---------|-------------------|
+| `qwen3:8b` | Qwen3 8B | 8.2B | 32K | vLLM, Ollama, llama.cpp, SGLang |
+| `qwen3:32b` | Qwen3 32B | 32B | 32K | Ollama, vLLM |
+| `llama3.3:70b` | Llama 3.3 70B | 70B | 128K | Ollama, vLLM |
+| `llama3.2:3b` | Llama 3.2 3B | 3B | 128K | Ollama, vLLM, llama.cpp |
+| `deepseek-coder-v2:16b` | DeepSeek Coder V2 16B | 16B | 128K | Ollama, vLLM |
+| `mistral:7b` | Mistral 7B | 7B | 32K | Ollama, vLLM, llama.cpp |
+
+### Local Models -- Mixture of Experts (MoE)
+
+| Model ID | Name | Total / Active Params | Context | Min VRAM |
+|----------|------|----------------------|---------|----------|
+| `gpt-oss:120b` | GPT-OSS 120B | 117B / 5.1B | 128K | 12 GB |
+| `glm-4.7-flash` | GLM 4.7 Flash | 30B / 3B | 128K | 8 GB |
+| `trinity-mini` | Trinity Mini | 26B / 3B | 128K | 8 GB |
+
+### Cloud Models
+
+| Model ID | Provider | Context | Pricing (input/output per 1M tokens) |
+|----------|----------|---------|--------------------------------------|
+| `gpt-4o` | OpenAI | 128K | $2.50 / $10.00 |
+| `gpt-4o-mini` | OpenAI | 128K | $0.15 / $0.60 |
+| `gpt-5-mini` | OpenAI | 400K | $0.25 / $2.00 |
+| `claude-sonnet-4-20250514` | Anthropic | 200K | $3.00 / $15.00 |
+| `claude-opus-4-20250514` | Anthropic | 200K | $15.00 / $75.00 |
+| `claude-opus-4-6` | Anthropic | 200K | $5.00 / $25.00 |
+| `gemini-2.5-pro` | Google | 1M | $1.25 / $10.00 |
+| `gemini-2.5-flash` | Google | 1M | $0.30 / $2.50 |
+
+### Registering Built-in Models
+
+The `register_builtin_models()` function populates the `ModelRegistry` with all built-in models. It skips models that are already registered, making it safe to call multiple times:
+
+```python
+from openjarvis.intelligence import register_builtin_models
+
+register_builtin_models()
+# All BUILTIN_MODELS are now in ModelRegistry

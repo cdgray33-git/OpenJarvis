@@ -1,0 +1,251 @@
+﻿Certainly! Let's continue with the detailed explanation and documentation of the Learning & Traces module, focusing on the `RouterPolicy` ABC and other key components.
+
+## RouterPolicy ABC
+
+The `RouterPolicy` Abstract Base Class (ABC) is a fundamental component in determining which model should handle a given query. It abstracts the logic for selecting an appropriate model based on various criteria such as query characteristics, available models, and performance metrics.
+
+### Definition
+
+```python
+# learning/_stubs.py
+from abc import ABC, abstractmethod
+from typing import List, Dict
+
+class RouterPolicy(ABC):
+    @abstractmethod
+    def select_model(self, query: str, available_models: List[str], context: Dict) -> str:
+        """
+        Selects the most appropriate model for handling the given query.
+
+        Parameters:
+        - query (str): The user's input or question.
+        - available_models (List[str]): A list of model identifiers that are currently available.
+        - context (Dict): Additional contextual information that may influence routing decisions.
+
+        Returns:
+        - str: The identifier of the selected model.
+        """
+        pass
+```
+
+### Key Components
+
+- **`select_model` Method**: This method is responsible for making the decision on which model to use. It takes three parameters:
+  - `query`: A string representing the user's input or question.
+  - `available_models`: A list of strings, each representing a model identifier that is currently available and can handle queries.
+  - `context`: A dictionary containing additional contextual information that might be relevant for making the routing decision.
+
+### Implementing RouterPolicy
+
+To implement a specific routing policy, you need to subclass `RouterPolicy` and provide an implementation for the `select_model` method. Here’s an example of a simple heuristic router:
+
+```python
+class HeuristicRouter(RouterPolicy):
+    def select_model(self, query: str, available_models: List[str], context: Dict) -> str:
+        """
+        Selects a model based on simple heuristics.
+
+        This implementation selects the default model if it is available,
+        otherwise falls back to a fallback model.
+        """
+        config = context.get('config', {})
+        default_model = config.get('intelligence.default_model')
+        fallback_model = config.get('intelligence.fallback_model')
+
+        if default_model in available_models:
+            return default_model
+        elif fallback_model in available_models:
+            return fallback_model
+
+        # Fallback to the first available model if none are specified or available
+        return available_models[0] if available_models else None
+```
+
+## QueryAnalyzer ABC
+
+The `QueryAnalyzer` ABC is responsible for analyzing queries and providing insights that can be used by routing policies to make more informed decisions.
+
+### Definition
+
+```python
+# learning/_stubs.py
+class QueryAnalyzer(ABC):
+    @abstractmethod
+    def analyze_query(self, query: str) -> Dict:
+        """
+        Analyzes the given query and returns a dictionary of features or insights.
+
+        Parameters:
+        - query (str): The user's input or question.
+
+        Returns:
+        - Dict: A dictionary containing various features or insights about the query.
+        """
+        pass
+```
+
+### Key Components
+
+- **`analyze_query` Method**: This method analyzes the query and returns a dictionary of features or insights that might be useful for routing decisions. For example, it could return information about the complexity of the query, the presence of specific keywords, or other characteristics.
+
+### Implementing QueryAnalyzer
+
+To implement a specific query analyzer, you need to subclass `QueryAnalyzer` and provide an implementation for the `analyze_query` method. Here’s an example:
+
+```python
+class SimpleQueryAnalyzer(QueryAnalyzer):
+    def analyze_query(self, query: str) -> Dict:
+        """
+        Analyzes the query by counting words and checking for specific keywords.
+        """
+        features = {}
+        words = query.split()
+        features['word_count'] = len(words)
+        features['contains_keyword'] = any(keyword in query.lower() for keyword in ['help', 'support'])
+        return features
+```
+
+## Traces
+
+Traces are a critical part of the Learning & Traces system. They record the full interaction between the user, the system, and the model. Each trace includes information about the query, the selected model, the response, and any other relevant details.
+
+### Trace Structure
+
+A typical trace might include the following fields:
+
+- **`query`**: The original query from the user.
+- **`selected_model`**: The identifier of the model that handled the query.
+- **`response`**: The model's response to the query.
+- **`metadata`**: Additional information such as timestamps, context, and performance metrics.
+
+### Example Trace
+
+```python
+trace = {
+    'query': "How do I configure a router?",
+    'selected_model': "llama3.2:3b",
+    'response': "To configure a router, you need to access the configuration interface...",
+    'metadata': {
+        'timestamp': "2023-10-05T14:30:00Z",
+        'context': {"user_id": 12345},
+        'performance_metrics': {
+            'response_time_ms': 300,
+            'token_usage': 256
+        }
+    }
+}
+```
+
+## LearningRegistry
+
+The `LearningRegistry` is a central registry for all learning policies. It allows the system to dynamically discover and use different routing and agent behavior strategies.
+
+### Definition
+
+```python
+# core/registry.py
+class LearningRegistry:
+    _policies = {}
+
+    @classmethod
+    def register_policy(cls, policy_name: str, policy_class: type):
+        cls._policies[policy_name] = policy_class
+
+    @classmethod
+    def get_policy(cls, policy_name: str) -> type:
+        return cls._policies.get(policy_name)
+```
+
+### Registering Policies
+
+To register a policy, you can use the `register_policy` method. For example:
+
+```python
+from openjarvis.learning._stubs import RouterPolicy
+
+class MyCustomRouter(RouterPolicy):
+    def select_model(self, query: str, available_models: List[str], context: Dict) -> str:
+        # Custom logic here
+        pass
+
+LearningRegistry.register_policy('my_custom_router', MyCustomRouter)
+```
+
+### Retrieving Policies
+
+To retrieve a registered policy, you can use the `get_policy` method:
+
+```python
+policy_class = LearningRegistry.get_policy('my_custom_router')
+if policy_class:
+    policy_instance = policy_class()
+    # Use policy_instance to select models or analyze queries
+```
+
+## Integration with Intelligence and Agent
+
+The Learning system integrates closely with both the Intelligence and Agent primitives. The `IntelligenceLearningPolicy` and `AgentLearningPolicy` ABCs define how learning policies interact with these primitives.
+
+### IntelligenceLearningPolicy
+
+This policy is responsible for model routing decisions based on learned strategies.
+
+```python
+class IntelligenceLearningPolicy(ABC):
+    @abstractmethod
+    def select_model(self, query: str, available_models: List[str], context: Dict) -> str:
+        pass
+```
+
+### AgentLearningPolicy
+
+This policy advises on agent behavior, such as the selection of ICL examples, tool usage, and turn limits.
+
+```python
+class AgentLearningPolicy(ABC):
+    @abstractmethod
+    def advise_agent(self, query: str, context: Dict) -> Dict:
+        """
+        Advises the agent on how to handle a query.
+
+        Parameters:
+        - query (str): The user's input or question.
+        - context (Dict): Additional contextual information.
+
+        Returns:
+        - Dict: A dictionary containing advice for the agent.
+        """
+        pass
+```
+
+### Example Integration
+
+```python
+class MyIntelligencePolicy(IntelligenceLearningPolicy):
+    def select_model(self, query: str, available_models: List[str], context: Dict) -> str:
+        # Use custom logic to select a model based on traces and other data
+        return "qwen3:8b"
+
+class MyAgentPolicy(AgentLearningPolicy):
+    def advise_agent(self, query: str, context: Dict) -> Dict:
+        # Provide advice on agent behavior
+        return {
+            'icl_examples': ["Example 1", "Example 2"],
+            'tool_usage': ['calculator', 'web_search']
+        }
+```
+
+### Registering Policies in LearningRegistry
+
+```python
+LearningRegistry.register_policy('my_intelligence_policy', MyIntelligencePolicy)
+LearningRegistry.register_policy('my_agent_policy', MyAgentPolicy)
+```
+
+## Conclusion
+
+The Learning & Traces module is a powerful component of the OpenJarvis system, enabling dynamic and adaptive routing and behavior. By leveraging learning policies and traces, the system can continuously improve its performance and provide better responses to users.
+
+This concludes the detailed documentation for the Learning & Traces module in the OpenJarvis architecture.
+
+===== END QWEN_CORE_BUNDLE.md CHUNK 5 OF 12 =====

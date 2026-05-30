@@ -1,0 +1,4273 @@
+# OpenJarvis Core Review Bundle
+
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\agents.md
+
+`$(agents.md.Extension.TrimStart('.'))
+# Agentic Logic Primitive
+
+The Agentic Logic primitive provides **pluggable agents** that handle queries with varying levels of sophistication -- from simple single-turn responses to multi-turn tool-calling loops, ReAct-style reasoning, CodeAct code execution, recursive decomposition, and external agent communication.
+
+---
+
+## BaseAgent ABC
+
+All agents implement the `BaseAgent` abstract base class, which provides both the `run()` contract and concrete helper methods that eliminate boilerplate in subclasses:
+
+```python
+class BaseAgent(ABC):
+    agent_id: str
+    accepts_tools: bool = False  # overridden by ToolUsingAgent
+
+    def __init__(
+        self,
+        engine: InferenceEngine,
+        model: str,
+        *,
+        bus: Optional[EventBus] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> None: ...
+
+    @abstractmethod
+    def run(
+        self,
+        input: str,
+        context: Optional[AgentContext] = None,
+        **kwargs: Any,
+    ) -> AgentResult:
+        """Execute the agent on *input* and return an AgentResult."""
+```
+
+### Class Attribute: `accepts_tools`
+
+The `accepts_tools` class attribute (default `False`) enables the CLI and SDK to auto-detect which agents support tool-passing. Agents that set `accepts_tools = True` can receive `--tools` on the CLI and `tools=` in the SDK.
+
+### Concrete Helper Methods
+
+`BaseAgent` provides five concrete helpers that subclasses use to avoid duplicating common logic:
+
+| Helper | Purpose |
+|--------|---------|
+| `_emit_turn_start(input)` | Publish `AGENT_TURN_START` on the event bus |
+| `_emit_turn_end(**data)` | Publish `AGENT_TURN_END` on the event bus |
+| `_build_messages(input, context, *, system_prompt)` | Assemble the message list from optional system prompt, conversation context, and user input |
+| `_generate(messages, **extra_kwargs)` | Call `engine.generate()` with stored defaults (model, temperature, max_tokens) |
+| `_max_turns_result(tool_results, turns, content)` | Build the standard `AgentResult` for when `max_turns` is exceeded |
+| `_strip_think_tags(text)` | Remove `<think>...</think>` blocks from model output (static method) |
+
+### The `run()` Contract
+
+The `run()` method is the single entry point for all agent implementations. It receives:
+
+- **`input`** -- The user's query text
+- **`context`** -- An optional `AgentContext` with conversation history, tool names, and memory results
+- **`**kwargs`** -- Additional implementation-specific parameters
+
+It returns an `AgentResult` containing the response content, any tool results, the number of turns taken, and metadata.
+
+### Supporting Dataclasses
+
+```python
+@dataclass(slots=True)
+class AgentContext:
+    conversation: Conversation    # Prior messages for multi-turn context
+    tools: List[str]              # Available tool names
+    memory_results: List[Any]     # Pre-fetched memory search results
+    metadata: Dict[str, Any]      # Arbitrary key-value pairs
+
+@dataclass(slots=True)
+class AgentResult:
+    content: str                  # The agent's response text
+    tool_results: List[ToolResult]  # Results from tool invocations
+    turns: int                    # Number of inference turns taken
+    metadata: Dict[str, Any]      # Arbitrary metadata
+```
+
+---
+
+## ToolUsingAgent
+
+`ToolUsingAgent` is an intermediate base class for agents that accept and use tools. It extends `BaseAgent` with:
+
+- **`accepts_tools = True`** -- Enables CLI/SDK tool introspection
+- **`ToolExecutor`** -- Initialized from the provided tool list, handles dispatch with JSON argument parsing, latency tracking, and event bus integration
+- **`max_turns`** -- Configurable loop iteration limit (default: 10)
+
+```python
+class ToolUsingAgent(BaseAgent):
+    accepts_tools: bool = True
+
+    def __init__(
+        self,
+        engine: InferenceEngine,
+        model: str,
+        *,
+        tools: Optional[List[BaseTool]] = None,
+        bus: Optional[EventBus] = None,
+        max_turns: int = 10,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> None: ...
+```
+
+All tool-using agents (`OrchestratorAgent`, `NativeReActAgent`, `NativeOpenHandsAgent`, `RLMAgent`) extend this class.
+
+!!! info "Agents that bypass ToolUsingAgent"
+    Some agents extend `BaseAgent` directly and set `accepts_tools = False`: `SimpleAgent` (single-turn, no tools), `OpenHandsAgent` (tool management is handled by the openhands-sdk), and `ClaudeCodeAgent` (tools are managed by the Claude Agent SDK). `SandboxedAgent` also extends `BaseAgent` directly because it wraps another agent rather than calling tools itself.
+
+---
+
+## Choosing an Agent
+
+Start here. Pick the simplest agent that handles your task — simpler agents are faster, use fewer tokens, and are easier to debug. Reach for more complex agents only when the task demands it.
+
+| Use case | Agent | Why |
+|---|---|---|
+| Simple Q&A, single-turn | `simple` | No overhead, one inference call |
+| Multi-step with tools (calculator, search, files) | `orchestrator` | Function-calling loop, most compatible with OpenAI-format models |
+| Explicit reasoning chains | `native_react` | Thought-Action-Observation loop based on [ReAct (Yao et al., 2023)](https://arxiv.org/abs/2210.03629); reasoning traces are visible and debuggable |
+| Code generation + execution | `native_openhands` | CodeAct pattern inspired by [OpenHands (Wang et al., 2024)](https://arxiv.org/abs/2407.16741); generates and executes Python inline |
+| Long documents, recursive decomposition | `rlm` | Stores context in a persistent REPL, decomposes via recursive sub-LM calls |
+| Untrusted inputs | `sandboxed` wrapping any agent | Container isolation with network disabled and mount allowlists |
+
+**General guidance:** `orchestrator` is the default for most tool-using tasks. Use `native_react` when you want visible reasoning traces (e.g., for debugging or auditing agent behavior). Use `native_openhands` when the task involves writing and running code. Use `rlm` when context is too long to fit in a single prompt window.
+
+---
+
+## Agent Implementations
+
+### SimpleAgent
+
+**Registry key:** `simple`
+
+The simplest agent implementation -- a single-turn, no-tool query-to-response pipeline. Extends `BaseAgent` directly (does not accept tools).
+
+```mermaid
+graph LR
+    Q["User Query"] --> M["Build Messages"]
+    M --> E["Engine.generate()"]
+    E --> R["AgentResult"]
+```
+
+How it works:
+
+1. Calls `_emit_turn_start()` to publish `AGENT_TURN_START` on the event bus
+2. Calls `_build_messages()` to assemble the message list from conversation context plus user input
+3. Calls `_generate()` to invoke the engine with stored defaults
+4. Calls `_emit_turn_end()` and returns an `AgentResult` with `turns=1`
+
+```python
+from openjarvis.agents.simple import SimpleAgent
+
+agent = SimpleAgent(engine, model="qwen3:8b", bus=bus)
+result = agent.run("What is the capital of France?")
+print(result.content)  # "The capital of France is Paris."
+```
+
+### OrchestratorAgent
+
+**Registry key:** `orchestrator`
+
+A multi-turn agent that implements a **tool-calling loop**. Extends `ToolUsingAgent`. The LLM can request tool invocations, and the results are fed back for further processing until the model produces a final text response.
+
+Supports two modes:
+
+- **`function_calling`** (default) -- Uses OpenAI function-calling format via `ToolExecutor.get_openai_tools()`
+- **`structured`** -- Uses structured output format for models that support it
+
+```mermaid
+graph TD
+    Q["User Query"] --> BUILD["Build messages +<br/>tool definitions"]
+    BUILD --> GEN["Engine.generate()<br/>with tools"]
+    GEN --> CHECK{"Tool calls<br/>in response?"}
+    CHECK -->|No| DONE["Return final answer"]
+    CHECK -->|Yes| EXEC["Execute each tool<br/>via ToolExecutor"]
+    EXEC --> APPEND["Append tool results<br/>to messages"]
+    APPEND --> MAXCHECK{"Max turns<br/>exceeded?"}
+    MAXCHECK -->|No| GEN
+    MAXCHECK -->|Yes| TIMEOUT["Return with<br/>max_turns_exceeded"]
+```
+
+How it works:
+
+1. Builds initial messages from context and user input
+2. Converts available tools to OpenAI function-calling format via `ToolExecutor.get_openai_tools()`
+3. Enters a loop (up to `max_turns` iterations):
+    - Calls `engine.generate()` with messages and tool definitions
+    - If the response contains `tool_calls`, executes each tool and appends the results as `TOOL` messages
+    - If no `tool_calls` are present, returns the content as the final answer
+4. If `max_turns` is exceeded, returns the last content or a warning message
+
+```python
+from openjarvis.agents.orchestrator import OrchestratorAgent
+from openjarvis.tools.calculator import CalculatorTool
+from openjarvis.tools.think import ThinkTool
+
+agent = OrchestratorAgent(
+    engine,
+    model="qwen3:8b",
+    tools=[CalculatorTool(), ThinkTool()],
+    bus=bus,
+    max_turns=10,
+)
+result = agent.run("What is 2^10 + 3^5?")
+# The agent may call the calculator tool, get "1267", then respond
+```
+
+### NativeReActAgent
+
+**Registry key:** `native_react` (alias: `react`)
+
+A ReAct (Reasoning + Acting) agent that implements a **Thought-Action-Observation** loop. Extends `ToolUsingAgent`. The LLM is prompted to output structured text with `Thought:`, `Action:`, `Action Input:`, and `Final Answer:` fields, which the agent parses to drive tool execution.
+
+```mermaid
+graph TD
+    Q["User Query"] --> SYS["Build system prompt<br/>with tool descriptions"]
+    SYS --> GEN["Generate response"]
+    GEN --> PARSE["Parse ReAct output"]
+    PARSE --> FINAL{"Final Answer?"}
+    FINAL -->|Yes| DONE["Return answer"]
+    FINAL -->|No| ACTION{"Has Action?"}
+    ACTION -->|No| DONE2["Return content as-is"]
+    ACTION -->|Yes| EXEC["Execute tool<br/>via ToolExecutor<br/>(case-insensitive)"]
+    EXEC --> OBS["Append Observation"]
+    OBS --> MAXCHECK{"Max turns<br/>exceeded?"}
+    MAXCHECK -->|No| GEN
+    MAXCHECK -->|Yes| TIMEOUT["Return max_turns_result"]
+```
+
+How it works:
+
+1. Builds a system prompt with enriched tool descriptions via `build_tool_descriptions()`. Parsing is case-insensitive.
+2. Generates a response and parses the ReAct-structured output
+3. If a `Final Answer:` is found, returns it
+4. If an `Action:` is found, executes the tool and feeds the result back as an `Observation:`
+5. Loops until a final answer is produced or `max_turns` is exceeded
+
+!!! note "Backward compatibility"
+    The old `from openjarvis.agents.react import ReActAgent` import path still works via a backward-compat shim. The registry alias `"react"` also maps to `NativeReActAgent`.
+
+```python
+from openjarvis.agents.native_react import NativeReActAgent
+
+agent = NativeReActAgent(
+    engine,
+    model="qwen3:8b",
+    tools=[CalculatorTool(), ThinkTool()],
+    max_turns=10,
+)
+result = agent.run("What is the square root of 256?")
+```
+
+### NativeOpenHandsAgent
+
+**Registry key:** `native_openhands`
+
+A CodeAct-style agent that generates and executes Python code. Extends `ToolUsingAgent`. It can also invoke tools via structured `Action:` / `Action Input:` output. URLs in the input are automatically pre-fetched and inlined for the LLM.
+
+How it works:
+
+1. Builds a detailed system prompt with enriched tool descriptions (via shared `build_tool_descriptions()` builder) and code execution instructions
+2. Pre-fetches any URLs in the user input, inlining the content directly
+3. For each turn:
+    - Generates a response and strips `<think>` tags
+    - If a `\`\`\`python` code block is found, executes it via `code_interpreter`
+    - If an `Action:` / `Action Input:` is found, dispatches the tool
+    - If neither is found, returns the content as the final answer
+4. Handles context window overflow with automatic truncation
+
+```python
+from openjarvis.agents.native_openhands import NativeOpenHandsAgent
+
+agent = NativeOpenHandsAgent(
+    engine,
+    model="qwen3:8b",
+    tools=[CalculatorTool(), WebSearchTool()],
+    max_turns=3,
+    max_tokens=2048,
+)
+result = agent.run("Summarize https://example.com/article")
+```
+
+### RLMAgent
+
+**Registry key:** `rlm`
+
+A Recursive Language Model agent based on the [RLM paper](https://arxiv.org/abs/2512.24601). Instead of passing long context directly in the LLM prompt, RLM stores context as a Python variable in a persistent REPL. A "Root LM" writes Python code to inspect, decompose, and process context using recursive sub-LM calls via `llm_query()` and `llm_batch()`. Extends `ToolUsingAgent`.
+
+```mermaid
+graph TD
+    Q["User Query +<br/>Context"] --> REPL["Create persistent REPL<br/>(context stored as variable)"]
+    REPL --> GEN["Generate code"]
+    GEN --> CODE{"Code block<br/>found?"}
+    CODE -->|No| DONE["Return content<br/>as final answer"]
+    CODE -->|Yes| EXEC["Execute in REPL"]
+    EXEC --> TERM{"FINAL() called?"}
+    TERM -->|Yes| RESULT["Return final answer"]
+    TERM -->|No| FEED["Feed output back<br/>as user message"]
+    FEED --> MAXCHECK{"Max turns<br/>exceeded?"}
+    MAXCHECK -->|No| GEN
+    MAXCHECK -->|Yes| TIMEOUT["Return max_turns_result"]
+```
+
+How it works:
+
+1. Creates a persistent REPL with `llm_query()` and `llm_batch()` callbacks. Tool descriptions are injected via the shared `build_tool_descriptions()` builder when tools are provided.
+2. Injects context from `AgentContext` metadata or memory results into the REPL as a variable
+3. Generates code and executes it in the REPL
+4. If `FINAL(value)` or `FINAL_VAR("name")` is called, returns the final answer
+5. If no code block is found, treats the content as a direct answer
+
+The agent supports configurable sub-model parameters for recursive calls:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sub_model` | same as `model` | Model for sub-LM calls |
+| `sub_temperature` | `0.3` | Temperature for sub-LM calls |
+| `sub_max_tokens` | `1024` | Max tokens for sub-LM calls |
+| `max_output_chars` | `10000` | Max REPL output characters |
+| `system_prompt` | `RLM_SYSTEM_PROMPT` | Override the system prompt |
+
+```python
+from openjarvis.agents.rlm import RLMAgent
+
+agent = RLMAgent(
+    engine,
+    model="qwen3:8b",
+    max_turns=10,
+    sub_model="qwen3:1.7b",  # smaller model for sub-queries
+    sub_temperature=0.3,
+)
+result = agent.run("Summarize this document", context=ctx)
+```
+
+### OpenHandsAgent (SDK)
+
+**Registry key:** `openhands`
+
+A thin wrapper around the real `openhands-sdk` package for AI-driven software development tasks. Extends `BaseAgent` directly (does not use `ToolUsingAgent` since tool management is handled by the SDK).
+
+!!! warning "Optional dependency"
+    This agent requires the `openhands-sdk` package (`uv sync --extra openhands`). The SDK requires Python 3.12+.
+
+How it works:
+
+1. Imports `openhands.sdk` at runtime (lazy import)
+2. Creates an LLM, Agent, and Conversation from the SDK
+3. Sends the user input as a message and runs the conversation
+4. Extracts the final message content from the conversation
+
+```python
+from openjarvis.agents.openhands import OpenHandsAgent
+
+agent = OpenHandsAgent(
+    engine,
+    model="gpt-4",
+    workspace="/path/to/project",
+    api_key="sk-...",
+)
+result = agent.run("Fix the failing test in test_utils.py")
+```
+
+### ClaudeCodeAgent
+
+**Registry key:** `claude_code`
+
+Wraps the `@anthropic-ai/claude-code` SDK via a bundled Node.js subprocess bridge. Unlike every other agent, inference is handled entirely by the Claude Agent SDK -- the OpenJarvis inference engine is not used. This makes `ClaudeCodeAgent` a true external agent, similar in spirit to `OpenHandsAgent` but implemented via subprocess rather than an importable Python SDK.
+
+```mermaid
+graph LR
+    Q["User Query"] --> PY["Python: build JSON request"]
+    PY --> SPAWN["Spawn: node dist/index.js"]
+    SPAWN --> NODE["Node.js runner<br/>@anthropic-ai/claude-code SDK"]
+    NODE --> SDK["Claude Agent SDK<br/>(cloud inference)"]
+    SDK --> NODE
+    NODE --> JSON["Sentinel-delimited JSON<br/>on stdout"]
+    JSON --> PARSE["Python: parse output"]
+    PARSE --> R["AgentResult"]
+```
+
+How it works:
+
+1. On first call, copies the bundled `claude_code_runner/` to `~/.openjarvis/claude_code_runner/` and runs `npm install --production` if `node_modules` is absent
+2. Builds a JSON request with `prompt`, `api_key`, `workspace`, `allowed_tools`, `system_prompt`, and `session_id`
+3. Spawns `node dist/index.js` and writes the request to stdin
+4. Reads stdout and extracts the JSON payload between `---OPENJARVIS_OUTPUT_START---` and `---OPENJARVIS_OUTPUT_END---` sentinels
+5. Falls back to treating all stdout as plain text content if sentinels are absent
+
+!!! warning "Requires Node.js 22+"
+    `ClaudeCodeAgent` raises `RuntimeError` at `run()` time if `node` is not found on `PATH`. An `ANTHROPIC_API_KEY` environment variable is required for the Claude Agent SDK to authenticate.
+
+```python
+from openjarvis.agents.claude_code import ClaudeCodeAgent
+
+agent = ClaudeCodeAgent(
+    engine=None,   # not used
+    model="",      # not used
+    workspace="/path/to/project",
+    timeout=120,
+)
+result = agent.run("Add type hints to all functions in utils.py")
+```
+
+### SandboxedAgent and ContainerRunner
+
+`SandboxedAgent` and `ContainerRunner` together implement **container-isolated agent execution** following the `GuardrailsEngine` wrapper pattern. `SandboxedAgent` wraps any `BaseAgent` and delegates execution to a Docker (or Podman) container managed by `ContainerRunner`.
+
+```mermaid
+graph LR
+    Q["User Query"] --> SA["SandboxedAgent.run()"]
+    SA --> CR["ContainerRunner.run()"]
+    CR --> VALIDATE["Validate mounts<br/>vs allowlist"]
+    VALIDATE --> DOCKER["docker run --rm<br/>--network none<br/>-i image"]
+    DOCKER --> STDIN["Write JSON payload<br/>to stdin"]
+    STDIN --> CONTAINER["Container: run agent,<br/>write output to stdout"]
+    CONTAINER --> PARSE["Parse sentinel-<br/>delimited JSON"]
+    PARSE --> R["AgentResult"]
+```
+
+**ContainerRunner** manages the full container lifecycle:
+
+- Validates mount paths against a `MountAllowlist` before container start (raises `ValueError` for blocked or out-of-root paths)
+- Constructs `docker run --rm --network none -i <image>` with validated read-only bind mounts
+- Sends a JSON payload to container stdin (prompt, agent ID, model, and optional secrets)
+- Reads stdout and parses sentinel-delimited JSON output
+- On timeout, force-kills the container via `docker rm -f`
+- `cleanup_orphans()` removes any stale containers labelled `openjarvis-sandbox=true`
+
+**Mount security** (`sandbox/mount_security.py`) enforces two independent checks on every mount path:
+
+1. **Blocked patterns:** Path components are matched against `DEFAULT_BLOCKED_PATTERNS` (`.ssh`, `.env`, `*.pem`, `*.key`, cloud configs, etc.). A match raises `ValueError`.
+2. **Allowed roots:** If `roots` are configured in the allowlist, the resolved path must be under one of them. An empty `roots` list allows any non-blocked path.
+
+```python
+from openjarvis.sandbox import ContainerRunner, SandboxedAgent
+
+runner = ContainerRunner(
+    image="openjarvis-sandbox:latest",
+    timeout=60,
+    runtime="docker",
+)
+# Wrap any BaseAgent
+inner = SimpleAgent(engine, model="qwen3:8b")
+sandboxed = SandboxedAgent(
+    agent=inner,
+    runner=runner,
+    mounts=["/home/user/data"],
+)
+result = sandboxed.run("Summarize the reports in /home/user/data")
+```
+
+!!! warning "accepts_tools = False"
+    `SandboxedAgent` does not accept tools via `--tools` or `tools=`. Tool calling within the sandbox is the responsibility of the wrapped inner agent.
+
+---
+
+## Tool System Integration
+
+All `ToolUsingAgent` subclasses use the `ToolExecutor` to dispatch tool calls. The tool system is built on the `BaseTool` ABC:
+
+```python
+class BaseTool(ABC):
+    tool_id: str
+
+    @property
+    @abstractmethod
+    def spec(self) -> ToolSpec:
+        """Return the tool specification."""
+
+    @abstractmethod
+    def execute(self, **params: Any) -> ToolResult:
+        """Execute the tool with the given parameters."""
+
+    def to_openai_function(self) -> Dict[str, Any]:
+        """Convert to OpenAI function-calling format."""
+```
+
+### Built-in Tools
+
+| Tool | Registry Key | Description |
+|------|-------------|-------------|
+| `CalculatorTool` | `calculator` | AST-based safe expression evaluator |
+| `ThinkTool` | `think` | Reasoning scratchpad (returns input as-is) |
+| `RetrievalTool` | `retrieval` | Memory search via a memory backend |
+| `LLMTool` | `llm` | Sub-model calls (query a different model) |
+| `FileReadTool` | `file_read` | Safe file reading with path validation |
+
+### ToolExecutor
+
+The `ToolExecutor` handles tool dispatch with JSON argument parsing, latency tracking, and event bus integration:
+
+```python
+class ToolExecutor:
+    def __init__(self, tools: List[BaseTool], bus: Optional[EventBus] = None):
+        self._tools = {t.spec.name: t for t in tools}
+        self._bus = bus
+
+    def execute(self, tool_call: ToolCall) -> ToolResult:
+        """Parse arguments, dispatch to tool, measure latency, emit events."""
+
+    def get_openai_tools(self) -> List[Dict[str, Any]]:
+        """Return tools in OpenAI function-calling format."""
+```
+
+For each tool call:
+
+1. Looks up the tool by name
+2. Parses the JSON arguments string
+3. Publishes `TOOL_CALL_START` on the event bus
+4. Executes the tool with timing
+5. Publishes `TOOL_CALL_END` with success status and latency
+6. Returns the `ToolResult`
+
+---
+
+## Event Bus Integration
+
+All agents integrate with the `EventBus` for telemetry and trace collection:
+
+| Event | Published By | When |
+|-------|-------------|------|
+| `AGENT_TURN_START` | All agents (via `_emit_turn_start` helper) | Before starting query processing |
+| `AGENT_TURN_END` | All agents (via `_emit_turn_end` helper) | After producing a response |
+| `TOOL_CALL_START` | ToolExecutor (all `ToolUsingAgent` subclasses) | Before executing a tool |
+| `TOOL_CALL_END` | ToolExecutor (all `ToolUsingAgent` subclasses) | After executing a tool |
+
+!!! info "Inference events"
+    `INFERENCE_START` and `INFERENCE_END` events are published by the `InstrumentedEngine` wrapper (in `telemetry/instrumented_engine.py`), not by agents directly. This keeps telemetry opt-in and transparent to agent code.
+
+These events are consumed by the `TelemetryStore` (for metrics) and `TraceCollector` (for interaction traces).
+
+---
+
+## Agent Registration
+
+Agents are registered via the `@AgentRegistry.register("name")` decorator:
+
+```python
+from openjarvis.core.registry import AgentRegistry
+from openjarvis.agents._stubs import BaseAgent
+
+@AgentRegistry.register("my-agent")
+class MyAgent(BaseAgent):
+    agent_id = "my-agent"
+
+    def run(self, input, context=None, **kwargs):
+        ...
+```
+
+To list all registered agents:
+
+```python
+from openjarvis.core.registry import AgentRegistry
+
+print(AgentRegistry.keys())
+# ("simple", "orchestrator", "native_react", "react", "native_openhands", "rlm", "openhands")
+```
+
+To instantiate an agent by key:
+
+```python
+agent = AgentRegistry.create("orchestrator", engine, model, tools=tools, bus=bus)
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\channels.md
+
+`$(channels.md.Extension.TrimStart('.'))
+# Channels Architecture
+
+The channels module provides a transport-agnostic messaging layer for receiving and sending messages through external platforms. The design follows the same registry-plus-ABC pattern used throughout OpenJarvis: a `BaseChannel` interface defines the contract, and concrete implementations for each platform (Telegram, Discord, Slack, WhatsApp, etc.) are registered for runtime discovery.
+
+---
+
+## Design Principles
+
+- **Transport-agnostic ABC.** `BaseChannel` defines six abstract methods covering the full lifecycle: connect, disconnect, send, status, list channels, and message handler registration.
+- **Direct platform integration.** Each channel connects directly to its platform API -- there is no intermediate gateway.
+- **Background listener thread.** Incoming messages are delivered via a daemon thread, not an event loop, so channels work from synchronous code without requiring async infrastructure.
+- **Registry-driven discovery.** All channel implementations self-register via `@ChannelRegistry.register("name")` and are discoverable at runtime.
+
+---
+
+## BaseChannel ABC
+
+```mermaid
+classDiagram
+    class BaseChannel {
+        <<abstract>>
+        +channel_id str
+        +connect() None
+        +disconnect() None
+        +send(channel, content, conversation_id, metadata) bool
+        +status() ChannelStatus
+        +list_channels() list~str~
+        +on_message(handler) None
+    }
+    class TelegramChannel {
+        -_token str
+        -_handlers list
+        -_listener_thread Thread
+        -_stop_event Event
+        +connect() None
+        +disconnect() None
+        +send(...) bool
+        +status() ChannelStatus
+        +list_channels() list~str~
+        +on_message(handler) None
+    }
+    class DiscordChannel {
+        -_token str
+        -_handlers list
+        -_listener_thread Thread
+        -_stop_event Event
+    }
+    class SlackChannel {
+        -_bot_token str
+        -_app_token str
+        -_handlers list
+    }
+    BaseChannel <|-- TelegramChannel
+    BaseChannel <|-- DiscordChannel
+    BaseChannel <|-- SlackChannel
+```
+
+All `BaseChannel` subclasses must be registered via `@ChannelRegistry.register("name")` to be discoverable at runtime. For example, `TelegramChannel` is registered as `"telegram"`, `DiscordChannel` as `"discord"`, etc.
+
+---
+
+## Channel Lifecycle
+
+The connection lifecycle for a typical channel implementation, from instantiation through to disconnection:
+
+```mermaid
+stateDiagram-v2
+    [*] --> DISCONNECTED: __init__
+
+    DISCONNECTED --> CONNECTING: connect() called
+    CONNECTING --> CONNECTED: Platform connection OK\nlistener thread started
+    CONNECTING --> CONNECTED: Platform SDK not installed\nsend-only mode
+    CONNECTING --> ERROR: Exception during connect
+
+    CONNECTED --> CONNECTING: listener loop error\nreconnect attempt
+    CONNECTING --> CONNECTED: reconnect successful
+    CONNECTING --> ERROR: reconnect failed
+
+    CONNECTED --> DISCONNECTED: disconnect() called\nstop_event set\nthread joined
+    ERROR --> DISCONNECTED: disconnect() called
+```
+
+The `ChannelStatus` enum (`CONNECTED`, `DISCONNECTED`, `CONNECTING`, `ERROR`) tracks this state and is exposed via `status()`.
+
+---
+
+## Listener Loop Pattern
+
+Most channel implementations use a background daemon thread for receiving messages. The pattern is consistent across channels:
+
+1. The listener thread is started in `connect()`.
+2. It polls or listens for messages from the platform API.
+3. Incoming messages are parsed into `ChannelMessage` dataclass instances.
+4. All registered handlers are called sequentially.
+5. If an `EventBus` is provided, a `CHANNEL_MESSAGE_RECEIVED` event is published.
+6. On disconnect or error, the thread handles reconnection or exits cleanly.
+
+Handler exceptions are caught individually so that a failing handler does not prevent subsequent handlers from running:
+
+```python
+for handler in self._handlers:
+    try:
+        handler(msg)
+    except Exception:
+        logger.exception("Channel handler error")
+```
+
+---
+
+## Event Flow
+
+Channel events are published to the `EventBus` using two event types:
+
+| Event | Published By | When | Payload |
+|-------|-------------|------|---------|
+| `CHANNEL_MESSAGE_RECEIVED` | Listener loop | Message received from platform | `channel`, `sender`, `content`, `message_id` |
+| `CHANNEL_MESSAGE_SENT` | `send()` | Message successfully delivered | `channel`, `content`, `conversation_id` |
+
+These events allow other modules to react to channel activity without depending on the channel implementation directly. For example, a logging subscriber can record all sent and received messages, or an agent can be wired to respond to incoming channel messages by subscribing to `CHANNEL_MESSAGE_RECEIVED`.
+
+```mermaid
+flowchart TB
+    A[TelegramChannel / DiscordChannel / ...] -->|CHANNEL_MESSAGE_RECEIVED| B[EventBus]
+    A -->|CHANNEL_MESSAGE_SENT| B
+    B --> C[TelemetryStore\nor other subscriber]
+    B --> D[Custom handler\nvia bus.subscribe]
+```
+
+---
+
+## Handler Registration
+
+Multiple handlers can be registered. They are stored in a list and called sequentially within the listener thread. Returning a value from a handler has no effect on message routing -- the return type `Optional[str]` is reserved for future use (for example, auto-reply routing).
+
+```python
+# ChannelHandler type alias
+ChannelHandler = Callable[[ChannelMessage], Optional[str]]
+```
+
+---
+
+## Threading Model
+
+Channel implementations use Python's `threading` module rather than asyncio. This is a deliberate choice: OpenJarvis's core inference path is synchronous, and daemon threads are simpler to compose with synchronous code than coroutines.
+
+| Component | Thread | Notes |
+|-----------|--------|-------|
+| `connect()`, `send()`, `disconnect()` | Caller thread | All public methods are thread-safe |
+| Listener loop | Background daemon thread | Started in `connect()`, joined in `disconnect()` |
+| Handler callbacks | Background daemon thread | Called from listener thread -- use thread-safe data structures |
+
+!!! warning "Handler thread safety"
+    Handler callbacks run on the listener thread, not the thread that called `connect()`. If your handler modifies shared state, protect it with a lock or use thread-safe data structures such as `queue.Queue`.
+
+---
+
+## Adding a New Channel Backend
+
+To add a new channel backend:
+
+1. Create a new file in `src/openjarvis/channels/`.
+2. Subclass `BaseChannel` and implement all six abstract methods.
+3. Set `channel_id` as a class attribute.
+4. Decorate with `@ChannelRegistry.register("name")`.
+5. Add the module name to `_CHANNEL_MODULES` in `channels/__init__.py`.
+
+```python
+from openjarvis.channels._stubs import BaseChannel, ChannelMessage, ChannelStatus
+from openjarvis.core.registry import ChannelRegistry
+
+@ChannelRegistry.register("my_platform")
+class MyPlatformChannel(BaseChannel):
+    channel_id = "my_platform"
+
+    def connect(self) -> None: ...
+    def disconnect(self) -> None: ...
+    def send(self, channel, content, *, conversation_id="", metadata=None) -> bool: ...
+    def status(self) -> ChannelStatus: ...
+    def list_channels(self) -> list[str]: ...
+    def on_message(self, handler) -> None: ...
+```
+
+After registration, the backend is discoverable via `ChannelRegistry.get("my_platform")`.
+
+---
+
+## See Also
+
+- [User Guide: Channels](../user-guide/channels.md) -- how to use channels in practice
+- [API Reference: Channels](../api-reference/openjarvis/channels/index.md) -- complete class and type signatures
+- [Architecture: Overview](overview.md) -- where channels fit in the overall system
+- [Architecture: Design Principles](design-principles.md) -- registry pattern and ABC conventions
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\design-principles.md
+
+`$(design-principles.md.Extension.TrimStart('.'))
+# Design Principles
+
+OpenJarvis follows a set of design principles that guide every architectural decision. These principles ensure the framework remains extensible, portable, and easy to work with.
+
+---
+
+## 1. Pluggable Everything
+
+Every major component in OpenJarvis is defined as an **abstract base class** (ABC) with concrete implementations registered at runtime. This means you can swap, extend, or replace any part of the system without modifying existing code.
+
+```mermaid
+graph LR
+    subgraph "ABC Interface"
+        ABC["InferenceEngine ABC<br/><code>generate(), stream(),<br/>list_models(), health()</code>"]
+    end
+
+    subgraph "Implementations"
+        A["OllamaEngine"]
+        B["VLLMEngine"]
+        C["SGLangEngine"]
+        D["LlamaCppEngine"]
+        E["CloudEngine"]
+        F["YourCustomEngine"]
+    end
+
+    ABC --> A
+    ABC --> B
+    ABC --> C
+    ABC --> D
+    ABC --> E
+    ABC -.->|"extend"| F
+```
+
+This pattern applies across all five primitives:
+
+| Primitive | ABC | Implementations |
+|--------|-----|----------------|
+| Engine | `InferenceEngine` | Ollama, vLLM, SGLang, llama.cpp, Cloud |
+| Memory | `MemoryBackend` | SQLite, FAISS, ColBERT, BM25, Hybrid |
+| Agents | `BaseAgent` | Simple, Orchestrator, NativeReAct, NativeOpenHands, RLM, OpenHands, ClaudeCode, Operative, MonitorOperative |
+| Learning | `RouterPolicy` | Heuristic, TraceDriven, GRPO |
+| Tools | `BaseTool` | Calculator, Think, Retrieval, LLM, FileRead |
+
+Adding a new implementation requires two things: implement the ABC and register it. The rest of the system discovers and uses it automatically.
+
+---
+
+## 2. Registry-Driven
+
+All extensible components use the **`@XRegistry.register("name")` decorator** pattern. Registration happens at import time, and no factory function or configuration file needs modification.
+
+```python
+from openjarvis.core.registry import EngineRegistry
+from openjarvis.engine._stubs import InferenceEngine
+
+@EngineRegistry.register("my-engine")
+class MyEngine(InferenceEngine):
+    engine_id = "my-engine"
+
+    def generate(self, messages, *, model, **kwargs):
+        ...
+    def stream(self, messages, *, model, **kwargs):
+        ...
+    def list_models(self):
+        ...
+    def health(self):
+        ...
+```
+
+The `RegistryBase[T]` generic base class provides:
+
+- **Class-specific isolation** -- Each typed subclass (`EngineRegistry`, `MemoryRegistry`, etc.) has its own entry storage, so registrations never leak between registries
+- **Duplicate detection** -- Registering the same key twice raises `ValueError`
+- **Runtime instantiation** -- `Registry.create(key, *args)` looks up and instantiates in one step
+- **Introspection** -- `keys()`, `items()`, `contains()` for discovering available components
+
+!!! info "Why decorators instead of configuration files?"
+    The decorator pattern means that adding a new component is a single-file change.
+    There is no central registry file to edit, no YAML to update, and no factory to modify.
+    The component self-registers simply by being imported.
+
+---
+
+## 3. Offline-First
+
+OpenJarvis is designed to work **entirely without network access**. All core functionality -- inference, memory, agents, tools, telemetry -- operates locally. Cloud APIs are optional extensions, never requirements.
+
+| Feature | Offline Behavior |
+|---------|-----------------|
+| Inference | Ollama, vLLM, SGLang, llama.cpp all run locally |
+| Memory | SQLite/FTS5 uses built-in Python `sqlite3` module |
+| Embeddings | `sentence-transformers` models run locally |
+| Telemetry | SQLite-based, fully local |
+| Traces | SQLite-based, fully local |
+| Tools | Calculator, Think, FileRead all local |
+| Configuration | TOML file on disk |
+
+Cloud engines (OpenAI, Anthropic, Google) are available through the optional `cloud` backend, but they are:
+
+- Only registered if the corresponding SDK packages are installed
+- Only activated if API keys are set as environment variables
+- Never required for any core functionality
+
+```python
+# This works without any network connection
+from openjarvis import Jarvis
+
+j = Jarvis(engine_key="ollama")  # Local Ollama server
+response = j.ask("Hello")
+```
+
+---
+
+## 4. Hardware-Aware
+
+OpenJarvis **auto-detects system hardware** at startup and recommends the optimal inference engine. The `detect_hardware()` function probes:
+
+| Hardware | Detection Method |
+|----------|-----------------|
+| NVIDIA GPUs | `nvidia-smi` (name, VRAM, count) |
+| AMD GPUs | `rocm-smi` (product name) |
+| Apple Silicon | `system_profiler SPDisplaysDataType` |
+| CPU | `/proc/cpuinfo` or `sysctl` (brand string) |
+| RAM | `/proc/meminfo` or `sysctl hw.memsize` |
+
+The `recommend_engine()` function maps hardware to engines:
+
+| Hardware | Recommended Engine |
+|----------|-------------------|
+| No GPU | `llamacpp` (CPU-optimized) |
+| Apple Silicon | `ollama` (Metal acceleration) |
+| NVIDIA datacenter (A100, H100, etc.) | `vllm` (high throughput) |
+| NVIDIA consumer | `ollama` (easy setup) |
+| AMD GPU | `vllm` (ROCm support) |
+
+This recommendation is written to `config.toml` during `jarvis init` and used as the default engine:
+
+```bash
+jarvis init --force
+# Detects hardware, writes ~/.openjarvis/config.toml with:
+# [engine]
+# default = "vllm"  # (for A100)
+```
+
+---
+
+## 5. Telemetry-Native
+
+Every inference call automatically records timing, token counts, energy usage, and cost to a local SQLite database. Telemetry is a **first-class concern**, not an afterthought.
+
+```python
+@dataclass(slots=True)
+class TelemetryRecord:
+    timestamp: float
+    model_id: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    latency_seconds: float
+    ttft: float              # Time to first token
+    cost_usd: float
+    energy_joules: float
+    power_watts: float
+    engine: str
+    agent: str
+```
+
+The `instrumented_generate()` wrapper handles all telemetry transparently:
+
+1. Records start time
+2. Calls the engine's `generate()` method
+3. Records end time and extracts token counts
+4. Publishes a `TELEMETRY_RECORD` event on the EventBus
+5. The `TelemetryStore` (subscribed to the bus) persists the record
+
+The `TelemetryAggregator` provides read-only queries over stored records:
+
+```bash
+jarvis telemetry stats          # Aggregated statistics
+jarvis telemetry export --json  # Export all records
+```
+
+!!! note "Telemetry is best-effort"
+    If telemetry setup fails (e.g., database is locked), the system continues
+    without telemetry rather than raising an error. Telemetry never blocks
+    the query flow.
+
+---
+
+## 6. Python-First
+
+OpenJarvis provides a **clean Python API** through the `Jarvis` class. There is no framework lock-in -- the SDK is a standard Python package with dataclass-based types and no required web framework.
+
+```python
+from openjarvis import Jarvis
+
+j = Jarvis()
+response = j.ask("Hello")
+
+# Full control
+result = j.ask_full(
+    "Explain quantum computing",
+    model="qwen3:8b",
+    agent="orchestrator",
+    tools=["think"],
+    temperature=0.5,
+    max_tokens=2048,
+)
+
+# Memory operations
+j.memory.index("./docs/")
+results = j.memory.search("quantum computing")
+
+# Resource cleanup
+j.close()
+```
+
+Design choices that support this principle:
+
+- **Dataclasses** for all structured types (`Message`, `ModelSpec`, `Trace`, etc.)
+- **Type hints** throughout the codebase
+- **No magic** -- explicit initialization, clear method signatures
+- **Optional dependencies** via extras (`openjarvis[server]`, `openjarvis[memory-colbert]`, etc.)
+- **Standard packaging** with `hatchling` build backend and `uv` package manager
+
+---
+
+## 7. OpenAI-Compatible
+
+The API server (`jarvis serve`) implements the **OpenAI chat completions API format**, making OpenJarvis a drop-in replacement for OpenAI in existing applications.
+
+Supported endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completions (streaming and non-streaming) |
+| `/v1/models` | GET | List available models |
+| `/health` | GET | Health check |
+
+Request and response formats match the OpenAI API specification:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3:8b",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "temperature": 0.7,
+    "max_tokens": 1024,
+    "stream": false
+  }'
+```
+
+Streaming responses use Server-Sent Events (SSE) with `data: [DONE]` termination, matching the OpenAI streaming protocol.
+
+Any OpenAI client library can connect to OpenJarvis:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+response = client.chat.completions.create(
+    model="qwen3:8b",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+---
+
+## 8. Standalone
+
+OpenJarvis requires **no external services** for core functionality. Everything needed to run the system is included or uses standard system libraries.
+
+| Component | Dependency |
+|-----------|-----------|
+| Configuration | TOML file, built-in `tomllib` (Python 3.11+) or `tomli` |
+| Memory (default) | Built-in `sqlite3` module |
+| Telemetry | Built-in `sqlite3` module |
+| Traces | Built-in `sqlite3` module |
+| HTTP client | `httpx` (lightweight, pure Python) |
+| CLI | `click` + `rich` |
+| Event bus | Built-in `threading` module |
+
+The only external requirement is a running inference engine (Ollama, vLLM, etc.), which is the model server itself -- not a dependency of OpenJarvis.
+
+Optional features that require additional packages:
+
+| Feature | Extra | Packages |
+|---------|-------|----------|
+| FAISS memory | `openjarvis[memory-faiss]` | `faiss-cpu`, `sentence-transformers` |
+| ColBERT memory | `openjarvis[memory-colbert]` | `colbert-ai`, `torch` |
+| BM25 memory | `openjarvis[memory-bm25]` | `rank-bm25` |
+| API server | `openjarvis[server]` | `fastapi`, `uvicorn` |
+| Cloud inference | `openjarvis[inference-cloud]` | `openai`, `anthropic`, `google-genai` |
+| vLLM engine | `openjarvis[inference-vllm]` | `vllm` |
+| PDF ingestion | `openjarvis[memory-pdf]` | `pdfplumber` |
+| WhatsApp Baileys | `openjarvis[channel-whatsapp-baileys]` | Node.js 22+ |
+
+This design ensures that a minimal installation (`uv sync`) gives you a fully functional system with SQLite memory, local inference, and the complete CLI -- no Docker, no external databases, no cloud accounts required.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\engine.md
+
+`$(engine.md.Extension.TrimStart('.'))
+# Inference Engine Primitive
+
+The Engine primitive provides the **inference runtime** -- the layer that connects OpenJarvis to language model servers. All backends implement a uniform interface, making it straightforward to swap between local and cloud inference without changing application code.
+
+---
+
+## InferenceEngine ABC
+
+Every engine backend extends the `InferenceEngine` abstract base class:
+
+```python
+class InferenceEngine(ABC):
+    engine_id: str
+
+    @abstractmethod
+    def generate(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Synchronous completion -- returns a dict with 'content' and 'usage'."""
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        """Yield token strings as they are generated."""
+
+    @abstractmethod
+    def list_models(self) -> List[str]:
+        """Return identifiers of models available on this engine."""
+
+    @abstractmethod
+    def health(self) -> bool:
+        """Return True when the engine is reachable and healthy."""
+
+    def prepare(self, model: str) -> None:
+        """Optional warm-up hook called before the first request."""
+```
+
+### Return Format
+
+The `generate()` method returns a dictionary with the following structure:
+
+```python
+{
+    "content": "The model's response text",
+    "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 128,
+        "total_tokens": 170,
+    },
+    "model": "qwen3:8b",
+    "finish_reason": "stop",
+    "tool_calls": [...]  # Optional, present if model requested tool calls
+}
+```
+
+When the model requests tool calls, they are extracted and passed through in OpenAI format:
+
+```python
+{
+    "tool_calls": [
+        {
+            "id": "call_abc123",
+            "name": "calculator",
+            "arguments": "{\"expression\": \"2 + 2\"}"
+        }
+    ]
+}
+```
+
+### Multi-Provider Tool Call Extraction
+
+Engine backends normalize tool calls from different providers into the standard flat format used by agents:
+
+| Provider | Source Format | Extraction Logic |
+|----------|-------------|-----------------|
+| **OpenAI** | `choices[0].message.tool_calls[].function.{name, arguments}` | Direct extraction, add `id` from `tool_calls[].id` |
+| **Anthropic** | `content[]` blocks with `type: "tool_use"` | Filter `tool_use` blocks, map `input` dict to JSON `arguments` |
+| **Google** | `candidates[0].content.parts[]` with `function_call` | Extract `function_call.name` and `function_call.args`, serialize args to JSON |
+| **LiteLLM** | Flat `{id, name, arguments}` dicts (proxy pre-normalizes) | Pass through directly |
+| **Ollama** | `message.tool_calls[].function.{name, arguments}` | Extract from Ollama native format, serialize arguments dict to JSON |
+
+All providers produce the same output format consumed by agents:
+
+```python
+{
+    "tool_calls": [
+        {"id": "call_abc", "name": "calculator", "arguments": "{\"expression\": \"2+2\"}"}
+    ]
+}
+```
+
+---
+
+## Backend Comparison
+
+| Backend | Registry Key | Protocol | Default Port | GPU Required | Best For |
+|---------|-------------|----------|-------------|-------------|----------|
+| **Ollama** | `ollama` | Native HTTP API | 11434 | No (GPU optional) | Getting started, consumer GPUs, Apple Silicon |
+| **vLLM** | `vllm` | OpenAI-compatible | 8000 | NVIDIA recommended | Datacenter GPUs (A100, H100), high throughput |
+| **SGLang** | `sglang` | OpenAI-compatible | 30000 | NVIDIA recommended | Structured generation, speculative decoding |
+| **llama.cpp** | `llamacpp` | OpenAI-compatible | 8080 | No (CPU-optimized) | CPU-only systems, GGUF models, edge devices |
+| **MLX** | `mlx` | OpenAI-compatible | 8080 | Apple Silicon | Apple Silicon native inference via MLX |
+| **LM Studio** | `lmstudio` | OpenAI-compatible | 1234 | No (GPU optional) | Desktop GUI, easy model management |
+| **Exo** | `exo` | OpenAI-compatible | 52415 | No (distributed) | Distributed inference across heterogeneous devices |
+| **Nexa** | `nexa` | OpenAI-compatible | 18181 | No (CPU/GPU) | On-device inference with GGUF models |
+| **Lemonade** | `lemonade` | OpenAI-compatible | 8000 | AMD GPU/NPU | AMD consumer GPUs (RDNA), Ryzen AI NPUs |
+| **Uzu** | `uzu` | OpenAI-compatible | 8000 | Varies | Uzu inference runtime |
+| **Apple FM** | `apple_fm` | OpenAI-compatible | 8079 | Apple Silicon | Apple Foundation Model on-device inference |
+| **LiteLLM** | `litellm` | OpenAI-compatible | — | No | Unified proxy to 100+ LLM providers |
+| **Cloud** | `cloud` | Provider SDKs | — | No | OpenAI, Anthropic, Google API access |
+
+### Ollama
+
+The Ollama backend communicates via Ollama's native HTTP API at `/api/chat` and `/api/tags`. It is the default engine on Apple Silicon and consumer NVIDIA GPUs.
+
+- **Default host:** `http://localhost:11434`
+- **Health check:** `GET /api/tags`
+- **Model listing:** `GET /api/tags` (extracts model names)
+- **Tool support:** Passes `tools` in the request payload and extracts `tool_calls` from responses
+
+### vLLM
+
+The vLLM backend uses the OpenAI-compatible `/v1/chat/completions` API. It is recommended for datacenter GPUs (NVIDIA A100, H100, L40, A10, A30 and AMD MI300, MI325, MI350, MI355).
+
+- **Default host:** `http://localhost:8000`
+- **Health check:** `GET /v1/models`
+- **Tool fallback:** If the server returns HTTP 400 when tools are included, the engine automatically retries without tools
+
+### SGLang
+
+The SGLang backend also uses the OpenAI-compatible API. It shares the same `_OpenAICompatibleEngine` base class as vLLM and llama.cpp.
+
+- **Default host:** `http://localhost:30000`
+- **Health check:** `GET /v1/models`
+
+### llama.cpp
+
+The llama.cpp backend connects to a `llama-server` instance via the OpenAI-compatible API. It is recommended for CPU-only systems and GGUF-quantized models.
+
+- **Default host:** `http://localhost:8080`
+- **Health check:** `GET /v1/models`
+
+### Cloud
+
+The Cloud backend provides access to OpenAI, Anthropic, and Google models via their respective Python SDKs. It automatically detects the provider based on the model name:
+
+- Models containing `"claude"` route to the **Anthropic** client
+- Models containing `"gemini"` route to the **Google** client
+- All other models route to the **OpenAI** client
+
+!!! info "API Keys"
+    Cloud models require API keys set as environment variables:
+    `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+    The cloud engine is only registered if the corresponding SDK packages are installed.
+
+### MLX
+
+The MLX backend serves models via the MLX framework on Apple Silicon. It uses the OpenAI-compatible `/v1/chat/completions` API.
+
+- **Default host:** `http://localhost:8080`
+- **Health check:** `GET /v1/models`
+- **Best for:** Apple Silicon Macs (M1/M2/M3/M4) running MLX-format or GGUF models natively
+
+### LM Studio
+
+The LM Studio backend connects to the LM Studio desktop application's built-in server, which exposes an OpenAI-compatible API.
+
+- **Default host:** `http://localhost:1234`
+- **Health check:** `GET /v1/models`
+- **Best for:** Users who prefer a GUI for model management and want a zero-configuration local server
+
+### Exo
+
+The Exo backend connects to the Exo distributed inference runtime, which partitions model layers across multiple heterogeneous devices (e.g., a Mac and a Linux box). Exo supports Apple Silicon, NVIDIA, and AMD GPUs.
+
+- **Default host:** `http://localhost:52415`
+- **Health check:** `GET /v1/models`
+- **Install:** `pip install exo` or from source at [github.com/exo-explore/exo](https://github.com/exo-explore/exo)
+- **Best for:** Running models too large for a single device by distributing across multiple Apple Silicon or heterogeneous machines
+
+### Nexa
+
+The Nexa backend connects to the Nexa SDK on-device inference server via a FastAPI shim (`nexa_shim.py`). It wraps `nexaai.LLM` as an OpenAI-compatible API on port 18181.
+
+- **Default host:** `http://localhost:18181`
+- **Health check:** `GET /v1/models`
+- **Install:** `pip install nexaai`
+- **Best for:** On-device inference with GGUF models on Apple Silicon or CPU
+
+### Lemonade
+
+The Lemonade backend connects to the [Lemonade](https://lemonade-server.ai/) inference server, which is optimized for AMD consumer GPUs (RDNA architecture) and Ryzen AI Neural Processing Units (NPUs). It uses the OpenAI-compatible `/v1/chat/completions` API.
+
+- **Default host:** `http://localhost:8000`
+- **Health check:** `GET /v1/models`
+- **Install:** Visit [lemonade-server.ai](https://lemonade-server.ai/) for platform-specific installation instructions
+- **Best for:** Ryzen AI GPUs and NPUs, and AMD-based desktop and laptop systems
+
+### Uzu
+
+The Uzu backend connects to the Uzu inference runtime. Unlike other OpenAI-compatible engines, Uzu serves its API at the root path (no `/v1` prefix).
+
+- **Default host:** `http://localhost:8000`
+- **API prefix:** (none — endpoints are `/chat/completions`, `/models`)
+- **Health check:** `GET /models`
+- **Best for:** Uzu-optimized inference workloads
+
+### Apple FM
+
+The Apple FM backend connects to Apple's Foundation Model SDK via a FastAPI shim (`apple_fm_shim.py`). It wraps `python-apple-fm-sdk` as an OpenAI-compatible API. Requires macOS 15+ with Apple Silicon.
+
+!!! note "Token counts"
+    The Apple FM SDK does not expose token counts. The shim returns 0 for all token counts. Benchmark throughput and energy-per-token metrics will reflect this limitation.
+
+- **Default host:** `http://localhost:8079`
+- **Health check:** `GET /v1/models`
+- **Install:** `pip install python-apple-fm-sdk`
+- **Best for:** Running Apple Foundation Models natively on Apple Silicon hardware
+
+### LiteLLM
+
+The LiteLLM backend connects to a LiteLLM proxy server, which provides a unified OpenAI-compatible interface to 100+ LLM providers (OpenAI, Anthropic, Google, Azure, AWS Bedrock, Groq, Together, and more).
+
+- **Registry key:** `litellm`
+- **Best for:** Teams that need a single endpoint to route across multiple cloud providers with unified logging and cost tracking
+
+---
+
+## Hardware Auto-Detection
+
+OpenJarvis automatically detects system hardware to recommend the best engine. Detection runs at config load time via `detect_hardware()`:
+
+| Detection | Method | Information Extracted |
+|-----------|--------|---------------------|
+| NVIDIA GPU | `nvidia-smi` | GPU name, VRAM (GB), count |
+| AMD GPU | `rocm-smi` | GPU name |
+| Apple Silicon | `system_profiler SPDisplaysDataType` | Chipset model name |
+| CPU | `/proc/cpuinfo` or `sysctl` | Brand string |
+| RAM | `/proc/meminfo` or `sysctl hw.memsize` | Total GB |
+
+### Engine Recommendation Logic
+
+The `recommend_engine()` function maps hardware to the best engine:
+
+```mermaid
+graph TD
+    A["detect_hardware()"] --> B{"GPU detected?"}
+    B -->|No| C["llamacpp"]
+    B -->|Yes| D{"GPU vendor?"}
+    D -->|Apple| E["ollama"]
+    D -->|NVIDIA| F{"Datacenter card?<br/>(A100, H100, H200,<br/>L40, A10, A30)"}
+    F -->|Yes| G["vllm"]
+    F -->|No| H["ollama"]
+    D -->|AMD| I{"Datacenter card?<br/>(MI300, MI325,<br/>MI350, MI355)"}
+    I -->|Yes| K["vllm"]
+    I -->|No| L["lemonade"]
+    D -->|Other| J["llamacpp"]
+```
+
+---
+
+## Engine Discovery
+
+The `_discovery.py` module provides three functions for finding and instantiating engines at runtime.
+
+### `get_engine(config, engine_key=None)`
+
+Returns a `(key, engine_instance)` tuple for the requested engine, or `None` if unavailable:
+
+1. If `engine_key` is specified, try to instantiate and health-check that specific engine
+2. Otherwise, try the default engine from config
+3. If the default is unhealthy, fall back to any healthy engine via `discover_engines()`
+
+### `discover_engines(config)`
+
+Probes all registered engines for health and returns a sorted list of healthy `(key, engine)` pairs. The config default engine is sorted first.
+
+```python
+from openjarvis.engine import discover_engines
+from openjarvis.core.config import load_config
+
+config = load_config()
+healthy = discover_engines(config)
+# [("ollama", OllamaEngine(...)), ("vllm", VLLMEngine(...))]
+```
+
+### `discover_models(engines)`
+
+Calls `list_models()` on each engine and returns a dictionary mapping engine keys to model ID lists:
+
+```python
+from openjarvis.engine import discover_engines, discover_models
+
+engines = discover_engines(config)
+models = discover_models(engines)
+# {"ollama": ["qwen3:8b", "llama3.2:3b"], "vllm": ["mistral:7b"]}
+```
+
+---
+
+## OpenAI Compatibility Layer
+
+The `_OpenAICompatibleEngine` base class provides a shared implementation for engines that serve the standard `/v1/chat/completions` endpoint. vLLM, SGLang, llama.cpp, Lemonade, and others all extend this base class with minimal overrides -- typically just setting `engine_id` and `_default_host`.
+
+```python
+class _OpenAICompatibleEngine(InferenceEngine):
+    engine_id: str = ""
+    _default_host: str = "http://localhost:8000"
+
+    def __init__(self, host: str | None = None, *, timeout: float = 120.0):
+        self._host = (host or self._default_host).rstrip("/")
+        self._client = httpx.Client(base_url=self._host, timeout=timeout)
+```
+
+Key behaviors:
+
+- **Synchronous generation:** `POST /v1/chat/completions` with `stream=False`
+- **Streaming:** `POST /v1/chat/completions` with `stream=True`, parsing SSE `data:` lines
+- **Model listing:** `GET /v1/models`, extracting `data[].id`
+- **Health check:** `GET /v1/models` with a 2-second timeout
+- **Tool call fallback:** On HTTP 400 with tools in the payload, retries without tools (handles engines that do not support function calling)
+
+---
+
+## Configuration
+
+Engine hosts and defaults are configured in `~/.openjarvis/config.toml` using **nested per-engine sub-sections**:
+
+```toml
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://localhost:11434"
+
+[engine.vllm]
+host = "http://localhost:8000"
+
+[engine.sglang]
+host = "http://localhost:30000"
+
+# [engine.llamacpp]
+# host = "http://localhost:8080"
+# binary_path = ""
+
+# [engine.lemonade]
+# host = "http://localhost:8000"
+```
+
+The `EngineConfig` dataclass and its per-engine sub-dataclasses map these settings:
+
+| Config Class | Field | Default | Description |
+|---|---|---|---|
+| `EngineConfig` | `default` | `"ollama"` (hardware-dependent) | Preferred engine backend |
+| `OllamaEngineConfig` | `host` | `http://localhost:11434` | Ollama server URL |
+| `VLLMEngineConfig` | `host` | `http://localhost:8000` | vLLM server URL |
+| `SGLangEngineConfig` | `host` | `http://localhost:30000` | SGLang server URL |
+| `LlamaCppEngineConfig` | `host` | `http://localhost:8080` | llama.cpp server URL |
+| `LlamaCppEngineConfig` | `binary_path` | `""` | Path to llama.cpp binary (for managed mode) |
+| `LemonadeEngineConfig` | `host` | `http://localhost:8000` | Lemonade server URL |
+
+!!! note "Backward compatibility"
+    The old flat field names `ollama_host`, `vllm_host`, `llamacpp_host`, `llamacpp_path`, `sglang_host`, and `lemonade_host` under `[engine]` are still accepted as backward-compatible properties on `EngineConfig`. New configurations should use the nested sub-section format.
+
+---
+
+## Utility Functions
+
+### `messages_to_dicts()`
+
+Converts a sequence of `Message` objects to OpenAI-format dictionaries, handling tool calls and tool call IDs:
+
+```python
+from openjarvis.engine._base import messages_to_dicts
+from openjarvis.core.types import Message, Role
+
+messages = [Message(role=Role.USER, content="Hello")]
+dicts = messages_to_dicts(messages)
+# [{"role": "user", "content": "Hello"}]
+```
+
+### `EngineConnectionError`
+
+A custom exception raised when an engine is unreachable. All engine backends catch `httpx.ConnectError` and `httpx.TimeoutException` and re-raise as `EngineConnectionError`:
+
+```python
+from openjarvis.engine import EngineConnectionError
+
+try:
+    result = engine.generate(messages, model="qwen3:8b")
+except EngineConnectionError as exc:
+    print(f"Engine unavailable: {exc}")
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\intelligence.md
+
+`$(intelligence.md.Extension.TrimStart('.'))
+# Intelligence Primitive
+
+The Intelligence primitive represents **the model** — its identity, weights, quantization format, fallback chain, and the catalog of well-known models with detailed metadata. It no longer contains routing logic; query analysis and model selection have moved to the [Learning primitive](learning.md).
+
+---
+
+## Purpose
+
+The Intelligence primitive answers a single question: *what is the model?* It maintains a catalog of known models with metadata (parameter count, context length, VRAM requirements, supported engines) and provides helpers for registering built-in models and merging models discovered from running engines at runtime.
+
+The primitive provides three key capabilities:
+
+1. **Model catalog** -- a registry of well-known models with metadata (parameter count, context length, VRAM requirements, supported engines)
+2. **Auto-discovery** -- merging models discovered from running engines into the catalog
+3. **Model configuration** -- `IntelligenceConfig` captures the local model's identity, weight paths, quantization, and preferred engine
+
+!!! info "Routing has moved"
+    Query analysis (`build_routing_context`) and model selection (`HeuristicRouter`, `RouterPolicy` ABC) now live in the [Learning primitive](learning.md). Backward-compatible re-exports remain in `intelligence/_stubs.py` and `intelligence/router.py` so existing code continues to work.
+
+---
+
+## ModelSpec
+
+Every model in the system is described by a `ModelSpec` dataclass, defined in `core/types.py`:
+
+```python
+@dataclass(slots=True)
+class ModelSpec:
+    model_id: str                              # Unique identifier (e.g., "qwen3:8b")
+    name: str                                  # Human-readable name
+    parameter_count_b: float                   # Total parameters in billions
+    context_length: int                        # Maximum context window (tokens)
+    active_parameter_count_b: Optional[float]  # MoE active params (None for dense)
+    quantization: Quantization                 # Quantization format (none, fp8, int4, etc.)
+    min_vram_gb: float                         # Minimum VRAM required
+    supported_engines: Sequence[str]           # Which engines can run this model
+    provider: str                              # Model provider (e.g., "alibaba", "meta")
+    requires_api_key: bool                     # Whether cloud API key is needed
+    metadata: Dict[str, Any]                   # Additional metadata (pricing, architecture)
+```
+
+Models are registered in the `ModelRegistry`:
+
+```python
+from openjarvis.core.registry import ModelRegistry
+
+# Register a model
+ModelRegistry.register_value("qwen3:8b", ModelSpec(
+    model_id="qwen3:8b",
+    name="Qwen3 8B",
+    parameter_count_b=8.2,
+    context_length=32768,
+    supported_engines=("vllm", "ollama", "llamacpp", "sglang"),
+    provider="alibaba",
+))
+```
+
+---
+
+## Model Catalog
+
+The built-in model catalog is defined in `intelligence/model_catalog.py` as the `BUILTIN_MODELS` list. It includes models across three categories:
+
+### Local Models -- Dense
+
+| Model ID | Name | Parameters | Context | Supported Engines |
+|----------|------|-----------|---------|-------------------|
+| `qwen3:8b` | Qwen3 8B | 8.2B | 32K | vLLM, Ollama, llama.cpp, SGLang |
+| `qwen3:32b` | Qwen3 32B | 32B | 32K | Ollama, vLLM |
+| `llama3.3:70b` | Llama 3.3 70B | 70B | 128K | Ollama, vLLM |
+| `llama3.2:3b` | Llama 3.2 3B | 3B | 128K | Ollama, vLLM, llama.cpp |
+| `deepseek-coder-v2:16b` | DeepSeek Coder V2 16B | 16B | 128K | Ollama, vLLM |
+| `mistral:7b` | Mistral 7B | 7B | 32K | Ollama, vLLM, llama.cpp |
+
+### Local Models -- Mixture of Experts (MoE)
+
+| Model ID | Name | Total / Active Params | Context | Min VRAM |
+|----------|------|----------------------|---------|----------|
+| `gpt-oss:120b` | GPT-OSS 120B | 117B / 5.1B | 128K | 12 GB |
+| `glm-4.7-flash` | GLM 4.7 Flash | 30B / 3B | 128K | 8 GB |
+| `trinity-mini` | Trinity Mini | 26B / 3B | 128K | 8 GB |
+
+### Cloud Models
+
+| Model ID | Provider | Context | Pricing (input/output per 1M tokens) |
+|----------|----------|---------|--------------------------------------|
+| `gpt-4o` | OpenAI | 128K | $2.50 / $10.00 |
+| `gpt-4o-mini` | OpenAI | 128K | $0.15 / $0.60 |
+| `gpt-5-mini` | OpenAI | 400K | $0.25 / $2.00 |
+| `claude-sonnet-4-20250514` | Anthropic | 200K | $3.00 / $15.00 |
+| `claude-opus-4-20250514` | Anthropic | 200K | $15.00 / $75.00 |
+| `claude-opus-4-6` | Anthropic | 200K | $5.00 / $25.00 |
+| `gemini-2.5-pro` | Google | 1M | $1.25 / $10.00 |
+| `gemini-2.5-flash` | Google | 1M | $0.30 / $2.50 |
+
+### Registering Built-in Models
+
+The `register_builtin_models()` function populates the `ModelRegistry` with all built-in models. It skips models that are already registered, making it safe to call multiple times:
+
+```python
+from openjarvis.intelligence import register_builtin_models
+
+register_builtin_models()
+# All BUILTIN_MODELS are now in ModelRegistry
+```
+
+---
+
+## Auto-Discovery: Merging Runtime Models
+
+When engines are discovered at runtime, they report models that may not be in the built-in catalog. The `merge_discovered_models()` function creates minimal `ModelSpec` entries for these:
+
+```python
+from openjarvis.intelligence import merge_discovered_models
+
+# Models reported by Ollama that aren't in the catalog
+merge_discovered_models("ollama", ["phi3:3.8b", "codellama:7b"])
+```
+
+For each model ID not already in the registry, a `ModelSpec` is created with the model ID as both the `model_id` and `name`, with zero-value defaults for unknown fields. This ensures the routing system can still select from all available models, even ones it has no metadata for.
+
+---
+
+## IntelligenceConfig
+
+The `IntelligenceConfig` dataclass (in `core/config.py`) captures the full identity of the model the system is configured to use, as well as the default sampling parameters for generation:
+
+```python
+@dataclass(slots=True)
+class IntelligenceConfig:
+    """The model — identity, paths, quantization, fallback chain, and generation defaults."""
+
+    default_model: str = ""       # Primary model key (e.g., "qwen3:8b")
+    fallback_model: str = ""      # Fallback when default is unavailable
+    model_path: str = ""          # Local weights (HF repo, GGUF file, etc.)
+    checkpoint_path: str = ""     # Checkpoint/adapter path (e.g., LoRA)
+    quantization: str = "none"    # none, fp8, int8, int4, gguf_q4, gguf_q8
+    preferred_engine: str = ""    # Override engine for this model (e.g., "vllm")
+    provider: str = ""            # local, openai, anthropic, google
+    # Generation defaults (overridable per-call)
+    temperature: float = 0.7
+    max_tokens: int = 1024
+    top_p: float = 0.9
+    top_k: int = 40
+    repetition_penalty: float = 1.0
+    stop_sequences: str = ""      # Comma-separated stop strings
+```
+
+### Model Identity Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_model` | `str` | `""` | Primary model registry key. Resolved at startup; overrides any engine default. |
+| `fallback_model` | `str` | `""` | Used when the default model is not available on any running engine. |
+| `model_path` | `str` | `""` | Path or HuggingFace repo ID for local weights (e.g., `"./models/qwen3-8b.gguf"` or `"Qwen/Qwen3-8B"`). |
+| `checkpoint_path` | `str` | `""` | Path to a fine-tuned checkpoint or LoRA adapter directory. |
+| `quantization` | `str` | `"none"` | Quantization format. Accepted values: `none`, `fp8`, `int8`, `int4`, `gguf_q4`, `gguf_q8`. |
+| `preferred_engine` | `str` | `""` | When set, `SystemBuilder`, `sdk.py`, and `cli/ask.py` use this engine key instead of `config.engine.default`. |
+| `provider` | `str` | `""` | Model provider hint: `local`, `openai`, `anthropic`, `google`. Used by the Cloud engine backend to route API calls. |
+
+### Generation Default Fields
+
+These fields set the default sampling parameters for every inference call. Individual calls can override them by passing keyword arguments to `engine.generate()`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `temperature` | `float` | `0.7` | Sampling temperature. Lower values produce more deterministic output; higher values increase diversity. |
+| `max_tokens` | `int` | `1024` | Maximum number of tokens to generate per call. |
+| `top_p` | `float` | `0.9` | Nucleus sampling probability mass. At each step, only tokens comprising the top-p probability mass are considered. |
+| `top_k` | `int` | `40` | Top-k sampling: only consider the top-k most likely tokens at each step. |
+| `repetition_penalty` | `float` | `1.0` | Penalize repeated token sequences. Values greater than 1.0 reduce repetition. |
+| `stop_sequences` | `str` | `""` | Comma-separated stop strings. Generation halts when any stop string appears in the output. |
+
+!!! note "Moved from Agent"
+    Generation parameters (`temperature`, `max_tokens`) previously lived under `[agent]` in the config file. They now live under `[intelligence]`. Old configs with these fields under `[agent]` are automatically migrated at load time. See the [configuration migration guide](../getting-started/configuration.md#migration-guide) for details.
+
+### TOML Configuration
+
+```toml
+[intelligence]
+default_model = "qwen3:8b"
+fallback_model = "llama3.2:3b"
+temperature = 0.7
+max_tokens = 1024
+# top_p = 0.9
+# top_k = 40
+# repetition_penalty = 1.0
+# stop_sequences = ""
+
+# Local weight overrides (optional)
+# model_path = "./models/qwen3-8b-instruct.gguf"
+# checkpoint_path = "./checkpoints/my-lora"
+# quantization = "gguf_q4"
+
+# Engine selection for this model (takes priority over [engine].default)
+# preferred_engine = "vllm"
+
+# Provider for cloud models
+# provider = "openai"
+```
+
+### Engine Selection Priority
+
+When resolving which engine to use, `SystemBuilder`, `sdk.py`, and `cli/ask.py` check `config.intelligence.preferred_engine` before `config.engine.default`:
+
+```
+1. Explicit --engine CLI flag or engine_key= SDK parameter
+2. config.intelligence.preferred_engine  ← new field
+3. config.engine.default
+4. First healthy engine discovered at runtime
+```
+
+This lets you pin a specific model to a specific engine without changing the global engine default. For example, a GGUF quantized model can be pinned to `llamacpp` while the global default remains `ollama`:
+
+```toml
+[engine]
+default = "ollama"
+
+[intelligence]
+default_model = "llama3.2:3b"
+model_path = "./models/llama-3.2-3b.Q4_K_M.gguf"
+quantization = "gguf_q4"
+preferred_engine = "llamacpp"
+```
+
+---
+
+## Public API
+
+`intelligence/__init__.py` exports exactly three names:
+
+```python
+from openjarvis.intelligence import (
+    BUILTIN_MODELS,           # List[ModelSpec] — the full built-in catalog
+    merge_discovered_models,  # (engine_key, model_ids) -> None
+    register_builtin_models,  # () -> None
+)
+```
+
+### Backward-Compatibility Shims
+
+The following names are still importable from `openjarvis.intelligence` via shim modules, but their canonical locations have moved:
+
+| Name | Old location | Canonical location |
+|------|-------------|-------------------|
+| `RouterPolicy` | `intelligence/_stubs.py` | `learning/_stubs.py` |
+| `QueryAnalyzer` | `intelligence/_stubs.py` | `learning/_stubs.py` |
+| `HeuristicRouter` | `intelligence/router.py` | `learning/router.py` |
+| `build_routing_context` | `intelligence/router.py` | `learning/router.py` |
+| `DefaultQueryAnalyzer` | `intelligence/router.py` | `learning/router.py` |
+
+New code should import from the canonical `learning.*` locations. The shims in `intelligence/_stubs.py` and `intelligence/router.py` are retained for backward compatibility only.
+
+---
+
+## Integration with Learning
+
+The Learning primitive consumes the model catalog to make routing decisions. The `HeuristicRouter` and `TraceDrivenPolicy` both read `ModelRegistry` to compare model sizes when selecting between candidates. See the [Learning & Traces](learning.md) documentation for full details on routing policies, the `RouterPolicy` ABC, and the trace-driven feedback loop.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\learning.md
+
+`$(learning.md.Extension.TrimStart('.'))
+# Learning & Traces
+
+The Learning system is a **cross-cutting concern** that connects all five primitives through trace-driven feedback. It determines which model handles each query (router policies), records the full interaction as a trace, analyzes outcomes, and updates policies based on what worked.
+
+---
+
+## LearningPolicy ABC Taxonomy
+
+The learning system defines a hierarchy of learning policy ABCs. The base `LearningPolicy` ABC is specialized into two sub-ABCs corresponding to the two learnable concerns:
+
+| ABC | Concern | Description |
+|-----|---------|-------------|
+| `IntelligenceLearningPolicy` | Model routing | Determines which model handles a query (replaces the legacy `RouterPolicy`) |
+| `AgentLearningPolicy` | Agent behavior | Advises on agent strategy (e.g., ICL examples, tool selection, turn limits) |
+
+All learning policies are registered in the `LearningRegistry` (in `core/registry.py`).
+
+## RouterPolicy ABC
+
+The `RouterPolicy` ABC and the `QueryAnalyzer` ABC are defined in `learning/_stubs.py`:
+
+```python
+# learning/_stubs.py
+class RouterPolicy(ABC):
+    @abstractmethod
+    def select_model(self, context: RoutingContext) -> str:
+        """Return the model registry key best suited for *context*."""
+
+class QueryAnalyzer(ABC):
+    @abstractmethod
+    def analyze(self, query: str) -> RoutingContext:
+        """Analyze a raw query string and return a RoutingContext."""
+```
+
+!!! note "Backward compatibility"
+    The canonical locations are now `openjarvis.learning._stubs` (for `RouterPolicy` and `QueryAnalyzer`) and `openjarvis.core.types` (for `RoutingContext`). The old `openjarvis.intelligence._stubs` import path still works via a backward-compatibility shim, but new code should import from `openjarvis.learning._stubs`.
+
+### RoutingContext
+
+The `RoutingContext` dataclass is now defined in `core/types.py` (moved from `learning/_stubs.py`):
+
+```python
+# core/types.py
+@dataclass(slots=True)
+class RoutingContext:
+    query: str = ""            # The raw query text
+    query_length: int = 0      # Character count
+    has_code: bool = False     # Whether code patterns were detected
+    has_math: bool = False     # Whether math keywords were detected
+    language: str = "en"       # Detected language
+    urgency: float = 0.5      # 0 = low priority, 1 = real-time
+    metadata: Dict[str, Any] = field(default_factory=dict)
+```
+
+---
+
+## RouterPolicyRegistry & LearningRegistry
+
+Router policies are registered in the `RouterPolicyRegistry` and selected at runtime. Additionally, the `LearningRegistry` (in `core/registry.py`) manages the broader set of learning policies across the taxonomy.
+
+The system ships with these router policies:
+
+| Registry Key | Policy Class | Status | Description |
+|-------------|-------------|--------|-------------|
+| `heuristic` | `HeuristicRouter` | Active | Rule-based routing with 6 priority rules |
+| `learned` | `TraceDrivenPolicy` | Active | Learns from trace outcomes |
+| `grpo` | `GRPORouterPolicy` | Stub | Placeholder for future RL training |
+| `sft` | `SFTRouterPolicy` | Active | Trace-driven routing policy (learns query→model mapping); `SFTPolicy` is a backward-compat alias |
+
+And these additional learning policies (registered in `LearningRegistry`):
+
+| Registry Key | Policy Class | Taxonomy | Description |
+|-------------|-------------|----------|-------------|
+| `agent_advisor` | `AgentAdvisorPolicy` | `AgentLearningPolicy` | Advises on agent strategy based on trace patterns |
+| `icl_updater` | `ICLUpdaterPolicy` | `AgentLearningPolicy` | In-context learning updater — discovers ICL examples and multi-tool skills from traces |
+
+Users select a policy via `config.toml` or the `--router` CLI flag:
+
+```toml
+[learning.routing]
+policy = "heuristic"
+```
+
+```bash
+jarvis ask --router learned "What is the capital of France?"
+```
+
+### The `ensure_registered()` Pattern
+
+Learning modules use a lazy registration pattern to survive registry clearing in tests:
+
+```python
+def ensure_registered() -> None:
+    """Register TraceDrivenPolicy if not already present."""
+    if not RouterPolicyRegistry.contains("learned"):
+        RouterPolicyRegistry.register_value("learned", TraceDrivenPolicy)
+
+ensure_registered()  # Called at module import time
+```
+
+This ensures that policies are available even after `RouterPolicyRegistry.clear()` is called in test teardown, because re-importing the module re-registers them.
+
+---
+
+## HeuristicRouter (Heuristic Policy)
+
+The `HeuristicRouter` is the default routing policy. It is defined in `learning/router.py` and applies six static priority rules to select the best model based on query characteristics.
+
+### Routing Rules
+
+| Priority | Rule | Condition | Action |
+|----------|------|-----------|--------|
+| 1 | Code detection | Query contains code patterns (backticks, `def`, `class`, `import`, `function`, `=>`, etc.) | Prefer model with "code" or "coder" in name; fall back to largest model |
+| 2 | Math detection | Query contains math keywords (`solve`, `integral`, `equation`, `calculate`, `compute`, etc.) | Select the largest available model |
+| 3 | Short query | Query length < 50 characters, no code/math | Select the smallest available model (faster response) |
+| 4 | Long/complex query | Query length > 500 characters OR contains reasoning keywords (`explain`, `analyze`, `compare`, `step-by-step`, etc.) | Select the largest available model |
+| 5 | High urgency | `urgency > 0.8` | Override to smallest model (fastest response) |
+| 6 | Default fallback | None of the above match | Use `default_model`, then `fallback_model`, then first available |
+
+!!! note "Priority 5 overrides all others"
+    The urgency check (rule 5) is evaluated **first** in the code — if urgency exceeds 0.8, the router immediately returns the smallest model regardless of query content.
+
+### Usage
+
+```python
+from openjarvis.learning.router import HeuristicRouter, build_routing_context
+
+router = HeuristicRouter(
+    available_models=["qwen3:8b", "llama3.2:3b", "deepseek-coder-v2:16b"],
+    default_model="qwen3:8b",
+    fallback_model="llama3.2:3b",
+)
+
+ctx = build_routing_context("Write a Python function to sort a list")
+model = router.select_model(ctx)  # Returns "deepseek-coder-v2:16b" (has "coder")
+```
+
+### build_routing_context()
+
+The `build_routing_context()` function (in `learning/router.py`) analyzes a raw query string and produces a `RoutingContext` dataclass:
+
+```python
+from openjarvis.learning.router import build_routing_context
+
+ctx = build_routing_context("Solve the integral of x^2 dx")
+# ctx.has_math = True, ctx.has_code = False, ctx.query_length = 32
+
+ctx = build_routing_context("```python\ndef hello():\n    pass\n```")
+# ctx.has_code = True, ctx.has_math = False
+```
+
+**Code detection** uses regex patterns matching:
+
+- Backtick code blocks (` ``` ` or `` `inline` ``)
+- Language keywords (`def`, `class`, `import`, `function`, `const`, `var`, `let`)
+- Syntax patterns (`if (`, `->`, `=>`, `{ }`, `for x in`, `#include`, `System.out`)
+
+**Math detection** uses regex patterns matching:
+
+- Mathematical terms (`solve`, `integral`, `equation`, `proof`, `derivative`, `matrix`)
+- Computational keywords (`calculate`, `compute`, `sigma`, `sum`, `limit`, `probability`)
+
+### Registration
+
+The `heuristic_policy.py` module wires `HeuristicRouter` into the `RouterPolicyRegistry`:
+
+```python
+# learning/heuristic_policy.py
+def ensure_registered() -> None:
+    if not RouterPolicyRegistry.contains("heuristic"):
+        RouterPolicyRegistry.register_value("heuristic", HeuristicRouter)
+
+ensure_registered()
+```
+
+---
+
+## TraceDrivenPolicy (Learned Policy)
+
+The `TraceDrivenPolicy` learns from historical traces to determine which model performs best for different types of queries. Unlike the heuristic router's static rules, this policy adapts based on actual outcomes.
+
+### Query Classification
+
+Queries are classified into broad categories for grouping:
+
+| Category | Condition |
+|----------|-----------|
+| `code` | Contains code patterns (backticks, `def`, `class`, `import`, `function`) |
+| `math` | Contains math keywords (`solve`, `integral`, `equation`, `calculate`, `compute`) |
+| `short` | Query length < 50 characters |
+| `long` | Query length > 500 characters |
+| `general` | None of the above |
+
+### Model Selection
+
+When `select_model()` is called:
+
+1. Classify the query into a category
+2. If the policy map has an entry for this category **and** the confidence (sample count) exceeds `min_samples` (default: 5), use the learned model
+3. Otherwise, fall back to: `default_model` -> `fallback_model` -> first available model
+
+### Batch Updates via `update_from_traces()`
+
+The primary update mechanism reads all traces from a `TraceAnalyzer` and recomputes the policy map:
+
+```python
+from openjarvis.learning.trace_policy import TraceDrivenPolicy
+from openjarvis.traces.analyzer import TraceAnalyzer
+from openjarvis.traces.store import TraceStore
+
+store = TraceStore("traces.db")
+analyzer = TraceAnalyzer(store)
+policy = TraceDrivenPolicy(
+    analyzer=analyzer,
+    available_models=["qwen3:8b", "llama3.2:3b", "deepseek-coder-v2:16b"],
+    default_model="qwen3:8b",
+)
+
+# Recompute routing decisions from trace history
+result = policy.update_from_traces()
+# {"updated": True, "query_classes": 3, "total_traces": 150, "changes": {...}}
+```
+
+The update algorithm:
+
+1. Fetches all traces (optionally filtered by time range)
+2. Groups traces by query classification
+3. For each query class, scores each model using a **composite score**:
+    - 60% success rate (fraction of traces with `outcome="success"`)
+    - 40% average feedback score (user quality ratings)
+4. Selects the model with the highest composite score for each query class
+5. Returns a summary of changes
+
+### Online Updates via `observe()`
+
+For real-time policy updates after every interaction:
+
+```python
+policy.observe(
+    query="Write a Python function",
+    model="deepseek-coder-v2:16b",
+    outcome="success",
+    feedback=0.9,
+)
+```
+
+The online update uses a conservative strategy: it only switches the preferred model for a query class when the new model shows clearly better outcomes (`feedback > 0.7`) and the existing policy has fewer than `min_samples` observations.
+
+---
+
+## SFTRouterPolicy (Trace-Driven Router)
+
+The `SFTRouterPolicy` (in `learning/sft_policy.py`) is an `IntelligenceLearningPolicy` that learns routing decisions from historical traces. It analyzes trace outcomes, groups by query class (code, math, short, long, general), and builds a `query_class → model` mapping from the highest-scoring model per class. A backward-compatible alias `SFTPolicy = SFTRouterPolicy` is provided for code that used the old name.
+
+```python
+from openjarvis.learning.sft_policy import SFTRouterPolicy
+# or via the backward-compat alias:
+from openjarvis.learning.sft_policy import SFTPolicy
+```
+
+---
+
+## AgentAdvisorPolicy
+
+The `AgentAdvisorPolicy` (in `learning/agent_advisor.py`) is an `AgentLearningPolicy` that advises on agent strategy -- for example, recommending tool sets, turn limits, or agent type -- based on patterns observed in historical traces.
+
+```python
+from openjarvis.learning.agent_advisor import AgentAdvisorPolicy
+```
+
+---
+
+## ICLUpdaterPolicy
+
+The `ICLUpdaterPolicy` (in `learning/icl_updater.py`) is an `AgentLearningPolicy` that uses in-context learning to discover reusable examples and multi-tool skill sequences from traces. It analyzes successful tool-call patterns to recommend ICL examples and skill libraries that update agent behavior.
+
+```python
+from openjarvis.learning.icl_updater import ICLUpdaterPolicy
+```
+
+---
+
+## GRPORouterPolicy (Stub)
+
+The `GRPORouterPolicy` is a placeholder for future reinforcement learning-based routing. Currently, calling `select_model()` raises `NotImplementedError`:
+
+```python
+class GRPORouterPolicy(RouterPolicy):
+    def select_model(self, context: RoutingContext) -> str:
+        raise NotImplementedError(
+            "GRPORouterPolicy is not yet implemented. "
+            "GRPO training will be available in a future phase."
+        )
+```
+
+---
+
+## RewardFunction ABC
+
+The `RewardFunction` ABC defines how to score completed inferences for use in training:
+
+```python
+class RewardFunction(ABC):
+    @abstractmethod
+    def compute(
+        self,
+        context: RoutingContext,
+        model_key: str,
+        response: str,
+        **kwargs: Any,
+    ) -> float:
+        """Return a reward in [0, 1]."""
+```
+
+### HeuristicRewardFunction
+
+The built-in reward function computes a weighted combination of three factors:
+
+| Factor | Weight (default) | Normalization | Score Range |
+|--------|-----------------|---------------|-------------|
+| **Latency** | 0.4 | `1 - (latency / max_latency)` | 0 = 30s+, 1 = instant |
+| **Cost** | 0.3 | `1 - (cost / max_cost)` | 0 = $0.01+, 1 = free |
+| **Efficiency** | 0.3 | `completion_tokens / total_tokens` | 0 = all prompt, 1 = all completion |
+
+```python
+from openjarvis.learning.heuristic_reward import HeuristicRewardFunction
+
+reward_fn = HeuristicRewardFunction(
+    weight_latency=0.4,
+    weight_cost=0.3,
+    weight_efficiency=0.3,
+    max_latency=30.0,   # seconds
+    max_cost=0.01,       # USD
+)
+
+reward = reward_fn.compute(
+    context=routing_context,
+    model_key="qwen3:8b",
+    response="The answer is 42.",
+    latency_seconds=1.2,
+    cost_usd=0.0,
+    prompt_tokens=50,
+    completion_tokens=10,
+)
+# Returns a float in [0, 1]
+```
+
+---
+
+## Trace System
+
+The trace system records the full sequence of steps in every agent interaction, providing the raw data that the learning system uses to improve.
+
+### TraceStore
+
+`TraceStore` is an append-only SQLite store for interaction traces:
+
+```python
+from openjarvis.traces.store import TraceStore
+
+store = TraceStore("~/.openjarvis/traces.db")
+store.save(trace)                          # Persist a complete trace
+trace = store.get("abc123")                # Retrieve by trace ID
+traces = store.list_traces(                # Query with filters
+    agent="orchestrator",
+    model="qwen3:8b",
+    outcome="success",
+    since=1700000000.0,
+    limit=100,
+)
+count = store.count()                      # Total trace count
+```
+
+**Database schema:**
+
+- `traces` table -- one row per interaction (trace_id, query, agent, model, engine, result, outcome, feedback, timing, tokens, metadata)
+- `trace_steps` table -- one row per step within a trace (step_type, timestamp, duration, input, output, metadata)
+
+**EventBus integration:** The store can subscribe to `TRACE_COMPLETE` events for automatic persistence:
+
+```python
+store.subscribe_to_bus(bus)
+# Any TRACE_COMPLETE event will now auto-save the trace
+```
+
+### TraceCollector
+
+`TraceCollector` wraps any `BaseAgent` and automatically records a `Trace` for every `run()` call:
+
+```python
+from openjarvis.traces.collector import TraceCollector
+
+agent = OrchestratorAgent(engine, model, tools=tools, bus=bus)
+collector = TraceCollector(agent, store=trace_store, bus=bus)
+
+result = collector.run("What is 2+2?")
+# Trace is automatically saved to trace_store
+```
+
+How it works:
+
+1. Subscribes to EventBus events before running the agent:
+    - `INFERENCE_START` / `INFERENCE_END` -- creates `GENERATE` steps
+    - `TOOL_CALL_START` / `TOOL_CALL_END` -- creates `TOOL_CALL` steps
+    - `MEMORY_RETRIEVE` -- creates `RETRIEVE` steps
+2. Runs the wrapped agent's `run()` method
+3. Unsubscribes from events
+4. Adds a final `RESPOND` step
+5. Builds a `Trace` object with all collected steps
+6. Saves to the `TraceStore` and publishes `TRACE_COMPLETE`
+
+### TraceAnalyzer
+
+`TraceAnalyzer` provides a read-only query layer over stored traces, computing aggregated statistics:
+
+```python
+from openjarvis.traces.analyzer import TraceAnalyzer
+
+analyzer = TraceAnalyzer(store)
+
+# Overall summary
+summary = analyzer.summary()
+# TraceSummary(total_traces=150, avg_latency=2.3, success_rate=0.85, ...)
+
+# Stats grouped by (model, agent) routing decisions
+route_stats = analyzer.per_route_stats()
+# [RouteStats(model="qwen3:8b", agent="orchestrator", count=45, avg_latency=1.8, ...), ...]
+
+# Stats grouped by tool
+tool_stats = analyzer.per_tool_stats()
+# [ToolStats(tool_name="calculator", call_count=23, avg_latency=0.01, success_rate=1.0), ...]
+
+# Find traces matching query characteristics
+code_traces = analyzer.traces_for_query_type(has_code=True)
+
+# Export traces as plain dicts (for JSON serialization)
+exported = analyzer.export_traces(limit=1000)
+```
+
+**Computed statistics:**
+
+| Dataclass | Fields |
+|-----------|--------|
+| `TraceSummary` | total_traces, total_steps, avg_steps_per_trace, avg_latency, avg_tokens, success_rate, step_type_distribution |
+| `RouteStats` | model, agent, count, avg_latency, avg_tokens, success_rate, avg_feedback |
+| `ToolStats` | tool_name, call_count, avg_latency, success_rate |
+
+---
+
+## The Learning Loop
+
+The trace-driven learning loop connects all the pieces:
+
+```mermaid
+graph TB
+    subgraph "Runtime"
+        Q["User Query"] --> AGT["Agent executes"]
+        AGT --> ENG["Engine generates"]
+        ENG --> RESP["Response returned"]
+    end
+
+    subgraph "Recording"
+        AGT -.->|"events"| COL["TraceCollector"]
+        ENG -.->|"events"| COL
+        COL -->|"save"| STO["TraceStore<br/>(SQLite)"]
+    end
+
+    subgraph "Analysis"
+        STO -->|"read"| ANA["TraceAnalyzer"]
+        ANA -->|"summary(),<br/>per_route_stats()"| STATS["Aggregated<br/>Statistics"]
+    end
+
+    subgraph "Learning"
+        STATS -->|"update_from_traces()"| POL["TraceDrivenPolicy"]
+        POL -->|"select_model()"| Q
+    end
+
+    style Q fill:#e1f5fe
+    style RESP fill:#e8f5e9
+    style POL fill:#fff3e0
+```
+
+### Step-by-step cycle:
+
+1. **Query arrives** -- The system needs to select a model
+2. **Router policy selects model** -- `TraceDrivenPolicy.select_model()` checks the learned policy map; falls back to heuristic if insufficient data
+3. **Agent executes** -- The agent processes the query, calling tools and memory as needed
+4. **Events captured** -- The `TraceCollector` captures all events (inference, tool calls, memory retrieval) during execution
+5. **Trace saved** -- A complete `Trace` with all `TraceStep` objects is saved to `TraceStore`
+6. **Analysis** -- Periodically, `TraceAnalyzer` computes aggregate statistics from stored traces
+7. **Policy update** -- `TraceDrivenPolicy.update_from_traces()` recomputes the `query_class -> model` mapping based on success rates and feedback scores
+8. **Better routing** -- The next query benefits from the updated routing decisions
+
+### Trace Data Model
+
+Each interaction produces a `Trace` containing multiple `TraceStep` objects:
+
+```
+Trace
+  trace_id: "a1b2c3d4e5f6"
+  query: "What is 2+2?"
+  agent: "orchestrator"
+  model: "qwen3:8b"
+  engine: "ollama"
+  steps:
+    [0] GENERATE  -- model inference, 0.8s, 150 tokens
+    [1] TOOL_CALL -- calculator, 0.01s, success
+    [2] GENERATE  -- model inference, 0.5s, 80 tokens
+    [3] RESPOND   -- final answer
+  result: "2+2 = 4"
+  outcome: "success"
+  feedback: 1.0
+  total_latency_seconds: 1.31
+  total_tokens: 230
+```
+
+**Step types:**
+
+| StepType | Description | Created By |
+|----------|-------------|------------|
+| `ROUTE` | Model selection decision | Router policy |
+| `RETRIEVE` | Memory search | Memory backend |
+| `GENERATE` | LLM inference call | Engine |
+| `TOOL_CALL` | Tool execution | ToolExecutor |
+| `RESPOND` | Final response | TraceCollector |
+
+---
+
+## Optimization Framework
+
+The optimization subsystem (`learning/optimize/`) provides LLM-guided search
+over OpenJarvis's 5-primitive configuration space. It automates finding optimal
+configurations for accuracy, latency, cost, and energy consumption.
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| `SearchSpace` | Defines tunable dimensions across all 5 primitives |
+| `LLMOptimizer` | Proposes configurations using an LLM backend |
+| `OptimizationEngine` | Orchestrates the propose-evaluate-analyze loop |
+| `OptimizationStore` | SQLite-backed persistence for trials and runs |
+| `TrialRunner` | Evaluates proposed configurations against benchmarks |
+
+### Pareto Frontier
+
+The engine computes a Pareto frontier across multiple objectives
+(accuracy vs latency vs cost), identifying configurations where no single
+metric can be improved without degrading another.
+
+### Rust Backend
+
+The optimization framework has full Rust parity via the `openjarvis-learning`
+crate, with PyO3 bindings exposing `OptimizationStore` and `LLMOptimizer`
+to Python.
+
+---
+
+## LLM-Guided Spec Search (Frontier-Driven Harness Learning)
+
+LLM-guided spec search uses a frontier closed-source model (the "teacher") as a meta-engineer for the local student's full harness — not just its weights. Instead of pushing knowledge into a small model's weights, we push a frontier model's engineering judgement into the surrounding configuration: prompts, routing, agent class, tool availability, and tool descriptions.
+
+### Where it lives
+
+`learning/spec_search/` is the fifth subsystem within the Learning pillar, alongside `learning/routing/`, `learning/optimize/`, `learning/training/`, and `learning/intelligence/`.
+
+### Four-phase loop
+
+```
+Trigger → Diagnose → Plan → Execute → Record
+```
+
+1. **Diagnose** — TeacherAgent (frontier model with diagnostic tools) analyzes traces, runs student/teacher comparisons, identifies 2-5 failure clusters with evidence.
+2. **Plan** — LearningPlanner converts diagnosis into a typed LearningPlan with deterministic risk tier assignment and patch/replace downgrade.
+3. **Execute** — Per-edit loop: EditApplier validates + applies, BenchmarkGate scores, CheckpointStore commits or rolls back.
+4. **Record** — LearningSession persisted to SQLite + JSON artifact.
+
+### Key components
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `SpecSearchOrchestrator` | `orchestrator.py` | Top-level session driver |
+| `TeacherAgent` | `diagnose/teacher_agent.py` | Frontier model tool-calling loop |
+| `DiagnosisRunner` | `diagnose/runner.py` | Phase 1 orchestration |
+| `LearningPlanner` | `plan/planner.py` | Diagnosis → typed LearningPlan |
+| `EditApplier` + registry | `execute/base.py` | Abstract applier interface |
+| `BenchmarkGate` | `gate/benchmark_gate.py` | Benchmark-based accept/reject |
+| `CheckpointStore` | `checkpoint/store.py` | Git-backed config rollback |
+| `SessionStore` | `storage/session_store.py` | SQLite session persistence |
+
+### Relationship to existing subsystems
+
+| Existing | Relationship |
+|----------|-------------|
+| `LearningOrchestrator` | Sibling — stays untouched |
+| `LLMOptimizer` / `OptimizationStore` | Sibling — grid-search vs root-cause |
+| `LearnedRouterPolicy` | Reused — routing edits update it |
+| `TraceJudge` | Reused — benchmark scoring |
+| `PersonalBenchmarkSynthesizer` | Extended — auto-refresh, gold answers |
+| `TraceStore` | Reused — read-only access from diagnostic tools |
+
+### Risk tier system
+
+Every edit is assigned a tier from a deterministic lookup table:
+
+| Tier | Ops | Behavior |
+|------|-----|----------|
+| `auto` | Model routing/params, tool add/remove/description, agent params | Apply if gate passes |
+| `review` | System prompt edits, agent class, few-shot exemplars | Queue for user approval |
+| `manual` | LoRA fine-tuning (v2) | Never auto-apply |
+
+See [LLM-guided spec search guide](../user-guide/llm-guided-spec-search.md) for the architecture and the building blocks.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\memory.md
+
+`$(memory.md.Extension.TrimStart('.'))
+# Memory Primitive
+
+The Memory primitive provides **persistent, searchable storage** for documents and knowledge. It enables context injection -- retrieving relevant information from indexed documents and prepending it to prompts so the LLM can answer questions grounded in specific content.
+
+---
+
+## MemoryBackend ABC
+
+All memory backends implement the `MemoryBackend` abstract base class:
+
+```python
+class MemoryBackend(ABC):
+    backend_id: str
+
+    @abstractmethod
+    def store(
+        self,
+        content: str,
+        *,
+        source: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Persist *content* and return a unique document id."""
+
+    @abstractmethod
+    def retrieve(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        **kwargs: Any,
+    ) -> List[RetrievalResult]:
+        """Search for *query* and return the top-k results."""
+
+    @abstractmethod
+    def delete(self, doc_id: str) -> bool:
+        """Delete a document by id. Return True if it existed."""
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Remove all stored documents."""
+```
+
+### RetrievalResult
+
+Search results are returned as `RetrievalResult` objects:
+
+```python
+@dataclass(slots=True)
+class RetrievalResult:
+    content: str                  # The document text
+    score: float = 0.0            # Relevance score (higher is better)
+    source: str = ""              # Originating file path or identifier
+    metadata: Dict[str, Any] = field(default_factory=dict)
+```
+
+---
+
+## Backend Comparison
+
+| Backend | Registry Key | Index Type | Extra Dependencies | GPU Required | Quality | Speed | Persistence |
+|---------|-------------|-----------|-------------------|-------------|---------|-------|-------------|
+| **SQLite/FTS5** | `sqlite` | Full-text (BM25) | None | No | Good | Fast | Disk (SQLite) |
+| **FAISS** | `faiss` | Dense vector | `faiss-cpu`, `sentence-transformers` | Optional | Very Good | Fast | In-memory |
+| **ColBERTv2** | `colbert` | Late interaction | `colbert-ai`, `torch` | Optional | Excellent | Slower | In-memory |
+| **BM25** | `bm25` | Term-frequency | `rank-bm25` | No | Good | Fast | In-memory |
+| **Hybrid** | `hybrid` | RRF fusion | Depends on sub-backends | Depends | Best | Moderate | Depends |
+
+### SQLite/FTS5 (Default)
+
+The zero-dependency default backend. Uses SQLite's built-in FTS5 extension for full-text search with BM25 ranking.
+
+- **Storage:** Documents stored in a `documents` table with automatic FTS5 indexing via triggers
+- **Search:** FTS5 `MATCH` queries with BM25 ranking (more negative rank = better match, converted to positive scores)
+- **Query escaping:** Each word is quoted to avoid FTS5 syntax errors
+- **Persistence:** Data persists across restarts in `~/.openjarvis/memory.db`
+
+### FAISS
+
+Dense retrieval using Facebook AI Similarity Search. Documents are embedded into vector space and searched via cosine similarity.
+
+- **Index type:** `IndexFlatIP` (inner-product, equivalent to cosine similarity when vectors are L2-normalized)
+- **Embedding model:** `all-MiniLM-L6-v2` by default (384-dim, ~22 MB)
+- **Deletion:** Soft-delete (documents are marked as deleted but remain in the index)
+- **Persistence:** In-memory only -- data is lost on restart
+
+### ColBERTv2
+
+Late interaction retrieval using token-level embeddings with MaxSim scoring. Provides the highest retrieval quality at the cost of higher latency.
+
+- **Scoring:** For each query token, finds the maximum cosine similarity across all document tokens, then sums across query tokens
+- **Checkpoint:** `colbert-ir/colbertv2.0` (lazily loaded on first use)
+- **Persistence:** In-memory only
+
+!!! warning "Heavy dependencies"
+    ColBERTv2 requires `colbert-ai` and `torch`, which are large packages. Install with:
+    `uv sync --extra memory-colbert`
+
+### BM25
+
+Classic Okapi BM25 probabilistic ranking function using the `rank_bm25` library.
+
+- **Tokenization:** Lowercase whitespace split
+- **Index:** Rebuilt on every `store()` and `delete()` operation
+- **Filtering:** Results are filtered to require at least one shared token with the query (handles edge cases where BM25 assigns IDF=0)
+- **Persistence:** In-memory only
+
+### Hybrid (RRF Fusion)
+
+Combines a sparse retriever and a dense retriever using Reciprocal Rank Fusion:
+
+$$\text{RRF}(d) = \sum_{i} \frac{w_i}{k + \text{rank}_i(d)}$$
+
+- **Sub-backends:** Any two `MemoryBackend` implementations (e.g., SQLite + FAISS)
+- **Over-fetch:** Retrieves `top_k * 3` results from each sub-backend for better fusion
+- **Configurable:** RRF constant `k` (default 60) and per-backend weights
+
+```python
+from openjarvis.tools.storage.sqlite import SQLiteMemory
+from openjarvis.tools.storage.faiss_backend import FAISSMemory
+from openjarvis.tools.storage.hybrid import HybridMemory
+
+hybrid = HybridMemory(
+    sparse=SQLiteMemory(db_path="memory.db"),
+    dense=FAISSMemory(),
+    sparse_weight=1.0,
+    dense_weight=1.5,  # Weight dense retrieval more heavily
+)
+```
+
+!!! note "Backward compatibility"
+    The old imports (e.g., `from openjarvis.memory.sqlite import SQLiteMemory`) still work via backward-compatibility shims in the `memory/` package, but the canonical location is now `openjarvis.tools.storage.*`.
+
+---
+
+## Chunking Pipeline
+
+Large documents are split into manageable chunks before storage. The chunking pipeline is defined in `tools/storage/chunking.py` (previously `memory/chunking.py`).
+
+### ChunkConfig
+
+```python
+@dataclass(slots=True)
+class ChunkConfig:
+    chunk_size: int = 512      # Maximum tokens per chunk (whitespace-split)
+    chunk_overlap: int = 64    # Tokens to overlap between consecutive chunks
+    min_chunk_size: int = 50   # Minimum tokens for a chunk to be kept
+```
+
+### Chunk
+
+```python
+@dataclass(slots=True)
+class Chunk:
+    content: str               # The chunk text
+    source: str = ""           # Originating file path
+    offset: int = 0            # Token offset within the original document
+    index: int = 0             # Chunk index (0, 1, 2, ...)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+```
+
+### Chunking Algorithm
+
+The `chunk_text()` function splits text using paragraph boundaries:
+
+1. Split the document on double newlines (`\n\n`) into paragraphs
+2. Accumulate paragraphs into the current chunk until `chunk_size` is exceeded
+3. When a chunk is full, flush it and keep the last `chunk_overlap` tokens as overlap for the next chunk
+4. If a single paragraph exceeds `chunk_size`, split it into fixed-size windows with overlap
+5. Discard chunks smaller than `min_chunk_size`
+
+```python
+from openjarvis.tools.storage.chunking import chunk_text, ChunkConfig
+
+config = ChunkConfig(chunk_size=256, chunk_overlap=32)
+chunks = chunk_text(document_text, source="docs/guide.md", config=config)
+```
+
+---
+
+## Document Ingestion
+
+The `tools/storage/ingest.py` module (previously `memory/ingest.py`) handles reading files and directories into chunks.
+
+### File Type Detection
+
+| Extension | Detected Type |
+|-----------|--------------|
+| `.md`, `.markdown`, `.mdx` | `markdown` |
+| `.pdf` | `pdf` |
+| `.py`, `.js`, `.ts`, `.rs`, `.go`, `.java`, `.c`, `.cpp`, `.yaml`, `.json`, `.html`, `.css`, ... | `code` |
+| Everything else | `text` |
+
+### `ingest_path(path, config=None)`
+
+Ingests a file or directory into chunks:
+
+- **Single file:** Reads the file, detects its type, and chunks the content
+- **Directory:** Recursively walks the tree, skipping:
+    - Hidden directories (starting with `.`)
+    - Common non-content directories (`__pycache__`, `node_modules`, `.git`, `.venv`, etc.)
+    - Binary files (images, audio, video, archives, compiled files)
+    - Hidden files (starting with `.`)
+
+```python
+from pathlib import Path
+from openjarvis.tools.storage.ingest import ingest_path
+
+# Ingest a single file
+chunks = ingest_path(Path("docs/guide.md"))
+
+# Ingest an entire directory
+chunks = ingest_path(Path("./docs/"))
+```
+
+### PDF Support
+
+PDF files are read using `pdfplumber`, extracting text from each page and joining with double newlines. This requires the optional `pdfplumber` dependency:
+
+```bash
+uv sync --extra memory-pdf
+```
+
+---
+
+## Embeddings
+
+Dense retrieval backends (FAISS, ColBERT) require text embeddings. The `tools/storage/embeddings.py` module (previously `memory/embeddings.py`) provides the `Embedder` ABC and a default implementation.
+
+### Embedder ABC
+
+```python
+class Embedder(ABC):
+    @abstractmethod
+    def embed(self, texts: list[str]) -> Any:
+        """Embed texts and return a numpy array of shape (n, dim)."""
+
+    @abstractmethod
+    def dim(self) -> int:
+        """Return the dimensionality of the embedding vectors."""
+```
+
+### SentenceTransformerEmbedder
+
+The default embedder wraps the `sentence-transformers` library:
+
+- **Default model:** `all-MiniLM-L6-v2` (384 dimensions, ~22 MB)
+- **Output:** NumPy arrays of shape `(n, dim)`
+
+```python
+from openjarvis.tools.storage.embeddings import SentenceTransformerEmbedder
+
+embedder = SentenceTransformerEmbedder(model_name="all-MiniLM-L6-v2")
+vectors = embedder.embed(["Hello world", "How are you?"])
+# Shape: (2, 384)
+```
+
+---
+
+## Context Injection
+
+The context injection pipeline retrieves relevant documents and prepends them to the prompt with source attribution. This is defined in `tools/storage/context.py` (previously `memory/context.py`).
+
+### ContextConfig
+
+```python
+@dataclass(slots=True)
+class ContextConfig:
+    enabled: bool = True           # Whether context injection is active
+    top_k: int = 5                 # Maximum results to retrieve
+    min_score: float = 0.1         # Minimum relevance score threshold
+    max_context_tokens: int = 2048 # Maximum tokens of context to inject
+```
+
+### `inject_context()`
+
+The main function for context injection:
+
+```python
+def inject_context(
+    query: str,
+    messages: List[Message],
+    backend: MemoryBackend,
+    *,
+    config: Optional[ContextConfig] = None,
+) -> List[Message]:
+```
+
+How it works:
+
+1. Retrieves results from the memory backend using the query
+2. Filters results below `min_score`
+3. Truncates to `max_context_tokens` (approximate token count via whitespace split)
+4. Formats results with source attribution tags: `[Source: docs/guide.md] The content...`
+5. Creates a system message with the formatted context
+6. Returns a **new** message list with the context message prepended
+
+```python
+from openjarvis.tools.storage.context import inject_context, ContextConfig
+
+config = ContextConfig(top_k=3, min_score=0.2)
+messages = inject_context("What is the API?", messages, backend, config=config)
+```
+
+### Source Attribution
+
+Context is injected as a system message with clear source tags:
+
+```
+The following context was retrieved from the knowledge base. Use it to
+inform your response, citing sources where applicable:
+
+[Source: docs/api.md] The API exposes a /v1/chat/completions endpoint...
+
+[Source: docs/setup.md] To configure the API server, edit config.toml...
+```
+
+---
+
+## Backend Registration
+
+Memory backends are registered via the `@MemoryRegistry.register("name")` decorator:
+
+```python
+from openjarvis.core.registry import MemoryRegistry
+from openjarvis.tools.storage._stubs import MemoryBackend
+
+@MemoryRegistry.register("my-backend")
+class MyMemoryBackend(MemoryBackend):
+    backend_id = "my-backend"
+
+    def store(self, content, *, source="", metadata=None) -> str: ...
+    def retrieve(self, query, *, top_k=5, **kwargs) -> list: ...
+    def delete(self, doc_id) -> bool: ...
+    def clear(self) -> None: ...
+```
+
+The default backend is configured in `~/.openjarvis/config.toml`. Storage settings live under `[tools.storage]`, and context injection is controlled by `agent.context_from_memory`:
+
+```toml
+[agent]
+context_from_memory = true
+
+[tools.storage]
+default_backend = "sqlite"
+db_path = "~/.openjarvis/memory.db"
+context_top_k = 5
+context_min_score = 0.1
+context_max_tokens = 2048
+chunk_size = 512
+chunk_overlap = 64
+```
+
+!!! note "Backward compatibility"
+    The `[memory]` TOML section is still accepted as a backward-compatible alias for `[tools.storage]`. The old `context_injection` field is automatically migrated to `agent.context_from_memory` at load time.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\overview.md
+
+`$(overview.md.Extension.TrimStart('.'))
+---
+title: Architecture Overview
+description: The five-primitive architecture behind OpenJarvis — Intelligence, Engine, Agents, Tools, and Learning
+search:
+  boost: 2
+---
+
+# Architecture Overview
+
+OpenJarvis is a research framework for studying on-device AI systems. Its architecture is organized around **five core abstractions** -- Intelligence, Engine, Agentic Logic, Memory, and Learning -- that work together through trace-driven feedback.
+
+![OpenJarvis Architecture](../assets/OpenJarvis_Architecture.png)
+
+---
+
+## Primitive Descriptions
+
+### Intelligence
+
+The Intelligence primitive handles **model definition and catalog**. It maintains a catalog of known models (`BUILTIN_MODELS`) with metadata such as parameter count, context length, VRAM requirements, and supported engines. The `IntelligenceConfig` captures the full identity of the configured model — its weight path, quantization format, preferred engine, fallback chain, and generation defaults (`temperature`, `max_tokens`, `top_p`, `top_k`, `repetition_penalty`, `stop_sequences`).
+
+Models discovered at runtime from running engines are automatically merged into the `ModelRegistry`, so the system always has an up-to-date view of what is available. Query routing has moved to the Learning primitive — see the [Learning & Traces](learning.md) documentation.
+
+### Engine
+
+The Engine primitive provides the **inference runtime** — the layer that actually runs language models. All backends implement the `InferenceEngine` ABC with a uniform interface: `generate()`, `stream()`, `list_models()`, and `health()`. Supported backends include Ollama, vLLM, SGLang, llama.cpp, and Cloud (OpenAI, Anthropic, Google).
+
+Each engine is configured via its own sub-section in `config.toml` (e.g., `[engine.ollama]`, `[engine.vllm]`, `[engine.llamacpp]`). Engine discovery probes all registered backends for health, returning healthy engines sorted with the user's configured default first. The system automatically falls back to any available engine if the preferred one is unavailable.
+
+### Agentic Logic
+
+The Agentic Logic primitive implements **pluggable agents** that handle queries with varying levels of sophistication. The agent hierarchy is organized around `BaseAgent` (ABC with concrete helpers) and `ToolUsingAgent` (intermediate base for agents that accept tools, with `accepts_tools = True`). Nine agent types are available: `SimpleAgent` (single-turn, no tools), `OrchestratorAgent` (multi-turn tool-calling loop with function_calling and structured modes), `NativeReActAgent` (Thought-Action-Observation loop), `NativeOpenHandsAgent` (CodeAct-style code execution), `RLMAgent` (recursive LM with persistent REPL), `OpenHandsAgent` (wraps real `openhands-sdk`), `ClaudeCodeAgent` (Claude Agent SDK via Node.js subprocess), `OperativeAgent` (persistent scheduled agent with state management), and `MonitorOperativeAgent` (long-horizon agent with configurable strategy axes).
+
+The sandbox module (`openjarvis.sandbox`) adds a `SandboxedAgent` wrapper that runs any `BaseAgent` inside a Docker or Podman container with mount-security enforcement, and a `ContainerRunner` that manages the container lifecycle.
+
+Agent behavior is configured through `[agent]` in `config.toml`, including the default agent, turn limits, tool list, optional system prompt, and the `context_from_memory` flag (previously `context_injection`) that controls automatic memory context injection. Sandbox configuration lives in `[sandbox]`. All agents implement the `BaseAgent` ABC with a `run()` method, and are registered via `@AgentRegistry.register("name")`.
+
+### Memory
+
+The Memory primitive provides **persistent, searchable storage** for documents and knowledge. Five backends are available: SQLite/FTS5 (zero-dependency default), FAISS (dense vector retrieval), ColBERTv2 (late interaction), BM25 (classic term-frequency), and Hybrid (Reciprocal Rank Fusion of sparse + dense). Storage backends are configured under `[tools.storage]` in `config.toml` (the `[memory]` section is still accepted as a backward-compatible alias).
+
+The memory pipeline includes document ingestion, chunking, embedding generation, and context injection. When a user sends a query and `agent.context_from_memory` is enabled, relevant documents are retrieved and prepended to the prompt with source attribution.
+
+### Learning & Traces
+
+The Learning system is the fifth primitive, connecting the other four through **trace-driven feedback**. Every agent interaction can produce a `Trace` capturing the full sequence of steps — routing decisions, memory retrieval, inference calls, tool invocations, and final responses. The `TraceAnalyzer` computes statistics from accumulated traces, and the `TraceDrivenPolicy` uses these statistics to learn which model/agent/tool combinations produce the best outcomes for different query types.
+
+The learning system is configured through nested sub-sections in `config.toml`: `[learning.routing]` controls the router policy (heuristic, learned, sft, grpo), `[learning.intelligence]` controls the model-level learning policy, `[learning.agent]` controls agent advisor and ICL updater policies, and `[learning.metrics]` sets the composite reward function weights. The pillar also includes LLM-guided spec search, a frontier-driven loop that improves the local harness — see [Learning architecture: LLM-guided spec search](learning.md#llm-guided-spec-search-frontier-driven-harness-learning).
+
+---
+
+## The Registry Pattern
+
+All extensible components in OpenJarvis use a **decorator-based registry** for runtime discovery. The pattern is implemented in `RegistryBase[T]`, a generic base class that provides isolated storage per typed subclass.
+
+```python
+from openjarvis.core.registry import EngineRegistry
+
+@EngineRegistry.register("ollama")
+class OllamaEngine(InferenceEngine):
+    ...
+```
+
+Each registry provides:
+
+| Method | Description |
+|--------|-------------|
+| `register(key)` | Decorator that registers a class under a key |
+| `register_value(key, value)` | Imperative registration |
+| `get(key)` | Retrieve by key (raises `KeyError` if missing) |
+| `create(key, *args, **kwargs)` | Look up and instantiate |
+| `items()` | All `(key, entry)` pairs |
+| `keys()` | All registered keys |
+| `contains(key)` | Check if key exists |
+| `clear()` | Remove all entries (for tests) |
+
+**Typed registries** in the system:
+
+| Registry | Type Parameter | Purpose |
+|----------|---------------|---------|
+| `ModelRegistry` | `Any` (ModelSpec) | Model metadata |
+| `EngineRegistry` | `Type[InferenceEngine]` | Inference backends |
+| `MemoryRegistry` | `Type[MemoryBackend]` | Memory backends |
+| `AgentRegistry` | `Type[BaseAgent]` | Agent implementations |
+| `ToolRegistry` | `Any` (BaseTool classes) | Tool implementations |
+| `RouterPolicyRegistry` | `Any` (RouterPolicy classes) | Router policies |
+| `BenchmarkRegistry` | `Any` (BaseBenchmark classes) | Benchmark implementations |
+| `ChannelRegistry` | `Any` (BaseChannel classes) | Channel implementations |
+
+!!! info "Adding a new component"
+    To add a new backend, implement the appropriate ABC and decorate it with
+    the corresponding registry decorator. No factory modifications are needed --
+    the component becomes automatically discoverable at runtime.
+
+---
+
+## Source Directory Layout
+
+```
+src/openjarvis/
+    core/               Core infrastructure shared by all primitives
+        registry.py         RegistryBase[T] and typed subclass registries
+        types.py            Message, ModelSpec, Trace, TelemetryRecord, etc.
+        config.py           JarvisConfig, hardware detection, TOML loading
+        events.py           EventBus pub/sub system (EventType, Event)
+
+    intelligence/       Intelligence primitive -- model definition & catalog
+        model_catalog.py    BUILTIN_MODELS list, merge_discovered_models()
+        _stubs.py           (backward-compat shim -- re-exports from learning._stubs)
+        router.py           (backward-compat shim -- re-exports from learning.router)
+
+    engine/             Engine primitive -- inference runtime backends
+        _stubs.py           InferenceEngine ABC
+        _base.py            EngineConnectionError, messages_to_dicts()
+        _openai_compat.py   Shared base for OpenAI-compatible engines
+        _discovery.py       discover_engines(), discover_models(), get_engine()
+        ollama.py           Ollama backend (native HTTP API)
+        openai_compat_engines.py  Data-driven registration (vLLM, SGLang, llama.cpp, MLX, LM Studio)
+        cloud.py            Cloud backend (OpenAI, Anthropic, Google SDKs)
+
+    agents/             Agentic Logic primitive -- pluggable agents
+        _stubs.py           BaseAgent ABC, ToolUsingAgent, AgentContext, AgentResult
+        simple.py           SimpleAgent (single-turn, no tools)
+        orchestrator.py     OrchestratorAgent (multi-turn tool loop, function_calling + structured)
+        native_react.py     NativeReActAgent (Thought-Action-Observation loop)
+        native_openhands.py NativeOpenHandsAgent (CodeAct-style code execution)
+        rlm.py              RLMAgent (recursive LM with persistent REPL)
+        openhands.py        OpenHandsAgent (wraps real openhands-sdk)
+        react.py            Backward-compat shim (re-exports NativeReActAgent as ReActAgent)
+        claude_code.py      ClaudeCodeAgent (Claude Agent SDK via Node.js subprocess)
+        claude_code_runner/ Bundled Node.js runner for the Claude Agent SDK
+
+    sandbox/            Container sandbox for isolated agent execution
+        runner.py           ContainerRunner (Docker/Podman lifecycle), SandboxedAgent wrapper
+        mount_security.py   MountAllowlist, validate_mounts() (path security)
+
+    memory/             Memory primitive -- persistent searchable storage
+        _stubs.py           MemoryBackend ABC, RetrievalResult
+        sqlite.py           SQLite/FTS5 backend (zero-dependency default)
+        faiss_backend.py    FAISS dense retrieval backend
+        colbert_backend.py  ColBERTv2 late interaction backend
+        bm25.py             BM25 (Okapi) term-frequency backend
+        hybrid.py           Hybrid RRF fusion backend
+        chunking.py         ChunkConfig, Chunk, chunk_text()
+        ingest.py           Document ingestion (file reading, directory walking)
+        context.py          Context injection (inject_context, source attribution)
+        embeddings.py       Embedder ABC, SentenceTransformerEmbedder
+
+    learning/           Learning system -- router policies & rewards
+        _stubs.py           RouterPolicy ABC, QueryAnalyzer ABC, RewardFunction ABC, RoutingContext
+        router.py           HeuristicRouter, DefaultQueryAnalyzer, build_routing_context()
+        heuristic_policy.py Wires HeuristicRouter into RouterPolicyRegistry
+        trace_policy.py     TraceDrivenPolicy (learns from trace outcomes)
+        grpo_policy.py      GRPORouterPolicy (stub for future RL)
+        heuristic_reward.py HeuristicRewardFunction (latency/cost/efficiency)
+
+    traces/             Trace system -- interaction recording
+        store.py            TraceStore (SQLite persistence)
+        collector.py        TraceCollector (wraps agents, records traces)
+        analyzer.py         TraceAnalyzer (aggregated statistics)
+
+    tools/              Tool system -- pluggable tool implementations
+        _stubs.py           BaseTool ABC, ToolSpec, ToolExecutor
+        calculator.py       CalculatorTool (ast-based safe eval)
+        think.py            ThinkTool (reasoning scratchpad)
+        retrieval.py        RetrievalTool (memory search)
+        llm.py              LLMTool (sub-model calls)
+        file_read.py        FileReadTool (safe file reading)
+
+    telemetry/          Telemetry -- inference metrics recording
+        store.py            TelemetryStore (SQLite, EventBus subscription)
+        aggregator.py       TelemetryAggregator (per-model/engine stats)
+        wrapper.py          instrumented_generate() wrapper
+
+    server/             API server -- OpenAI-compatible HTTP API
+        app.py              FastAPI application factory
+        routes.py           /v1/chat/completions, /v1/models, /health
+
+    bench/              Benchmarking framework
+        _stubs.py           BaseBenchmark ABC, BenchmarkSuite
+        latency.py          LatencyBenchmark (per-call latency)
+        throughput.py       ThroughputBenchmark (tokens/second)
+
+    security/           Security guardrails
+        _stubs.py           BaseScanner ABC
+        types.py            ThreatLevel, RedactionMode, ScanFinding, ScanResult
+        scanner.py          SecretScanner, PIIScanner
+        guardrails.py       GuardrailsEngine (wraps InferenceEngine)
+        file_policy.py      is_sensitive_file(), DEFAULT_SENSITIVE_PATTERNS
+        audit.py            AuditLogger (SQLite security events)
+
+    channels/           Channel messaging
+        _stubs.py           BaseChannel ABC, ChannelMessage, ChannelStatus
+        whatsapp_baileys.py WhatsAppBaileysChannel (Baileys protocol via Node.js bridge)
+        whatsapp_baileys_bridge/ Bundled Node.js Baileys bridge
+
+    scheduler/          Task scheduling system
+        scheduler.py        TaskScheduler (cron/interval/once, background polling)
+        store.py            SchedulerStore (SQLite persistence + run logs)
+        tools.py            MCP scheduler tools (schedule_task, list, pause, resume, cancel)
+
+    cli/                CLI commands (Click-based)
+        ask.py              jarvis ask -- query the assistant
+        serve.py            jarvis serve -- start API server
+
+    sdk.py              Jarvis class -- high-level Python SDK
+    mcp/                MCP (Model Context Protocol) layer
+```
+
+---
+
+## How the Primitives Interact
+
+### EventBus: The Connective Tissue
+
+All primitives communicate through a **thread-safe pub/sub EventBus** defined in `core/events.py`. The bus uses synchronous dispatch -- subscribers are called in registration order within the publishing thread.
+
+**Event types** in the system:
+
+| Event | Publisher | Purpose |
+|-------|----------|---------|
+| `INFERENCE_START` / `INFERENCE_END` | Engine / Agent | Track inference calls |
+| `TOOL_CALL_START` / `TOOL_CALL_END` | ToolExecutor | Track tool usage |
+| `MEMORY_STORE` / `MEMORY_RETRIEVE` | Memory backends | Track memory operations |
+| `AGENT_TURN_START` / `AGENT_TURN_END` | Agents | Track agent lifecycle |
+| `TELEMETRY_RECORD` | TelemetryStore | Publish telemetry records |
+| `TRACE_STEP` / `TRACE_COMPLETE` | TraceCollector | Trace lifecycle events |
+| `CHANNEL_MESSAGE_RECEIVED` / `CHANNEL_MESSAGE_SENT` | WhatsAppBaileysChannel | Track channel messaging |
+| `SECURITY_SCAN` / `SECURITY_ALERT` / `SECURITY_BLOCK` | GuardrailsEngine | Track security scanning |
+| `scheduler_task_start` / `scheduler_task_end` | TaskScheduler | Track scheduled task execution |
+
+### Dependency Flow
+
+The primitives form a directed dependency graph:
+
+1. **Agentic Logic** depends on Engine (for inference) and Memory (for context)
+2. **Intelligence** provides model selection to agents via Learning policies
+3. **Learning** reads from Traces, which are produced by Agentic Logic
+4. **Memory** is independent but consumed by agents and tools
+5. **Engine** is independent but consumed by agents and the SDK
+
+This creates a feedback loop: agents produce traces, traces inform learning, learning improves routing, and better routing improves agent performance.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\query-flow.md
+
+`$(query-flow.md.Extension.TrimStart('.'))
+# Query Flow
+
+This page traces the end-to-end journey of a user query through the OpenJarvis system, from the moment it enters the CLI or SDK to the final response and telemetry recording.
+
+---
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as CLI / SDK
+    participant CFG as Config & Discovery
+    participant LRN as Learning (Router)
+    participant AGT as Agent
+    participant MEM as Memory Backend
+    participant CTX as Context Injection
+    participant ENG as Inference Engine
+    participant TEL as Telemetry
+    participant TRC as Trace Collector
+
+    User->>CLI: jarvis ask "query" / j.ask("query")
+    CLI->>CFG: load_config()
+    CFG-->>CLI: JarvisConfig (hardware, engine defaults)
+
+    CLI->>CFG: get_engine(config)
+    CFG-->>CLI: (engine_key, engine_instance)
+
+    CLI->>CFG: discover_engines() + discover_models()
+    CFG-->>CLI: available models per engine
+
+    alt Model not specified
+        CLI->>LRN: select_model(RoutingContext)
+        LRN-->>CLI: model_key (e.g., "qwen3:8b")
+    end
+
+    alt Agent mode (--agent flag)
+        CLI->>AGT: agent.run(query, context)
+        AGT->>MEM: retrieve(query, top_k=5)
+        MEM-->>AGT: RetrievalResult[]
+        AGT->>CTX: inject_context(query, messages, backend)
+        CTX-->>AGT: messages with context prepended
+
+        loop Tool-calling loop (max_turns)
+            AGT->>ENG: generate(messages, model, tools)
+            ENG-->>AGT: {content, tool_calls, usage}
+            opt Tool calls present
+                AGT->>AGT: ToolExecutor.execute(tool_call)
+                AGT->>AGT: Append tool results to messages
+            end
+        end
+
+        AGT-->>CLI: AgentResult(content, tool_results, turns)
+    else Direct mode (no agent)
+        CLI->>MEM: retrieve(query)
+        MEM-->>CLI: RetrievalResult[]
+        CLI->>CTX: inject_context(query, messages, backend)
+        CTX-->>CLI: messages with context
+
+        CLI->>ENG: instrumented_generate(messages, model)
+        ENG-->>CLI: {content, usage}
+    end
+
+    CLI->>TEL: TelemetryStore records metrics
+    CLI->>TRC: TraceCollector saves Trace
+    CLI-->>User: Response text
+```
+
+---
+
+## Direct Mode vs Agent Mode
+
+OpenJarvis supports two query processing paths, selected by the `--agent` CLI flag or the `agent` parameter in the SDK.
+
+### Direct Mode (Default)
+
+In direct mode, the query goes straight to the inference engine with optional memory context. This is the simplest path -- one inference call, no tool loop.
+
+```bash
+# CLI
+jarvis ask "What is the capital of France?"
+
+# SDK
+j = Jarvis()
+response = j.ask("What is the capital of France?")
+```
+
+### Agent Mode
+
+In agent mode, the query is handled by a named agent that can perform multiple inference rounds and invoke tools. The `OrchestratorAgent` is the most common choice, enabling a multi-turn tool-calling loop.
+
+```bash
+# CLI
+jarvis ask --agent orchestrator --tools calculator,think "What is 2^10 + 3^5?"
+
+# SDK
+response = j.ask("What is 2^10 + 3^5?", agent="orchestrator", tools=["calculator"])
+```
+
+---
+
+## Step-by-Step Walkthrough
+
+### Step 1: Configuration Loading
+
+The journey begins with loading the system configuration:
+
+```python
+config = load_config()  # Reads ~/.openjarvis/config.toml
+```
+
+This step:
+
+- Detects system hardware (GPU vendor/model, CPU, RAM)
+- Recommends the best inference engine for the detected hardware
+- Overlays any user overrides from the TOML file
+- Returns a `JarvisConfig` dataclass with all settings
+
+### Step 2: Engine Discovery
+
+Next, the system finds a running inference engine:
+
+```python
+resolved = get_engine(config, engine_key)
+# Returns (engine_key, engine_instance) or None
+```
+
+The discovery process:
+
+1. If a specific engine was requested (`--engine` flag), try that engine
+2. Otherwise, try the default engine from config (e.g., `"ollama"`)
+3. If the default is unhealthy, probe all registered engines and use the first healthy one
+4. If no engine is available, exit with an error message
+
+### Step 3: Model Discovery and Registration
+
+Once an engine is found, the system discovers available models:
+
+```python
+register_builtin_models()          # Register known models (catalog)
+all_engines = discover_engines(config)
+all_models = discover_models(all_engines)
+for ek, model_ids in all_models.items():
+    merge_discovered_models(ek, model_ids)  # Register runtime-discovered models
+```
+
+### Step 4: Model Routing
+
+If no model was explicitly specified, the router policy selects one:
+
+```python
+from openjarvis.learning import ensure_registered
+from openjarvis.learning.router import build_routing_context
+ensure_registered()  # Ensure learning policies are registered
+
+policy_key = router_policy or config.learning.routing.policy
+router_cls = RouterPolicyRegistry.get(policy_key)
+router = router_cls(
+    available_models=all_models.get(engine_name, []),
+    default_model=config.intelligence.default_model,
+    fallback_model=config.intelligence.fallback_model,
+)
+
+ctx = build_routing_context(query_text)
+model_name = router.select_model(ctx)
+```
+
+The `build_routing_context()` function (in `learning/router.py`) analyzes the query for code patterns, math keywords, length, and urgency. The router then applies its rules (heuristic or learned) to select the optimal model.
+
+### Step 5: Memory Context Injection
+
+If memory context injection is enabled (default: `true`) and the memory backend has indexed documents:
+
+```python
+backend = _get_memory_backend(config)
+if backend is not None:
+    ctx_cfg = ContextConfig(
+        top_k=config.memory.context_top_k,        # Default: 5
+        min_score=config.memory.context_min_score,  # Default: 0.1
+        max_context_tokens=config.memory.context_max_tokens,  # Default: 2048
+    )
+    messages = inject_context(query_text, messages, backend, config=ctx_cfg)
+```
+
+This retrieves relevant chunks from the memory backend and prepends a system message with the retrieved context and source attribution.
+
+!!! tip "Disabling context injection"
+    Use `--no-context` on the CLI or `context=False` in the SDK to skip memory context injection.
+
+### Step 6: Inference Generation
+
+**In direct mode**, the query is sent to the engine via the instrumented wrapper:
+
+```python
+result = instrumented_generate(
+    engine, messages,
+    model=model_name,
+    bus=bus,
+    temperature=temperature,
+    max_tokens=max_tokens,
+)
+```
+
+The `instrumented_generate()` wrapper:
+
+1. Publishes `INFERENCE_START` on the event bus
+2. Records the start time
+3. Calls `engine.generate()`
+4. Records end time, calculates latency
+5. Publishes `INFERENCE_END` with timing and token counts
+6. Publishes `TELEMETRY_RECORD` with the full `TelemetryRecord`
+
+**In agent mode**, the agent manages inference calls internally, potentially making multiple rounds with tool calls in between.
+
+### Step 7: Tool Execution (Agent Mode Only)
+
+When the `OrchestratorAgent` receives tool calls in the model's response:
+
+1. Each tool call is dispatched to the `ToolExecutor`
+2. The executor publishes `TOOL_CALL_START`, executes the tool, publishes `TOOL_CALL_END`
+3. Tool results are appended to the message history as `TOOL` messages
+4. The updated messages are sent back to the engine for the next round
+5. This loop continues until the model responds without tool calls or `max_turns` is reached
+
+### Step 8: Telemetry Recording
+
+After every inference call, a `TelemetryRecord` is created and persisted:
+
+```python
+@dataclass(slots=True)
+class TelemetryRecord:
+    timestamp: float
+    model_id: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    latency_seconds: float
+    ttft: float              # Time to first token
+    cost_usd: float
+    energy_joules: float
+    power_watts: float
+    engine: str
+    agent: str
+    metadata: Dict[str, Any]
+```
+
+The `TelemetryStore` subscribes to `TELEMETRY_RECORD` events on the EventBus and writes records to `~/.openjarvis/telemetry.db`.
+
+### Step 9: Trace Recording
+
+When a `TraceCollector` is wrapping the agent, a complete `Trace` is built from the events captured during execution:
+
+1. All `INFERENCE_START`/`END` events become `GENERATE` steps
+2. All `TOOL_CALL_START`/`END` events become `TOOL_CALL` steps
+3. All `MEMORY_RETRIEVE` events become `RETRIEVE` steps
+4. A final `RESPOND` step captures the output
+5. The trace is saved to the `TraceStore` and `TRACE_COMPLETE` is published
+
+### Step 10: Response Delivery
+
+The final response is delivered to the user:
+
+- **CLI:** Printed to stdout (or as JSON with `--json`)
+- **SDK:** Returned as a string from `ask()` or as a dict from `ask_full()`
+
+---
+
+## EventBus Activity During a Query
+
+The following events are published during a typical query in agent mode:
+
+```
+AGENT_TURN_START    {agent: "orchestrator", input: "What is 2+2?"}
+INFERENCE_START     {model: "qwen3:8b", engine: "ollama", turn: 1}
+INFERENCE_END       {model: "qwen3:8b", engine: "ollama", turn: 1}
+TELEMETRY_RECORD    {model_id: "qwen3:8b", latency: 0.8, tokens: 150}
+TOOL_CALL_START     {tool: "calculator", arguments: {expression: "2+2"}}
+TOOL_CALL_END       {tool: "calculator", success: true, latency: 0.01}
+INFERENCE_START     {model: "qwen3:8b", engine: "ollama", turn: 2}
+INFERENCE_END       {model: "qwen3:8b", engine: "ollama", turn: 2}
+TELEMETRY_RECORD    {model_id: "qwen3:8b", latency: 0.5, tokens: 80}
+AGENT_TURN_END      {agent: "orchestrator", turns: 2, content_length: 12}
+TRACE_COMPLETE      {trace: Trace(...)}
+```
+
+---
+
+## SDK Query Flow
+
+The `Jarvis` class in `sdk.py` provides the same query flow through a Python API:
+
+```python
+from openjarvis import Jarvis
+
+j = Jarvis(model="qwen3:8b", engine_key="ollama")
+
+# Direct mode
+response = j.ask("Hello")
+
+# Agent mode with tools
+response = j.ask(
+    "What is 2^10?",
+    agent="orchestrator",
+    tools=["calculator"],
+)
+
+# Full result with metadata
+result = j.ask_full("Hello")
+# {
+#     "content": "Hello! How can I help you?",
+#     "usage": {"prompt_tokens": 10, "completion_tokens": 15, "total_tokens": 25},
+#     "model": "qwen3:8b",
+#     "engine": "ollama",
+# }
+
+j.close()
+```
+
+The SDK handles lazy engine initialization, telemetry setup, memory context injection, and resource cleanup internally. The `ask()` method delegates to `ask_full()` and extracts just the content string.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\security.md
+
+`$(security.md.Extension.TrimStart('.'))
+# Security Architecture
+
+The security module is a cross-cutting concern that wraps the inference pipeline rather than replacing it. Scanners run on raw text strings independently of any model or agent, and the `GuardrailsEngine` decorator composes them around any `InferenceEngine` backend without changing the engine's public interface.
+
+---
+
+## Design Principles
+
+- **Composable, not mandatory.** Security scanning is opt-in and composable. You wrap an engine with `GuardrailsEngine`; you do not configure a global interceptor.
+- **Scanner-agnostic.** The `BaseScanner` ABC defines a two-method interface (`scan`, `redact`). Any scanner can be plugged in, including user-defined ones.
+- **Fail-safe modes.** The three redaction modes (WARN, REDACT, BLOCK) cover a spectrum from visibility to enforcement, allowing gradual tightening without code changes.
+- **Audit by default.** The `AuditLogger` records security events to SQLite so that findings are traceable after the fact.
+
+---
+
+## Scanner Pipeline
+
+Each scan pass runs all registered scanners sequentially and merges their findings into a single `ScanResult`. The order of scanner execution does not affect correctness, only which patterns are reported first.
+
+```mermaid
+flowchart LR
+    A[Raw Text] --> B[SecretScanner.scan]
+    A --> C[PIIScanner.scan]
+    B --> D{Merge findings}
+    C --> D
+    D --> E[ScanResult]
+    E --> F{result.clean?}
+    F -- Yes --> G[Return text unchanged]
+    F -- No --> H{RedactionMode}
+    H -- WARN --> I[Publish SECURITY_ALERT\nReturn text unchanged]
+    H -- REDACT --> J[Run redact on all scanners\nReturn sanitized text]
+    H -- BLOCK --> K[Publish SECURITY_BLOCK\nRaise SecurityBlockError]
+```
+
+The redaction step in REDACT mode applies each scanner's `redact()` method in sequence. Later scanners see the already-redacted output of earlier ones, so patterns do not interfere.
+
+---
+
+## GuardrailsEngine Wrapper Pattern
+
+`GuardrailsEngine` implements the full `InferenceEngine` ABC and delegates every call to a wrapped engine instance. This means any engine — `OllamaEngine`, `VLLMEngine`, `LlamaCppEngine` — can be made security-aware without modifying the engine itself.
+
+```mermaid
+classDiagram
+    class InferenceEngine {
+        <<abstract>>
+        +generate(messages, model) dict
+        +stream(messages, model) AsyncIterator
+        +list_models() list
+        +health() bool
+    }
+    class OllamaEngine {
+        +generate(...)
+        +stream(...)
+    }
+    class GuardrailsEngine {
+        -_engine InferenceEngine
+        -_scanners list
+        -_mode RedactionMode
+        +generate(messages, model) dict
+        +stream(messages, model) AsyncIterator
+        +list_models() list
+        +health() bool
+    }
+    InferenceEngine <|-- OllamaEngine
+    InferenceEngine <|-- GuardrailsEngine
+    GuardrailsEngine o-- InferenceEngine : wraps
+```
+
+Because `GuardrailsEngine` is itself an `InferenceEngine`, it can be nested arbitrarily (for example, wrapped again in an instrumented engine) or passed to any code that accepts an engine.
+
+### generate() Call Sequence
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant G as GuardrailsEngine
+    participant S as Scanners
+    participant E as Wrapped Engine
+
+    C->>G: generate(messages, model)
+    G->>S: scan(message.content) for each message
+    S-->>G: ScanResult
+    alt findings detected
+        G->>G: _handle_findings(text, result, "input")
+        note over G: WARN: publish event, pass through
+        note over G: REDACT: run redact(), replace content
+        note over G: BLOCK: raise SecurityBlockError
+    end
+    G->>E: generate(messages, model)
+    E-->>G: response dict
+    G->>S: scan(response["content"])
+    S-->>G: ScanResult
+    alt findings detected
+        G->>G: _handle_findings(content, result, "output")
+    end
+    G-->>C: response dict (possibly sanitized)
+```
+
+### stream() Behavior
+
+For streaming, the engine yields tokens to the caller in real time. The security layer accumulates the full output and scans it after the stream ends. Because the scan is post-hoc, BLOCK mode cannot prevent delivery of streamed tokens — it only applies to the input side.
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant G as GuardrailsEngine
+    participant E as Wrapped Engine
+    participant S as Scanners
+
+    C->>G: stream(messages, model)
+    G->>S: scan inputs (before streaming)
+    G->>E: stream(messages, model)
+    loop each token
+        E-->>G: token
+        G-->>C: yield token
+    end
+    G->>S: scan(accumulated output)
+    alt findings detected
+        G->>G: publish SECURITY_ALERT (stream_post_hoc)
+    end
+```
+
+---
+
+## Event Flow
+
+Security events flow through the `EventBus` using three event types:
+
+| Event | When Published | Payload Keys |
+|-------|----------------|--------------|
+| `SECURITY_SCAN` | (Reserved for future use) | — |
+| `SECURITY_ALERT` | Findings detected in WARN or REDACT mode | `direction`, `findings`, `mode` |
+| `SECURITY_BLOCK` | Findings detected in BLOCK mode | `direction`, `findings`, `mode` |
+
+The `direction` field is either `"input"` or `"output"`. The `findings` value is a list of dicts with keys `pattern`, `threat`, and `description`.
+
+The `AuditLogger` subscribes to all three event types and writes them to SQLite. This subscription is established at construction time:
+
+```mermaid
+flowchart TB
+    A[GuardrailsEngine] -->|SECURITY_ALERT| B[EventBus]
+    A -->|SECURITY_BLOCK| B
+    B --> C[AuditLogger._on_event]
+    C --> D[SQLite audit.db]
+    B --> E[Other subscribers\ne.g. logging, alerting]
+```
+
+---
+
+## File Policy Integration
+
+The file policy (`file_policy.py`) operates independently of the scanner pipeline. It answers a single yes/no question: is this file path considered sensitive?
+
+### Integration Points
+
+**FileReadTool** calls `is_sensitive_file()` before reading any path. If the path matches a sensitive pattern, the tool returns an error rather than the file contents. This cannot be bypassed at the tool level.
+
+**Memory ingest path** (`memory/ingest.py`) uses `filter_sensitive_paths()` to remove sensitive files from a directory listing before indexing. Files matching sensitive patterns are silently skipped.
+
+```mermaid
+flowchart LR
+    A[FileReadTool.execute] --> B{is_sensitive_file?}
+    B -- Yes --> C[Return error: sensitive file blocked]
+    B -- No --> D[Read and return file contents]
+
+    E[memory ingest_path] --> F[glob directory]
+    F --> G[filter_sensitive_paths]
+    G --> H[Index remaining files]
+```
+
+The file policy does not publish events or use the event bus. It is a pure function — deterministic, stateless, and side-effect-free.
+
+---
+
+## Audit Logging Architecture
+
+`AuditLogger` maintains a single SQLite table (`security_events`) with the following schema:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `INTEGER PRIMARY KEY` | Auto-increment row ID |
+| `timestamp` | `REAL` | Unix timestamp of the event |
+| `event_type` | `TEXT` | `SecurityEventType` value string |
+| `findings_json` | `TEXT` | JSON-encoded list of `ScanFinding` dicts |
+| `content_preview` | `TEXT` | Short preview of the scanned content |
+| `action_taken` | `TEXT` | Mode string (`warn`, `redact`, `block`) |
+
+The database is written in append-only mode. There is no built-in rotation or truncation — manage retention externally by deleting old entries with SQLite tooling or by using a path-per-session audit log.
+
+The default path is `~/.openjarvis/audit.db`, configurable via `security.audit_log_path` in `config.toml`.
+
+---
+
+## Relationship to Other Modules
+
+| Module | How Security Integrates |
+|--------|------------------------|
+| Engine | `GuardrailsEngine` wraps any `InferenceEngine` |
+| Tools | `FileReadTool` calls `is_sensitive_file()` |
+| Memory | Ingest path calls `filter_sensitive_paths()` |
+| EventBus | Security events published to `SECURITY_ALERT`, `SECURITY_BLOCK` |
+| Config | `SecurityConfig` dataclass loaded from `[security]` in `config.toml` |
+
+---
+
+## See Also
+
+- [User Guide: Security](../user-guide/security.md) — how to configure and use the security system
+- [API Reference: Security](../api-reference/openjarvis/security/index.md) — complete class and function signatures
+- [Architecture: Query Flow](query-flow.md) — where security sits in the overall request lifecycle
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\skills.md
+
+`$(skills.md.Extension.TrimStart('.'))
+---
+title: Skills Architecture
+description: Technical deep-dive into the skills system design, components, and integration patterns
+---
+
+# Skills Architecture
+
+Skills are a **cross-cutting orchestration layer** that sits across the five existing primitives (Intelligence, Engine, Agents, Memory/Tools, Learning). They connect tools, agents, memory, and learning into reusable workflows without replacing or subsumming any primitive.
+
+## System Design
+
+```
+                    ┌──────────────────────┐
+                    │   SystemBuilder      │
+                    │   .build()           │
+                    └──────────┬───────────┘
+                               │
+                    ┌──────────▼───────────┐
+                    │   SkillManager       │
+                    │   • discover()       │
+                    │   • get_skill_tools()│
+                    │   • get_catalog_xml()│
+                    └──────────┬───────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+    ┌─────────▼──────┐ ┌──────▼──────┐ ┌───────▼───────┐
+    │  SkillTool     │ │  Catalog    │ │  Overlay      │
+    │  (BaseTool)    │ │  XML        │ │  Loader       │
+    │  → agent tools │ │  → sys.     │ │  → optimized  │
+    │    list        │ │    prompt   │ │    desc +     │
+    │                │ │             │ │    few-shot   │
+    └────────────────┘ └─────────────┘ └───────────────┘
+```
+
+## Key Components
+
+### SkillManifest (`skills/types.py`)
+
+The canonical data structure for a loaded skill:
+
+```python
+@dataclass(slots=True)
+class SkillManifest:
+    name: str
+    version: str = "0.1.0"
+    description: str = ""
+    author: str = ""
+    steps: List[SkillStep] = field(default_factory=list)
+    required_capabilities: List[str] = field(default_factory=list)
+    signature: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    tags: List[str] = field(default_factory=list)
+    depends: List[str] = field(default_factory=list)
+    user_invocable: bool = True
+    disable_model_invocation: bool = False
+    markdown_content: str = ""
+```
+
+### SkillManager (`skills/manager.py`)
+
+The central coordinator. Created by `SystemBuilder.build()` during system composition.
+
+**Lifecycle:**
+1. `discover(paths)` — scans skill directories in precedence order, loads manifests, validates the dependency graph, applies optimization overlays
+2. `get_skill_tools()` — wraps each discovered skill as a `SkillTool(BaseTool)`, wires sub-skill resolver callbacks
+3. `get_catalog_xml()` — generates the lightweight `<available_skills>` XML for system prompt injection
+4. `get_few_shot_examples()` — returns formatted few-shot strings from optimization overlays
+
+### SkillTool (`skills/tool_adapter.py`)
+
+Adapter that makes any skill look like a regular `BaseTool` to agents:
+
+- `spec` property derives `ToolSpec` from the manifest — auto-extracts input parameters from step argument templates
+- `execute(**params)` runs the pipeline (if steps exist), returns markdown content (if SKILL.md exists), or both
+- `_build_result_metadata()` tags every invocation with `skill`, `skill_source`, `skill_kind` for downstream trace analysis
+
+### SkillParser (`skills/parser.py`)
+
+Two-pass parser for agentskills.io-compatible SKILL.md frontmatter:
+
+1. **Strict pass** — validates required fields (`name`, `description`), length limits, kebab-case naming rules
+2. **Tolerant pass** — maps non-spec vendor fields to canonical locations via `FIELD_MAPPING` table. Unmapped fields are logged and preserved in `metadata.openjarvis.original_frontmatter`
+
+The mapping table is data, not code paths. Adding support for new vendor fields means adding entries — no logic changes.
+
+### SkillExecutor (`skills/executor.py`)
+
+Sequential pipeline executor:
+
+- Steps with `tool_name` → delegate to `ToolExecutor.execute()`
+- Steps with `skill_name` → delegate to a resolver callback (set by SkillManager)
+- Template rendering: `{placeholder}` syntax resolved from a shared context dict
+- `output_key` stores each step's result for downstream steps
+- Publishes `SKILL_EXECUTE_START` / `SKILL_EXECUTE_END` events on the EventBus
+
+### Source Resolvers (`skills/sources/`)
+
+One resolver per import source, all implementing `SourceResolver` ABC:
+
+| Resolver | Repo layout | Special handling |
+|----------|-------------|------------------|
+| `HermesResolver` | `skills/<category>/<skill>/` | Skips `DESCRIPTION.md`, reads Hermes vendor metadata |
+| `OpenClawResolver` | `skills/<owner>/<skill>/` | Reads `_meta.json` sidecars |
+| `GitHubResolver` | Recursive walk for `SKILL.md` | Generic — accepts any repo URL |
+
+### SkillImporter (`skills/importer.py`)
+
+Takes a `ResolvedSkill` from a source resolver and installs it on disk:
+
+1. Parse source SKILL.md through `SkillParser`
+2. Translate tool references (`Bash` → `shell_exec`, `Read` → `file_read`, etc.)
+3. Compatibility check (platform, missing tools)
+4. Copy SKILL.md + references/assets/templates (scripts gated by `--with-scripts`)
+5. Write `.source` provenance file with commit SHA, translated tools, timestamps
+
+### SkillOverlay (`skills/overlay.py`)
+
+Sidecar storage for optimization output at `~/.openjarvis/learning/skills/<name>/optimized.toml`:
+
+```toml
+[optimized]
+skill_name = "research-and-summarize"
+optimizer = "dspy"
+optimized_at = "2026-04-08T14:30:00Z"
+trace_count = 47
+description = "An optimized description"
+
+[[optimized.few_shot]]
+input = "transformer attention mechanisms"
+output = "## Recent Advances..."
+```
+
+The overlay is the **contract** between the optimizer and the SkillManager. Both sides agree on the schema; either can be swapped independently.
+
+### SkillOptimizer (`learning/agents/skill_optimizer.py`)
+
+Per-skill wrapper around DSPy/GEPA:
+
+1. Buckets traces by `metadata.skill` (from the C1 trace tagging)
+2. Skips skills below `min_traces_per_skill` threshold
+3. Calls `_run_dspy()` or `_run_gepa()` per qualifying skill
+4. Writes overlay TOML files
+
+## Integration Points
+
+### SystemBuilder Wiring
+
+`SystemBuilder.build()` handles skill integration:
+
+```python
+# 1. Create SkillManager
+skill_manager = SkillManager(bus, capability_policy=...)
+
+# 2. Discover skills from disk
+skill_manager.discover(paths=[workspace_skills, user_skills])
+
+# 3. Wrap as tools and merge into tool list
+skill_tools = skill_manager.get_skill_tools(tool_executor=...)
+tool_list.extend(skill_tools)
+
+# 4. Capture few-shot examples for agents
+system._skill_few_shot_examples = skill_manager.get_few_shot_examples()
+```
+
+### Trace Metadata Flow
+
+When an agent invokes a `SkillTool`:
+
+```
+SkillTool.execute()
+  → ToolResult(metadata={"skill": name, "skill_source": src, "skill_kind": kind})
+    → ToolExecutor._json_safe_metadata() filters non-serializable values
+      → TOOL_CALL_END event with metadata
+        → TraceCollector._on_tool_end() → TraceStep(metadata=...)
+          → TraceStore saves to SQLite (metadata as JSON)
+            → SkillOptimizer._bucket_traces_by_skill() reads metadata.skill
+```
+
+### Agent Few-Shot Injection
+
+Optimized few-shot examples flow through:
+
+```
+SkillManager.get_few_shot_examples()
+  → system._skill_few_shot_examples (stashed on JarvisSystem)
+    → _run_agent() → agent_kwargs["skill_few_shot_examples"]
+      → ToolUsingAgent._skill_few_shot_examples
+        → native_react.run() → REACT_SYSTEM_PROMPT.format(skill_examples=...)
+```
+
+## Dependency Graph
+
+Skills can compose other skills. At discovery time, SkillManager validates:
+
+1. **Cycle detection** — Kahn's algorithm for topological sort
+2. **Max depth enforcement** — configurable (default 5)
+3. **Capability union** — parent must declare all transitive child capabilities
+
+## File Layout
+
+```
+src/openjarvis/skills/
+├── __init__.py           # Public exports
+├── types.py              # SkillManifest, SkillStep
+├── manager.py            # SkillManager
+├── executor.py           # SkillExecutor + sub-skill delegation
+├── loader.py             # TOML + Markdown + directory loading
+├── tool_adapter.py       # SkillTool(BaseTool) wrapper
+├── parser.py             # Strict + tolerant agentskills.io parser
+├── tool_translator.py    # External tool name translation
+├── importer.py           # Install from resolved sources
+├── overlay.py            # Optimization sidecar storage
+├── dependency.py         # Graph validation
+├── security.py           # Trust tiers, capability validation
+├── index.py              # Git-backed skill index
+└── sources/
+    ├── base.py            # SourceResolver ABC
+    ├── hermes.py          # HermesResolver
+    ├── openclaw.py        # OpenClawResolver
+    └── github.py          # GitHubResolver
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\deployment\api-server.md
+
+`$(api-server.md.Extension.TrimStart('.'))
+# API Server
+
+OpenJarvis includes an OpenAI-compatible API server built on FastAPI and uvicorn. It exposes chat completion, model listing, and health check endpoints, making it a drop-in replacement for the OpenAI API when working with local models.
+
+## Starting the Server
+
+The server requires the `[server]` extra (FastAPI + uvicorn):
+
+```bash
+git clone https://github.com/open-jarvis/OpenJarvis.git
+cd OpenJarvis
+uv sync --extra server
+```
+
+Start with default settings:
+
+```bash
+jarvis serve
+```
+
+The server reads defaults from `~/.openjarvis/config.toml` and auto-detects available engines and models. Override any option via CLI flags:
+
+```bash
+jarvis serve --host 0.0.0.0 --port 8000 --engine ollama --model qwen3:8b --agent orchestrator
+```
+
+### CLI Options
+
+| Option               | Description                                                                  | Default           |
+|----------------------|------------------------------------------------------------------------------|--------------------|
+| `--host`             | Network address to bind to                                                   | From config (`0.0.0.0`) |
+| `--port`             | Port number to listen on                                                     | From config (`8000`)    |
+| `-e` / `--engine`    | Inference engine backend (`ollama`, `vllm`, `llamacpp`, `sglang`)            | Auto-detected      |
+| `-m` / `--model`     | Default model for completions                                                | First available     |
+| `-a` / `--agent`     | Agent for non-streaming requests (`simple`, `orchestrator`, `react`, `openhands`) | From config (`orchestrator`) |
+
+On startup, the server prints a summary:
+
+```
+Starting OpenJarvis API server
+  Engine: ollama
+  Model:  qwen3:8b
+  Agent:  orchestrator
+  URL:    http://0.0.0.0:8000
+```
+
+!!! warning "Server dependency check"
+    If the `[server]` extra is not installed, `jarvis serve` exits with a clear error message explaining how to install the required dependencies.
+
+## Endpoints
+
+### `POST /v1/chat/completions`
+
+The primary endpoint for generating chat completions. Accepts the same request format as the OpenAI Chat Completions API.
+
+#### Request Body
+
+```json
+{
+  "model": "qwen3:8b",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the capital of France?"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 1024,
+  "stream": false,
+  "tools": null
+}
+```
+
+| Parameter     | Type              | Default | Description                                                  |
+|---------------|-------------------|---------|--------------------------------------------------------------|
+| `model`       | `string`          | --      | **Required.** Model identifier to use for generation.        |
+| `messages`    | `array`           | --      | **Required.** Array of message objects with `role` and `content`. |
+| `temperature` | `float`           | `0.7`   | Sampling temperature (0.0 to 2.0).                           |
+| `max_tokens`  | `integer`         | `1024`  | Maximum number of tokens to generate.                        |
+| `stream`      | `boolean`         | `false` | Whether to stream the response via SSE.                      |
+| `tools`       | `array` or `null` | `null`  | Tool definitions in OpenAI function-calling format.          |
+
+Each message object:
+
+| Field          | Type              | Description                                           |
+|----------------|-------------------|-------------------------------------------------------|
+| `role`         | `string`          | One of `system`, `user`, `assistant`, or `tool`.      |
+| `content`      | `string`          | The message content.                                  |
+| `name`         | `string` or `null`| Optional name for the message author.                 |
+| `tool_calls`   | `array` or `null` | Tool calls made by the assistant (in assistant messages). |
+| `tool_call_id` | `string` or `null`| ID of the tool call this message responds to (in tool messages). |
+
+#### Response (Non-Streaming)
+
+```json
+{
+  "id": "chatcmpl-abc123def456",
+  "object": "chat.completion",
+  "created": 1740100800,
+  "model": "qwen3:8b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris.",
+        "tool_calls": null
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 8,
+    "total_tokens": 33
+  }
+}
+```
+
+When an agent is configured on the server, non-streaming requests are routed through the agent, which can perform multi-turn reasoning with tool calls before returning a final response. When no agent is configured, requests go directly to the inference engine.
+
+#### Tool Calls
+
+When `tools` are provided in the request, the engine may return `tool_calls` in the assistant message:
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "type": "function",
+            "function": {
+              "name": "calculator",
+              "arguments": "{\"expression\": \"2 + 2\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+### `GET /v1/models`
+
+Lists all models available on the configured inference engine.
+
+#### Response
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "qwen3:8b",
+      "object": "model",
+      "created": 1740100800,
+      "owned_by": "openjarvis"
+    },
+    {
+      "id": "llama3.1:8b",
+      "object": "model",
+      "created": 1740100800,
+      "owned_by": "openjarvis"
+    }
+  ]
+}
+```
+
+### `GET /health`
+
+Health check endpoint that verifies the inference engine is responsive.
+
+#### Response (Healthy)
+
+HTTP 200:
+
+```json
+{"status": "ok"}
+```
+
+#### Response (Unhealthy)
+
+HTTP 503:
+
+```json
+{"detail": "Engine unhealthy"}
+```
+
+### `GET /dashboard`
+
+Serves the built-in Savings Dashboard, an HTML page that displays real-time statistics on inference calls served locally and estimated cost savings compared to cloud API providers. The dashboard auto-refreshes every 5 seconds by polling the `/v1/savings` endpoint.
+
+### `GET /v1/channels`
+
+List registered channel backends and their connection status.
+
+#### Response
+
+```json
+{
+  "channels": ["slack", "discord", "telegram"]
+}
+```
+
+### `POST /v1/channels/send`
+
+Send a message to a specific channel.
+
+#### Request Body
+
+```json
+{
+  "target": "slack",
+  "message": "Hello from Jarvis!"
+}
+```
+
+#### Response
+
+```json
+{
+  "status": "sent",
+  "target": "slack"
+}
+```
+
+### `GET /v1/channels/status`
+
+Show connection status for all configured channels.
+
+#### Response
+
+```json
+{
+  "channels": {
+    "slack": "connected",
+    "discord": "connected",
+    "telegram": "disconnected"
+  }
+}
+```
+
+!!! note "Channel endpoints"
+    Channel endpoints require `[channel] enabled = true` in your config and platform-specific credentials configured in `[channel.<platform>]` sub-sections. When not configured, `GET /v1/channels` returns an empty list and other channel endpoints return 503.
+
+## Streaming via SSE
+
+When `"stream": true` is set in the request, the server returns a `text/event-stream` response using Server-Sent Events (SSE). The response follows the same format as the OpenAI streaming API.
+
+Each event is a `data:` line containing a JSON chunk, followed by a blank line:
+
+```
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{"content":"The"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{"content":" capital"},"finish_reason":null}]}
+
+...
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+The stream follows this sequence:
+
+1. **Role chunk** -- first chunk contains `"delta": {"role": "assistant"}` with no content.
+2. **Content chunks** -- subsequent chunks each contain a `"delta": {"content": "..."}` with one or more tokens.
+3. **Finish chunk** -- a chunk with an empty `delta` and `"finish_reason": "stop"`.
+4. **Done signal** -- the literal string `data: [DONE]` indicates the stream is complete.
+
+Response headers include `Cache-Control: no-cache` and `Connection: keep-alive` for proper SSE behavior.
+
+## Client Examples
+
+=== "curl"
+
+    **Non-streaming request:**
+
+    ```bash
+    curl http://localhost:8000/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "qwen3:8b",
+        "messages": [
+          {"role": "user", "content": "Explain quantum computing in one paragraph."}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 256
+      }'
+    ```
+
+    **Streaming request:**
+
+    ```bash
+    curl http://localhost:8000/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -N \
+      -d '{
+        "model": "qwen3:8b",
+        "messages": [
+          {"role": "user", "content": "Write a haiku about programming."}
+        ],
+        "stream": true
+      }'
+    ```
+
+    **List models:**
+
+    ```bash
+    curl http://localhost:8000/v1/models
+    ```
+
+    **Health check:**
+
+    ```bash
+    curl http://localhost:8000/health
+    ```
+
+=== "Python (openai)"
+
+    The OpenAI Python library works as a drop-in client by pointing `base_url` at the local server:
+
+    ```python
+    from openai import OpenAI
+
+    client = OpenAI(
+        base_url="http://localhost:8000/v1",
+        api_key="not-needed",  # Required by the library but not validated
+    )
+
+    # Non-streaming
+    response = client.chat.completions.create(
+        model="qwen3:8b",
+        messages=[
+            {"role": "user", "content": "What is the capital of France?"}
+        ],
+        temperature=0.7,
+        max_tokens=256,
+    )
+    print(response.choices[0].message.content)
+
+    # Streaming
+    stream = client.chat.completions.create(
+        model="qwen3:8b",
+        messages=[
+            {"role": "user", "content": "Write a short poem about AI."}
+        ],
+        stream=True,
+    )
+    for chunk in stream:
+        if chunk.choices[0].delta.content:
+            print(chunk.choices[0].delta.content, end="", flush=True)
+    print()
+
+    # List models
+    models = client.models.list()
+    for model in models.data:
+        print(model.id)
+    ```
+
+=== "Python (httpx)"
+
+    Using `httpx` for direct HTTP requests:
+
+    ```python
+    import httpx
+    import json
+
+    BASE_URL = "http://localhost:8000"
+
+    # Non-streaming request
+    response = httpx.post(
+        f"{BASE_URL}/v1/chat/completions",
+        json={
+            "model": "qwen3:8b",
+            "messages": [
+                {"role": "user", "content": "What is the capital of France?"}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 256,
+        },
+    )
+    data = response.json()
+    print(data["choices"][0]["message"]["content"])
+
+    # Streaming request
+    with httpx.stream(
+        "POST",
+        f"{BASE_URL}/v1/chat/completions",
+        json={
+            "model": "qwen3:8b",
+            "messages": [
+                {"role": "user", "content": "Write a haiku about code."}
+            ],
+            "stream": True,
+        },
+    ) as response:
+        for line in response.iter_lines():
+            if line.startswith("data: ") and line != "data: [DONE]":
+                chunk = json.loads(line[6:])
+                content = chunk["choices"][0]["delta"].get("content", "")
+                if content:
+                    print(content, end="", flush=True)
+    print()
+
+    # List models
+    response = httpx.get(f"{BASE_URL}/v1/models")
+    for model in response.json()["data"]:
+        print(model["id"])
+
+    # Health check
+    response = httpx.get(f"{BASE_URL}/health")
+    print(response.json())
+    ```
+
+## Configuration via `config.toml`
+
+The `[server]` section of `~/.openjarvis/config.toml` controls default server behavior:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8000
+agent = "orchestrator"
+model = ""
+workers = 1
+```
+
+| Key       | Type      | Default         | Description                                                                |
+|-----------|-----------|-----------------|----------------------------------------------------------------------------|
+| `host`    | `string`  | `"0.0.0.0"`    | Network address to bind to. Use `"127.0.0.1"` for localhost-only access.   |
+| `port`    | `integer` | `8000`          | Port number.                                                               |
+| `agent`   | `string`  | `"orchestrator"`| Default agent for non-streaming requests. Set to `""` for direct engine mode. |
+| `model`   | `string`  | `""`            | Default model name. When empty, falls back to `[intelligence] default_model` or the first model discovered on the engine. |
+| `workers` | `integer` | `1`             | Number of uvicorn workers (for future use).                                |
+
+CLI flags override config file values. For example, `jarvis serve --port 9000` overrides the `port` setting in the config file.
+
+The server also reads from other config sections at startup:
+
+- **`[engine]`** -- determines which inference backend to connect to and its host URL.
+- **`[intelligence]`** -- provides the fallback `default_model` when no model is specified.
+- **`[agent]`** -- supplies `max_turns` for multi-turn agents like `orchestrator`.
+
+## Running Behind a Reverse Proxy
+
+For production deployments, run OpenJarvis behind a reverse proxy like Nginx or Caddy for TLS termination, rate limiting, and authentication.
+
+### Nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name jarvis.example.com;
+
+    ssl_certificate /etc/ssl/certs/jarvis.pem;
+    ssl_certificate_key /etc/ssl/private/jarvis.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE streaming support
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+!!! important "Disable buffering for SSE"
+    The `proxy_buffering off` directive is critical for streaming responses. Without it, Nginx buffers the SSE chunks and delivers them in batches, defeating the purpose of streaming.
+
+### Caddy
+
+```
+jarvis.example.com {
+    reverse_proxy 127.0.0.1:8000 {
+        flush_interval -1
+    }
+}
+```
+
+The `flush_interval -1` setting disables response buffering, which is required for SSE streaming.
+
+### Bind to Localhost
+
+When running behind a reverse proxy, bind the server to `127.0.0.1` so it only accepts connections from the proxy:
+
+```bash
+jarvis serve --host 127.0.0.1 --port 8000
+```
+
+Or in `config.toml`:
+
+```toml
+[server]
+host = "127.0.0.1"
+port = 8000
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\deployment\docker.md
+
+`$(docker.md.Extension.TrimStart('.'))

@@ -1,0 +1,200 @@
+```
+
+---
+
+## Auto-Discovery: Merging Runtime Models
+
+When engines are discovered at runtime, they report models that may not be in the built-in catalog. The `merge_discovered_models()` function creates minimal `ModelSpec` entries for these:
+
+```python
+from openjarvis.intelligence import merge_discovered_models
+
+# Models reported by Ollama that aren't in the catalog
+merge_discovered_models("ollama", ["phi3:3.8b", "codellama:7b"])
+```
+
+For each model ID not already in the registry, a `ModelSpec` is created with the model ID as both the `model_id` and `name`, with zero-value defaults for unknown fields. This ensures the routing system can still select from all available models, even ones it has no metadata for.
+
+---
+
+## IntelligenceConfig
+
+The `IntelligenceConfig` dataclass (in `core/config.py`) captures the full identity of the model the system is configured to use, as well as the default sampling parameters for generation:
+
+```python
+@dataclass(slots=True)
+class IntelligenceConfig:
+    """The model — identity, paths, quantization, fallback chain, and generation defaults."""
+
+    default_model: str = ""       # Primary model key (e.g., "qwen3:8b")
+    fallback_model: str = ""      # Fallback when default is unavailable
+    model_path: str = ""          # Local weights (HF repo, GGUF file, etc.)
+    checkpoint_path: str = ""     # Checkpoint/adapter path (e.g., LoRA)
+    quantization: str = "none"    # none, fp8, int8, int4, gguf_q4, gguf_q8
+    preferred_engine: str = ""    # Override engine for this model (e.g., "vllm")
+    provider: str = ""            # local, openai, anthropic, google
+    # Generation defaults (overridable per-call)
+    temperature: float = 0.7
+    max_tokens: int = 1024
+    top_p: float = 0.9
+    top_k: int = 40
+    repetition_penalty: float = 1.0
+    stop_sequences: str = ""      # Comma-separated stop strings
+```
+
+### Model Identity Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_model` | `str` | `""` | Primary model registry key. Resolved at startup; overrides any engine default. |
+| `fallback_model` | `str` | `""` | Used when the default model is not available on any running engine. |
+| `model_path` | `str` | `""` | Path or HuggingFace repo ID for local weights (e.g., `"./models/qwen3-8b.gguf"` or `"Qwen/Qwen3-8B"`). |
+| `checkpoint_path` | `str` | `""` | Path to a fine-tuned checkpoint or LoRA adapter directory. |
+| `quantization` | `str` | `"none"` | Quantization format. Accepted values: `none`, `fp8`, `int8`, `int4`, `gguf_q4`, `gguf_q8`. |
+| `preferred_engine` | `str` | `""` | When set, `SystemBuilder`, `sdk.py`, and `cli/ask.py` use this engine key instead of `config.engine.default`. |
+| `provider` | `str` | `""` | Model provider hint: `local`, `openai`, `anthropic`, `google`. Used by the Cloud engine backend to route API calls. |
+
+### Generation Default Fields
+
+These fields set the default sampling parameters for every inference call. Individual calls can override them by passing keyword arguments to `engine.generate()`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `temperature` | `float` | `0.7` | Sampling temperature. Lower values produce more deterministic output; higher values increase diversity. |
+| `max_tokens` | `int` | `1024` | Maximum number of tokens to generate per call. |
+| `top_p` | `float` | `0.9` | Nucleus sampling probability mass. At each step, only tokens comprising the top-p probability mass are considered. |
+| `top_k` | `int` | `40` | Top-k sampling: only consider the top-k most likely tokens at each step. |
+| `repetition_penalty` | `float` | `1.0` | Penalize repeated token sequences. Values greater than 1.0 reduce repetition. |
+| `stop_sequences` | `str` | `""` | Comma-separated stop strings. Generation halts when any stop string appears in the output. |
+
+!!! note "Moved from Agent"
+    Generation parameters (`temperature`, `max_tokens`) previously lived under `[agent]` in the config file. They now live under `[intelligence]`. Old configs with these fields under `[agent]` are automatically migrated at load time. See the [configuration migration guide](../getting-started/configuration.md#migration-guide) for details.
+
+### TOML Configuration
+
+```toml
+[intelligence]
+default_model = "qwen3:8b"
+fallback_model = "llama3.2:3b"
+temperature = 0.7
+max_tokens = 1024
+# top_p = 0.9
+# top_k = 40
+# repetition_penalty = 1.0
+# stop_sequences = ""
+
+# Local weight overrides (optional)
+# model_path = "./models/qwen3-8b-instruct.gguf"
+# checkpoint_path = "./checkpoints/my-lora"
+# quantization = "gguf_q4"
+
+# Engine selection for this model (takes priority over [engine].default)
+# preferred_engine = "vllm"
+
+# Provider for cloud models
+# provider = "openai"
+```
+
+### Engine Selection Priority
+
+When resolving which engine to use, `SystemBuilder`, `sdk.py`, and `cli/ask.py` check `config.intelligence.preferred_engine` before `config.engine.default`:
+
+```
+1. Explicit --engine CLI flag or engine_key= SDK parameter
+2. config.intelligence.preferred_engine  ← new field
+3. config.engine.default
+4. First healthy engine discovered at runtime
+```
+
+This lets you pin a specific model to a specific engine without changing the global engine default. For example, a GGUF quantized model can be pinned to `llamacpp` while the global default remains `ollama`:
+
+```toml
+[engine]
+default = "ollama"
+
+[intelligence]
+default_model = "llama3.2:3b"
+model_path = "./models/llama-3.2-3b.Q4_K_M.gguf"
+quantization = "gguf_q4"
+preferred_engine = "llamacpp"
+```
+
+---
+
+## Public API
+
+`intelligence/__init__.py` exports exactly three names:
+
+```python
+from openjarvis.intelligence import (
+    BUILTIN_MODELS,           # List[ModelSpec] — the full built-in catalog
+    merge_discovered_models,  # (engine_key, model_ids) -> None
+    register_builtin_models,  # () -> None
+)
+```
+
+### Backward-Compatibility Shims
+
+The following names are still importable from `openjarvis.intelligence` via shim modules, but their canonical locations have moved:
+
+| Name | Old location | Canonical location |
+|------|-------------|-------------------|
+| `RouterPolicy` | `intelligence/_stubs.py` | `learning/_stubs.py` |
+| `QueryAnalyzer` | `intelligence/_stubs.py` | `learning/_stubs.py` |
+| `HeuristicRouter` | `intelligence/router.py` | `learning/router.py` |
+| `build_routing_context` | `intelligence/router.py` | `learning/router.py` |
+| `DefaultQueryAnalyzer` | `intelligence/router.py` | `learning/router.py` |
+
+New code should import from the canonical `learning.*` locations. The shims in `intelligence/_stubs.py` and `intelligence/router.py` are retained for backward compatibility only.
+
+---
+
+## Integration with Learning
+
+The Learning primitive consumes the model catalog to make routing decisions. The `HeuristicRouter` and `TraceDrivenPolicy` both read `ModelRegistry` to compare model sizes when selecting between candidates. See the [Learning & Traces](learning.md) documentation for full details on routing policies, the `RouterPolicy` ABC, and the trace-driven feedback loop.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\learning.md
+
+`$(learning.md.Extension.TrimStart('.'))
+# Learning & Traces
+
+The Learning system is a **cross-cutting concern** that connects all five primitives through trace-driven feedback. It determines which model handles each query (router policies), records the full interaction as a trace, analyzes outcomes, and updates policies based on what worked.
+
+---
+
+## LearningPolicy ABC Taxonomy
+
+The learning system defines a hierarchy of learning policy ABCs. The base `LearningPolicy` ABC is specialized into two sub-ABCs corresponding to the two learnable concerns:
+
+| ABC | Concern | Description |
+|-----|---------|-------------|
+| `IntelligenceLearningPolicy` | Model routing | Determines which model handles a query (replaces the legacy `RouterPolicy`) |
+| `AgentLearningPolicy` | Agent behavior | Advises on agent strategy (e.g., ICL examples, tool selection, turn limits) |
+
+All learning policies are registered in the `LearningRegistry` (in `core/registry.py`).
+
+## RouterPolicy ABC
+
+The `RouterPolicy` ABC and the `QueryAnalyzer` ABC are defined in `learning/_stubs.py`:
+
+```python
+# learning/_stubs.py
+class RouterPolicy(ABC):
+    @abstractmethod
+    def select_model(self, context: RoutingContext) -> str:
+        """Return the model registry key best suited for *context*."""
+
+class QueryAnalyzer(ABC):
+    @abstractmethod
+    def analyze(self, query: str) -> RoutingContext:
+        """Analyze a raw query string and return a RoutingContext."""
+```
+
+!!! note "Backward compatibility"
+    The canonical locations are now `openjarvis.learning._stubs` (for `RouterPolicy` and `QueryAnalyzer`) and `openjarvis.core.types` (for `RoutingContext`). The old `openjarvis.intelligence._stubs` import path still works via a backward-compatibility shim, but new code should import from `openjarvis.learning._stubs`.
+
+### RoutingContext
+
+The `RoutingContext` dataclass is now defined in `core/types.py` (moved from `learning/_stubs.py`):

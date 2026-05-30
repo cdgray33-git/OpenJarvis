@@ -1,0 +1,166 @@
+﻿Certainly! Let's continue with the documentation for the Learning system, focusing on the `RouterPolicy` and `QueryAnalyzer`.
+
+### RouterPolicy ABC
+
+The `RouterPolicy` abstract base class (ABC) defines the interface that all model routing policies must implement. It includes methods to determine which model should handle a given query based on various factors such as query content, context, and available models.
+
+```python
+# learning/_stubs.py
+from abc import ABC, abstractmethod
+
+class RouterPolicy(ABC):
+    @abstractmethod
+    def select_model(self, routing_context: RoutingContext) -> str:
+        """Select the most appropriate model for handling the given routing context."""
+        pass
+```
+
+### QueryAnalyzer ABC
+
+The `QueryAnalyzer` ABC defines the interface for query analysis. It includes methods to preprocess and analyze queries before they are routed to a model.
+
+```python
+# learning/_stubs.py
+class QueryAnalyzer(ABC):
+    @abstractmethod
+    def analyze(self, query: str) -> AnalysisResult:
+        """Analyze the given query and return an analysis result."""
+        pass
+```
+
+### DefaultQueryAnalyzer
+
+The `DefaultQueryAnalyzer` class is a concrete implementation of the `QueryAnalyzer` ABC. It provides basic query analysis functionalities.
+
+```python
+# learning/router.py
+class DefaultQueryAnalyzer(QueryAnalyzer):
+    def analyze(self, query: str) -> AnalysisResult:
+        # Perform some basic analysis on the query
+        return AnalysisResult(query_length=len(query), keywords=self.extract_keywords(query))
+
+    def extract_keywords(self, query: str) -> List[str]:
+        # Simple keyword extraction logic
+        return [word for word in query.split() if len(word) > 3]
+```
+
+### HeuristicRouter
+
+The `HeuristicRouter` class is a concrete implementation of the `RouterPolicy` ABC. It uses heuristics to select the most appropriate model based on the analysis result.
+
+```python
+# learning/router.py
+class HeuristicRouter(RouterPolicy):
+    def __init__(self, query_analyzer: QueryAnalyzer = None):
+        self.query_analyzer = query_analyzer or DefaultQueryAnalyzer()
+
+    def select_model(self, routing_context: RoutingContext) -> str:
+        analysis_result = self.query_analyzer.analyze(routing_context.query)
+        return self.choose_model(analysis_result)
+
+    def choose_model(self, analysis_result: AnalysisResult) -> str:
+        # Heuristic logic to choose a model based on the analysis result
+        if analysis_result.query_length > 100:
+            return "qwen3:8b"
+        elif "code" in analysis_result.keywords:
+            return "codellama:7b"
+        else:
+            return "llama3.2:3b"
+```
+
+### RoutingContext
+
+The `RoutingContext` class encapsulates the context needed for routing a query, including the query itself and any additional metadata.
+
+```python
+# learning/router.py
+class RoutingContext(NamedTuple):
+    query: str
+    user_id: Optional[str] = None
+    conversation_history: Optional[List[Message]] = None
+```
+
+### AnalysisResult
+
+The `AnalysisResult` class encapsulates the results of query analysis, such as the length of the query and any extracted keywords.
+
+```python
+# learning/router.py
+class AnalysisResult(NamedTuple):
+    query_length: int
+    keywords: List[str]
+```
+
+### Trace-Driven Learning Policy
+
+Trace-driven learning policies use interaction traces to improve routing decisions over time. The `TraceDrivenPolicy` class is an example of such a policy.
+
+```python
+# learning/policy.py
+class TraceDrivenPolicy(IntelligenceLearningPolicy):
+    def __init__(self, trace_store: TraceStore):
+        self.trace_store = trace_store
+
+    def update_policy(self, trace: InteractionTrace) -> None:
+        # Update the routing policy based on the interaction trace
+        pass
+
+    def select_model(self, routing_context: RoutingContext) -> str:
+        # Select a model based on historical traces and current context
+        return "qwen3:8b"  # Placeholder logic
+```
+
+### TraceStore
+
+The `TraceStore` class manages the storage and retrieval of interaction traces.
+
+```python
+# learning/trace.py
+class TraceStore:
+    def __init__(self):
+        self.traces = []
+
+    def add_trace(self, trace: InteractionTrace) -> None:
+        self.traces.append(trace)
+
+    def get_traces(self) -> List[InteractionTrace]:
+        return self.traces
+```
+
+### InteractionTrace
+
+The `InteractionTrace` class encapsulates a single interaction between the system and a user, including the query, the model used, and the response.
+
+```python
+# learning/trace.py
+class InteractionTrace(NamedTuple):
+    query: str
+    model_used: str
+    response: str
+    timestamp: datetime = field(default_factory=datetime.now)
+```
+
+### Integration with Intelligence
+
+The Learning system integrates with the Intelligence system by using the `ModelRegistry` to access information about available models. This allows the learning policies to make informed decisions based on the full catalog of models.
+
+```python
+# learning/router.py
+class HeuristicRouter(RouterPolicy):
+    def __init__(self, query_analyzer: QueryAnalyzer = None, model_registry: ModelRegistry = None):
+        self.query_analyzer = query_analyzer or DefaultQueryAnalyzer()
+        self.model_registry = model_registry or ModelRegistry()
+
+    def choose_model(self, analysis_result: AnalysisResult) -> str:
+        available_models = self.model_registry.get_available_models()
+        # Heuristic logic to choose a model based on the analysis result and available models
+        return "qwen3:8b"  # Placeholder logic
+```
+
+### Summary
+
+The Learning system is crucial for connecting all five primitives through trace-driven feedback. It includes various learning policies, query analyzers, routers, and trace management components that work together to improve model routing and agent behavior over time.
+
+---
+
+This completes the detailed documentation for the Learning & Traces module in OpenJarvis.

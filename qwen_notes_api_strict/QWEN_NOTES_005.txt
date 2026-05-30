@@ -1,0 +1,92 @@
+﻿Sure, let's continue with the provided documentation excerpt from `QWEN_CORE_BUNDLE.md`. We'll focus on the remaining parts of the Learning & Traces section and then wrap up with a summary.
+
+### RouterPolicy ABC
+
+The `RouterPolicy` ABC and the `QueryAnalyzer` ABC are defined in `learning/_stubs.py`:
+
+```python
+# learning/_stubs.py
+class RouterPolicy(ABC):
+    @abstractmethod
+    def select_model(self, context: RoutingContext) -> str:
+        """Select a model based on the given routing context."""
+        pass
+
+class QueryAnalyzer(ABC):
+    @abstractmethod
+    def analyze_query(self, query: str) -> AnalysisResult:
+        """Analyze the query and return an analysis result."""
+        pass
+```
+
+### HeuristicRouter
+
+The `HeuristicRouter` class implements a basic heuristic-based router policy:
+
+```python
+# learning/router.py
+class HeuristicRouter(RouterPolicy):
+    def select_model(self, context: RoutingContext) -> str:
+        """Select the most suitable model based on query complexity and available models."""
+        # Logic to determine the best model for the given context
+        pass
+```
+
+### Trace Recording
+
+The `Trace` class captures the full interaction between the system and the user:
+
+```python
+# learning/trace.py
+@dataclass(frozen=True)
+class Trace:
+    query: str
+    response: str
+    model_used: str
+    success: bool
+    metadata: Dict[str, Any]
+```
+
+### Trace Analysis
+
+The `TraceAnalyzer` class analyzes traces to provide insights:
+
+```python
+# learning/trace.py
+class TraceAnalyzer:
+    def analyze_trace(self, trace: Trace) -> AnalysisResult:
+        """Analyze a single trace and return an analysis result."""
+        # Logic to analyze the trace
+        pass
+```
+
+### AgentLearningPolicy ABC
+
+The `AgentLearningPolicy` ABC is defined in `learning/_stubs.py`:
+
+```python
+# learning/_stubs.py
+class AgentLearningPolicy(ABC):
+    @abstractmethod
+    def advise_agent(self, context: AgentContext) -> Advice:
+        """Advise the agent on behavior (e.g., ICL examples, tool selection)."""
+        pass
+```
+
+### Integration with Intelligence
+
+The Learning system consumes the model catalog to make routing decisions. The `HeuristicRouter` and `TraceDrivenPolicy` both read `ModelRegistry` to compare model sizes when selecting between candidates.
+
+### Summary
+
+- **LearningPolicy ABC Taxonomy**: Defines a hierarchy of learning policies, including `IntelligenceLearningPolicy` for model routing and `AgentLearningPolicy` for agent behavior.
+- **RouterPolicy ABC**: Determines which model handles each query based on the given context.
+- **QueryAnalyzer ABC**: Analyzes queries to provide insights for routing decisions.
+- **HeuristicRouter**: Implements a heuristic-based router policy.
+- **Trace Recording & Analysis**: Captures and analyzes interactions to improve future routing decisions.
+
+The Learning system integrates with other primitives through trace-driven feedback, enhancing model selection and agent behavior based on historical data.
+
+---
+
+This completes the detailed documentation excerpt from `QWEN_CORE_BUNDLE.md` focusing on the Learning & Traces section.

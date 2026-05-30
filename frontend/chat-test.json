@@ -1,0 +1,7 @@
+﻿{
+  "model": "qwen3.6:27b",
+  "messages": [
+    { "role": "user", "content": "Say hello in one sentence." }
+  ],
+  "stream": false
+}

@@ -1,0 +1,73 @@
+CLI flags override config file values. For example, `jarvis serve --port 9000` overrides the `port` setting in the config file.
+
+The server also reads from other config sections at startup:
+
+- **`[engine]`** -- determines which inference backend to connect to and its host URL.
+- **`[intelligence]`** -- provides the fallback `default_model` when no model is specified.
+- **`[agent]`** -- supplies `max_turns` for multi-turn agents like `orchestrator`.
+
+## Running Behind a Reverse Proxy
+
+For production deployments, run OpenJarvis behind a reverse proxy like Nginx or Caddy for TLS termination, rate limiting, and authentication.
+
+### Nginx
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name jarvis.example.com;
+
+    ssl_certificate /etc/ssl/certs/jarvis.pem;
+    ssl_certificate_key /etc/ssl/private/jarvis.key;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE streaming support
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+!!! important "Disable buffering for SSE"
+    The `proxy_buffering off` directive is critical for streaming responses. Without it, Nginx buffers the SSE chunks and delivers them in batches, defeating the purpose of streaming.
+
+### Caddy
+
+```
+jarvis.example.com {
+    reverse_proxy 127.0.0.1:8000 {
+        flush_interval -1
+    }
+}
+```
+
+The `flush_interval -1` setting disables response buffering, which is required for SSE streaming.
+
+### Bind to Localhost
+
+When running behind a reverse proxy, bind the server to `127.0.0.1` so it only accepts connections from the proxy:
+
+```bash
+jarvis serve --host 127.0.0.1 --port 8000
+```
+
+Or in `config.toml`:
+
+```toml
+[server]
+host = "127.0.0.1"
+port = 8000
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\deployment\docker.md
+
+`$(docker.md.Extension.TrimStart('.'))

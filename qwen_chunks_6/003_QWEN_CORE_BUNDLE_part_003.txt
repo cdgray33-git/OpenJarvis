@@ -1,0 +1,713 @@
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://localhost:11434"
+
+[engine.vllm]
+host = "http://localhost:8000"
+
+[engine.sglang]
+host = "http://localhost:30000"
+
+# [engine.llamacpp]
+# host = "http://localhost:8080"
+# binary_path = ""
+
+# [engine.lemonade]
+# host = "http://localhost:8000"
+```
+
+The `EngineConfig` dataclass and its per-engine sub-dataclasses map these settings:
+
+| Config Class | Field | Default | Description |
+|---|---|---|---|
+| `EngineConfig` | `default` | `"ollama"` (hardware-dependent) | Preferred engine backend |
+| `OllamaEngineConfig` | `host` | `http://localhost:11434` | Ollama server URL |
+| `VLLMEngineConfig` | `host` | `http://localhost:8000` | vLLM server URL |
+| `SGLangEngineConfig` | `host` | `http://localhost:30000` | SGLang server URL |
+| `LlamaCppEngineConfig` | `host` | `http://localhost:8080` | llama.cpp server URL |
+| `LlamaCppEngineConfig` | `binary_path` | `""` | Path to llama.cpp binary (for managed mode) |
+| `LemonadeEngineConfig` | `host` | `http://localhost:8000` | Lemonade server URL |
+
+!!! note "Backward compatibility"
+    The old flat field names `ollama_host`, `vllm_host`, `llamacpp_host`, `llamacpp_path`, `sglang_host`, and `lemonade_host` under `[engine]` are still accepted as backward-compatible properties on `EngineConfig`. New configurations should use the nested sub-section format.
+
+---
+
+## Utility Functions
+
+### `messages_to_dicts()`
+
+Converts a sequence of `Message` objects to OpenAI-format dictionaries, handling tool calls and tool call IDs:
+
+```python
+from openjarvis.engine._base import messages_to_dicts
+from openjarvis.core.types import Message, Role
+
+messages = [Message(role=Role.USER, content="Hello")]
+dicts = messages_to_dicts(messages)
+# [{"role": "user", "content": "Hello"}]
+```
+
+### `EngineConnectionError`
+
+A custom exception raised when an engine is unreachable. All engine backends catch `httpx.ConnectError` and `httpx.TimeoutException` and re-raise as `EngineConnectionError`:
+
+```python
+from openjarvis.engine import EngineConnectionError
+
+try:
+    result = engine.generate(messages, model="qwen3:8b")
+except EngineConnectionError as exc:
+    print(f"Engine unavailable: {exc}")
+```
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\intelligence.md
+
+`$(intelligence.md.Extension.TrimStart('.'))
+# Intelligence Primitive
+
+The Intelligence primitive represents **the model** — its identity, weights, quantization format, fallback chain, and the catalog of well-known models with detailed metadata. It no longer contains routing logic; query analysis and model selection have moved to the [Learning primitive](learning.md).
+
+---
+
+## Purpose
+
+The Intelligence primitive answers a single question: *what is the model?* It maintains a catalog of known models with metadata (parameter count, context length, VRAM requirements, supported engines) and provides helpers for registering built-in models and merging models discovered from running engines at runtime.
+
+The primitive provides three key capabilities:
+
+1. **Model catalog** -- a registry of well-known models with metadata (parameter count, context length, VRAM requirements, supported engines)
+2. **Auto-discovery** -- merging models discovered from running engines into the catalog
+3. **Model configuration** -- `IntelligenceConfig` captures the local model's identity, weight paths, quantization, and preferred engine
+
+!!! info "Routing has moved"
+    Query analysis (`build_routing_context`) and model selection (`HeuristicRouter`, `RouterPolicy` ABC) now live in the [Learning primitive](learning.md). Backward-compatible re-exports remain in `intelligence/_stubs.py` and `intelligence/router.py` so existing code continues to work.
+
+---
+
+## ModelSpec
+
+Every model in the system is described by a `ModelSpec` dataclass, defined in `core/types.py`:
+
+```python
+@dataclass(slots=True)
+class ModelSpec:
+    model_id: str                              # Unique identifier (e.g., "qwen3:8b")
+    name: str                                  # Human-readable name
+    parameter_count_b: float                   # Total parameters in billions
+    context_length: int                        # Maximum context window (tokens)
+    active_parameter_count_b: Optional[float]  # MoE active params (None for dense)
+    quantization: Quantization                 # Quantization format (none, fp8, int4, etc.)
+    min_vram_gb: float                         # Minimum VRAM required
+    supported_engines: Sequence[str]           # Which engines can run this model
+    provider: str                              # Model provider (e.g., "alibaba", "meta")
+    requires_api_key: bool                     # Whether cloud API key is needed
+    metadata: Dict[str, Any]                   # Additional metadata (pricing, architecture)
+```
+
+Models are registered in the `ModelRegistry`:
+
+```python
+from openjarvis.core.registry import ModelRegistry
+
+# Register a model
+ModelRegistry.register_value("qwen3:8b", ModelSpec(
+    model_id="qwen3:8b",
+    name="Qwen3 8B",
+    parameter_count_b=8.2,
+    context_length=32768,
+    supported_engines=("vllm", "ollama", "llamacpp", "sglang"),
+    provider="alibaba",
+))
+```
+
+---
+
+## Model Catalog
+
+The built-in model catalog is defined in `intelligence/model_catalog.py` as the `BUILTIN_MODELS` list. It includes models across three categories:
+
+### Local Models -- Dense
+
+| Model ID | Name | Parameters | Context | Supported Engines |
+|----------|------|-----------|---------|-------------------|
+| `qwen3:8b` | Qwen3 8B | 8.2B | 32K | vLLM, Ollama, llama.cpp, SGLang |
+| `qwen3:32b` | Qwen3 32B | 32B | 32K | Ollama, vLLM |
+| `llama3.3:70b` | Llama 3.3 70B | 70B | 128K | Ollama, vLLM |
+| `llama3.2:3b` | Llama 3.2 3B | 3B | 128K | Ollama, vLLM, llama.cpp |
+| `deepseek-coder-v2:16b` | DeepSeek Coder V2 16B | 16B | 128K | Ollama, vLLM |
+| `mistral:7b` | Mistral 7B | 7B | 32K | Ollama, vLLM, llama.cpp |
+
+### Local Models -- Mixture of Experts (MoE)
+
+| Model ID | Name | Total / Active Params | Context | Min VRAM |
+|----------|------|----------------------|---------|----------|
+| `gpt-oss:120b` | GPT-OSS 120B | 117B / 5.1B | 128K | 12 GB |
+| `glm-4.7-flash` | GLM 4.7 Flash | 30B / 3B | 128K | 8 GB |
+| `trinity-mini` | Trinity Mini | 26B / 3B | 128K | 8 GB |
+
+### Cloud Models
+
+| Model ID | Provider | Context | Pricing (input/output per 1M tokens) |
+|----------|----------|---------|--------------------------------------|
+| `gpt-4o` | OpenAI | 128K | $2.50 / $10.00 |
+| `gpt-4o-mini` | OpenAI | 128K | $0.15 / $0.60 |
+| `gpt-5-mini` | OpenAI | 400K | $0.25 / $2.00 |
+| `claude-sonnet-4-20250514` | Anthropic | 200K | $3.00 / $15.00 |
+| `claude-opus-4-20250514` | Anthropic | 200K | $15.00 / $75.00 |
+| `claude-opus-4-6` | Anthropic | 200K | $5.00 / $25.00 |
+| `gemini-2.5-pro` | Google | 1M | $1.25 / $10.00 |
+| `gemini-2.5-flash` | Google | 1M | $0.30 / $2.50 |
+
+### Registering Built-in Models
+
+The `register_builtin_models()` function populates the `ModelRegistry` with all built-in models. It skips models that are already registered, making it safe to call multiple times:
+
+```python
+from openjarvis.intelligence import register_builtin_models
+
+register_builtin_models()
+# All BUILTIN_MODELS are now in ModelRegistry
+```
+
+---
+
+## Auto-Discovery: Merging Runtime Models
+
+When engines are discovered at runtime, they report models that may not be in the built-in catalog. The `merge_discovered_models()` function creates minimal `ModelSpec` entries for these:
+
+```python
+from openjarvis.intelligence import merge_discovered_models
+
+# Models reported by Ollama that aren't in the catalog
+merge_discovered_models("ollama", ["phi3:3.8b", "codellama:7b"])
+```
+
+For each model ID not already in the registry, a `ModelSpec` is created with the model ID as both the `model_id` and `name`, with zero-value defaults for unknown fields. This ensures the routing system can still select from all available models, even ones it has no metadata for.
+
+---
+
+## IntelligenceConfig
+
+The `IntelligenceConfig` dataclass (in `core/config.py`) captures the full identity of the model the system is configured to use, as well as the default sampling parameters for generation:
+
+```python
+@dataclass(slots=True)
+class IntelligenceConfig:
+    """The model — identity, paths, quantization, fallback chain, and generation defaults."""
+
+    default_model: str = ""       # Primary model key (e.g., "qwen3:8b")
+    fallback_model: str = ""      # Fallback when default is unavailable
+    model_path: str = ""          # Local weights (HF repo, GGUF file, etc.)
+    checkpoint_path: str = ""     # Checkpoint/adapter path (e.g., LoRA)
+    quantization: str = "none"    # none, fp8, int8, int4, gguf_q4, gguf_q8
+    preferred_engine: str = ""    # Override engine for this model (e.g., "vllm")
+    provider: str = ""            # local, openai, anthropic, google
+    # Generation defaults (overridable per-call)
+    temperature: float = 0.7
+    max_tokens: int = 1024
+    top_p: float = 0.9
+    top_k: int = 40
+    repetition_penalty: float = 1.0
+    stop_sequences: str = ""      # Comma-separated stop strings
+```
+
+### Model Identity Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `default_model` | `str` | `""` | Primary model registry key. Resolved at startup; overrides any engine default. |
+| `fallback_model` | `str` | `""` | Used when the default model is not available on any running engine. |
+| `model_path` | `str` | `""` | Path or HuggingFace repo ID for local weights (e.g., `"./models/qwen3-8b.gguf"` or `"Qwen/Qwen3-8B"`). |
+| `checkpoint_path` | `str` | `""` | Path to a fine-tuned checkpoint or LoRA adapter directory. |
+| `quantization` | `str` | `"none"` | Quantization format. Accepted values: `none`, `fp8`, `int8`, `int4`, `gguf_q4`, `gguf_q8`. |
+| `preferred_engine` | `str` | `""` | When set, `SystemBuilder`, `sdk.py`, and `cli/ask.py` use this engine key instead of `config.engine.default`. |
+| `provider` | `str` | `""` | Model provider hint: `local`, `openai`, `anthropic`, `google`. Used by the Cloud engine backend to route API calls. |
+
+### Generation Default Fields
+
+These fields set the default sampling parameters for every inference call. Individual calls can override them by passing keyword arguments to `engine.generate()`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `temperature` | `float` | `0.7` | Sampling temperature. Lower values produce more deterministic output; higher values increase diversity. |
+| `max_tokens` | `int` | `1024` | Maximum number of tokens to generate per call. |
+| `top_p` | `float` | `0.9` | Nucleus sampling probability mass. At each step, only tokens comprising the top-p probability mass are considered. |
+| `top_k` | `int` | `40` | Top-k sampling: only consider the top-k most likely tokens at each step. |
+| `repetition_penalty` | `float` | `1.0` | Penalize repeated token sequences. Values greater than 1.0 reduce repetition. |
+| `stop_sequences` | `str` | `""` | Comma-separated stop strings. Generation halts when any stop string appears in the output. |
+
+!!! note "Moved from Agent"
+    Generation parameters (`temperature`, `max_tokens`) previously lived under `[agent]` in the config file. They now live under `[intelligence]`. Old configs with these fields under `[agent]` are automatically migrated at load time. See the [configuration migration guide](../getting-started/configuration.md#migration-guide) for details.
+
+### TOML Configuration
+
+```toml
+[intelligence]
+default_model = "qwen3:8b"
+fallback_model = "llama3.2:3b"
+temperature = 0.7
+max_tokens = 1024
+# top_p = 0.9
+# top_k = 40
+# repetition_penalty = 1.0
+# stop_sequences = ""
+
+# Local weight overrides (optional)
+# model_path = "./models/qwen3-8b-instruct.gguf"
+# checkpoint_path = "./checkpoints/my-lora"
+# quantization = "gguf_q4"
+
+# Engine selection for this model (takes priority over [engine].default)
+# preferred_engine = "vllm"
+
+# Provider for cloud models
+# provider = "openai"
+```
+
+### Engine Selection Priority
+
+When resolving which engine to use, `SystemBuilder`, `sdk.py`, and `cli/ask.py` check `config.intelligence.preferred_engine` before `config.engine.default`:
+
+```
+1. Explicit --engine CLI flag or engine_key= SDK parameter
+2. config.intelligence.preferred_engine  ← new field
+3. config.engine.default
+4. First healthy engine discovered at runtime
+```
+
+This lets you pin a specific model to a specific engine without changing the global engine default. For example, a GGUF quantized model can be pinned to `llamacpp` while the global default remains `ollama`:
+
+```toml
+[engine]
+default = "ollama"
+
+[intelligence]
+default_model = "llama3.2:3b"
+model_path = "./models/llama-3.2-3b.Q4_K_M.gguf"
+quantization = "gguf_q4"
+preferred_engine = "llamacpp"
+```
+
+---
+
+## Public API
+
+`intelligence/__init__.py` exports exactly three names:
+
+```python
+from openjarvis.intelligence import (
+    BUILTIN_MODELS,           # List[ModelSpec] — the full built-in catalog
+    merge_discovered_models,  # (engine_key, model_ids) -> None
+    register_builtin_models,  # () -> None
+)
+```
+
+### Backward-Compatibility Shims
+
+The following names are still importable from `openjarvis.intelligence` via shim modules, but their canonical locations have moved:
+
+| Name | Old location | Canonical location |
+|------|-------------|-------------------|
+| `RouterPolicy` | `intelligence/_stubs.py` | `learning/_stubs.py` |
+| `QueryAnalyzer` | `intelligence/_stubs.py` | `learning/_stubs.py` |
+| `HeuristicRouter` | `intelligence/router.py` | `learning/router.py` |
+| `build_routing_context` | `intelligence/router.py` | `learning/router.py` |
+| `DefaultQueryAnalyzer` | `intelligence/router.py` | `learning/router.py` |
+
+New code should import from the canonical `learning.*` locations. The shims in `intelligence/_stubs.py` and `intelligence/router.py` are retained for backward compatibility only.
+
+---
+
+## Integration with Learning
+
+The Learning primitive consumes the model catalog to make routing decisions. The `HeuristicRouter` and `TraceDrivenPolicy` both read `ModelRegistry` to compare model sizes when selecting between candidates. See the [Learning & Traces](learning.md) documentation for full details on routing policies, the `RouterPolicy` ABC, and the trace-driven feedback loop.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\learning.md
+
+`$(learning.md.Extension.TrimStart('.'))
+# Learning & Traces
+
+The Learning system is a **cross-cutting concern** that connects all five primitives through trace-driven feedback. It determines which model handles each query (router policies), records the full interaction as a trace, analyzes outcomes, and updates policies based on what worked.
+
+---
+
+## LearningPolicy ABC Taxonomy
+
+The learning system defines a hierarchy of learning policy ABCs. The base `LearningPolicy` ABC is specialized into two sub-ABCs corresponding to the two learnable concerns:
+
+| ABC | Concern | Description |
+|-----|---------|-------------|
+| `IntelligenceLearningPolicy` | Model routing | Determines which model handles a query (replaces the legacy `RouterPolicy`) |
+| `AgentLearningPolicy` | Agent behavior | Advises on agent strategy (e.g., ICL examples, tool selection, turn limits) |
+
+All learning policies are registered in the `LearningRegistry` (in `core/registry.py`).
+
+## RouterPolicy ABC
+
+The `RouterPolicy` ABC and the `QueryAnalyzer` ABC are defined in `learning/_stubs.py`:
+
+```python
+# learning/_stubs.py
+class RouterPolicy(ABC):
+    @abstractmethod
+    def select_model(self, context: RoutingContext) -> str:
+        """Return the model registry key best suited for *context*."""
+
+class QueryAnalyzer(ABC):
+    @abstractmethod
+    def analyze(self, query: str) -> RoutingContext:
+        """Analyze a raw query string and return a RoutingContext."""
+```
+
+!!! note "Backward compatibility"
+    The canonical locations are now `openjarvis.learning._stubs` (for `RouterPolicy` and `QueryAnalyzer`) and `openjarvis.core.types` (for `RoutingContext`). The old `openjarvis.intelligence._stubs` import path still works via a backward-compatibility shim, but new code should import from `openjarvis.learning._stubs`.
+
+### RoutingContext
+
+The `RoutingContext` dataclass is now defined in `core/types.py` (moved from `learning/_stubs.py`):
+
+```python
+# core/types.py
+@dataclass(slots=True)
+class RoutingContext:
+    query: str = ""            # The raw query text
+    query_length: int = 0      # Character count
+    has_code: bool = False     # Whether code patterns were detected
+    has_math: bool = False     # Whether math keywords were detected
+    language: str = "en"       # Detected language
+    urgency: float = 0.5      # 0 = low priority, 1 = real-time
+    metadata: Dict[str, Any] = field(default_factory=dict)
+```
+
+---
+
+## RouterPolicyRegistry & LearningRegistry
+
+Router policies are registered in the `RouterPolicyRegistry` and selected at runtime. Additionally, the `LearningRegistry` (in `core/registry.py`) manages the broader set of learning policies across the taxonomy.
+
+The system ships with these router policies:
+
+| Registry Key | Policy Class | Status | Description |
+|-------------|-------------|--------|-------------|
+| `heuristic` | `HeuristicRouter` | Active | Rule-based routing with 6 priority rules |
+| `learned` | `TraceDrivenPolicy` | Active | Learns from trace outcomes |
+| `grpo` | `GRPORouterPolicy` | Stub | Placeholder for future RL training |
+| `sft` | `SFTRouterPolicy` | Active | Trace-driven routing policy (learns query→model mapping); `SFTPolicy` is a backward-compat alias |
+
+And these additional learning policies (registered in `LearningRegistry`):
+
+| Registry Key | Policy Class | Taxonomy | Description |
+|-------------|-------------|----------|-------------|
+| `agent_advisor` | `AgentAdvisorPolicy` | `AgentLearningPolicy` | Advises on agent strategy based on trace patterns |
+| `icl_updater` | `ICLUpdaterPolicy` | `AgentLearningPolicy` | In-context learning updater — discovers ICL examples and multi-tool skills from traces |
+
+Users select a policy via `config.toml` or the `--router` CLI flag:
+
+```toml
+[learning.routing]
+policy = "heuristic"
+```
+
+```bash
+jarvis ask --router learned "What is the capital of France?"
+```
+
+### The `ensure_registered()` Pattern
+
+Learning modules use a lazy registration pattern to survive registry clearing in tests:
+
+```python
+def ensure_registered() -> None:
+    """Register TraceDrivenPolicy if not already present."""
+    if not RouterPolicyRegistry.contains("learned"):
+        RouterPolicyRegistry.register_value("learned", TraceDrivenPolicy)
+
+ensure_registered()  # Called at module import time
+```
+
+This ensures that policies are available even after `RouterPolicyRegistry.clear()` is called in test teardown, because re-importing the module re-registers them.
+
+---
+
+## HeuristicRouter (Heuristic Policy)
+
+The `HeuristicRouter` is the default routing policy. It is defined in `learning/router.py` and applies six static priority rules to select the best model based on query characteristics.
+
+### Routing Rules
+
+| Priority | Rule | Condition | Action |
+|----------|------|-----------|--------|
+| 1 | Code detection | Query contains code patterns (backticks, `def`, `class`, `import`, `function`, `=>`, etc.) | Prefer model with "code" or "coder" in name; fall back to largest model |
+| 2 | Math detection | Query contains math keywords (`solve`, `integral`, `equation`, `calculate`, `compute`, etc.) | Select the largest available model |
+| 3 | Short query | Query length < 50 characters, no code/math | Select the smallest available model (faster response) |
+| 4 | Long/complex query | Query length > 500 characters OR contains reasoning keywords (`explain`, `analyze`, `compare`, `step-by-step`, etc.) | Select the largest available model |
+| 5 | High urgency | `urgency > 0.8` | Override to smallest model (fastest response) |
+| 6 | Default fallback | None of the above match | Use `default_model`, then `fallback_model`, then first available |
+
+!!! note "Priority 5 overrides all others"
+    The urgency check (rule 5) is evaluated **first** in the code — if urgency exceeds 0.8, the router immediately returns the smallest model regardless of query content.
+
+### Usage
+
+```python
+from openjarvis.learning.router import HeuristicRouter, build_routing_context
+
+router = HeuristicRouter(
+    available_models=["qwen3:8b", "llama3.2:3b", "deepseek-coder-v2:16b"],
+    default_model="qwen3:8b",
+    fallback_model="llama3.2:3b",
+)
+
+ctx = build_routing_context("Write a Python function to sort a list")
+model = router.select_model(ctx)  # Returns "deepseek-coder-v2:16b" (has "coder")
+```
+
+### build_routing_context()
+
+The `build_routing_context()` function (in `learning/router.py`) analyzes a raw query string and produces a `RoutingContext` dataclass:
+
+```python
+from openjarvis.learning.router import build_routing_context
+
+ctx = build_routing_context("Solve the integral of x^2 dx")
+# ctx.has_math = True, ctx.has_code = False, ctx.query_length = 32
+
+ctx = build_routing_context("```python\ndef hello():\n    pass\n```")
+# ctx.has_code = True, ctx.has_math = False
+```
+
+**Code detection** uses regex patterns matching:
+
+- Backtick code blocks (` ``` ` or `` `inline` ``)
+- Language keywords (`def`, `class`, `import`, `function`, `const`, `var`, `let`)
+- Syntax patterns (`if (`, `->`, `=>`, `{ }`, `for x in`, `#include`, `System.out`)
+
+**Math detection** uses regex patterns matching:
+
+- Mathematical terms (`solve`, `integral`, `equation`, `proof`, `derivative`, `matrix`)
+- Computational keywords (`calculate`, `compute`, `sigma`, `sum`, `limit`, `probability`)
+
+### Registration
+
+The `heuristic_policy.py` module wires `HeuristicRouter` into the `RouterPolicyRegistry`:
+
+```python
+# learning/heuristic_policy.py
+def ensure_registered() -> None:
+    if not RouterPolicyRegistry.contains("heuristic"):
+        RouterPolicyRegistry.register_value("heuristic", HeuristicRouter)
+
+ensure_registered()
+```
+
+---
+
+## TraceDrivenPolicy (Learned Policy)
+
+The `TraceDrivenPolicy` learns from historical traces to determine which model performs best for different types of queries. Unlike the heuristic router's static rules, this policy adapts based on actual outcomes.
+
+### Query Classification
+
+Queries are classified into broad categories for grouping:
+
+| Category | Condition |
+|----------|-----------|
+| `code` | Contains code patterns (backticks, `def`, `class`, `import`, `function`) |
+| `math` | Contains math keywords (`solve`, `integral`, `equation`, `calculate`, `compute`) |
+| `short` | Query length < 50 characters |
+| `long` | Query length > 500 characters |
+| `general` | None of the above |
+
+### Model Selection
+
+When `select_model()` is called:
+
+1. Classify the query into a category
+2. If the policy map has an entry for this category **and** the confidence (sample count) exceeds `min_samples` (default: 5), use the learned model
+3. Otherwise, fall back to: `default_model` -> `fallback_model` -> first available model
+
+### Batch Updates via `update_from_traces()`
+
+The primary update mechanism reads all traces from a `TraceAnalyzer` and recomputes the policy map:
+
+```python
+from openjarvis.learning.trace_policy import TraceDrivenPolicy
+from openjarvis.traces.analyzer import TraceAnalyzer
+from openjarvis.traces.store import TraceStore
+
+store = TraceStore("traces.db")
+analyzer = TraceAnalyzer(store)
+policy = TraceDrivenPolicy(
+    analyzer=analyzer,
+    available_models=["qwen3:8b", "llama3.2:3b", "deepseek-coder-v2:16b"],
+    default_model="qwen3:8b",
+)
+
+# Recompute routing decisions from trace history
+result = policy.update_from_traces()
+# {"updated": True, "query_classes": 3, "total_traces": 150, "changes": {...}}
+```
+
+The update algorithm:
+
+1. Fetches all traces (optionally filtered by time range)
+2. Groups traces by query classification
+3. For each query class, scores each model using a **composite score**:
+    - 60% success rate (fraction of traces with `outcome="success"`)
+    - 40% average feedback score (user quality ratings)
+4. Selects the model with the highest composite score for each query class
+5. Returns a summary of changes
+
+### Online Updates via `observe()`
+
+For real-time policy updates after every interaction:
+
+```python
+policy.observe(
+    query="Write a Python function",
+    model="deepseek-coder-v2:16b",
+    outcome="success",
+    feedback=0.9,
+)
+```
+
+The online update uses a conservative strategy: it only switches the preferred model for a query class when the new model shows clearly better outcomes (`feedback > 0.7`) and the existing policy has fewer than `min_samples` observations.
+
+---
+
+## SFTRouterPolicy (Trace-Driven Router)
+
+The `SFTRouterPolicy` (in `learning/sft_policy.py`) is an `IntelligenceLearningPolicy` that learns routing decisions from historical traces. It analyzes trace outcomes, groups by query class (code, math, short, long, general), and builds a `query_class → model` mapping from the highest-scoring model per class. A backward-compatible alias `SFTPolicy = SFTRouterPolicy` is provided for code that used the old name.
+
+```python
+from openjarvis.learning.sft_policy import SFTRouterPolicy
+# or via the backward-compat alias:
+from openjarvis.learning.sft_policy import SFTPolicy
+```
+
+---
+
+## AgentAdvisorPolicy
+
+The `AgentAdvisorPolicy` (in `learning/agent_advisor.py`) is an `AgentLearningPolicy` that advises on agent strategy -- for example, recommending tool sets, turn limits, or agent type -- based on patterns observed in historical traces.
+
+```python
+from openjarvis.learning.agent_advisor import AgentAdvisorPolicy
+```
+
+---
+
+## ICLUpdaterPolicy
+
+The `ICLUpdaterPolicy` (in `learning/icl_updater.py`) is an `AgentLearningPolicy` that uses in-context learning to discover reusable examples and multi-tool skill sequences from traces. It analyzes successful tool-call patterns to recommend ICL examples and skill libraries that update agent behavior.
+
+```python
+from openjarvis.learning.icl_updater import ICLUpdaterPolicy
+```
+
+---
+
+## GRPORouterPolicy (Stub)
+
+The `GRPORouterPolicy` is a placeholder for future reinforcement learning-based routing. Currently, calling `select_model()` raises `NotImplementedError`:
+
+```python
+class GRPORouterPolicy(RouterPolicy):
+    def select_model(self, context: RoutingContext) -> str:
+        raise NotImplementedError(
+            "GRPORouterPolicy is not yet implemented. "
+            "GRPO training will be available in a future phase."
+        )
+```
+
+---
+
+## RewardFunction ABC
+
+The `RewardFunction` ABC defines how to score completed inferences for use in training:
+
+```python
+class RewardFunction(ABC):
+    @abstractmethod
+    def compute(
+        self,
+        context: RoutingContext,
+        model_key: str,
+        response: str,
+        **kwargs: Any,
+    ) -> float:
+        """Return a reward in [0, 1]."""
+```
+
+### HeuristicRewardFunction
+
+The built-in reward function computes a weighted combination of three factors:
+
+| Factor | Weight (default) | Normalization | Score Range |
+|--------|-----------------|---------------|-------------|
+| **Latency** | 0.4 | `1 - (latency / max_latency)` | 0 = 30s+, 1 = instant |
+| **Cost** | 0.3 | `1 - (cost / max_cost)` | 0 = $0.01+, 1 = free |
+| **Efficiency** | 0.3 | `completion_tokens / total_tokens` | 0 = all prompt, 1 = all completion |
+
+```python
+from openjarvis.learning.heuristic_reward import HeuristicRewardFunction
+
+reward_fn = HeuristicRewardFunction(
+    weight_latency=0.4,
+    weight_cost=0.3,
+    weight_efficiency=0.3,
+    max_latency=30.0,   # seconds
+    max_cost=0.01,       # USD
+)
+
+reward = reward_fn.compute(
+    context=routing_context,
+    model_key="qwen3:8b",
+    response="The answer is 42.",
+    latency_seconds=1.2,
+    cost_usd=0.0,
+    prompt_tokens=50,
+    completion_tokens=10,
+)
+# Returns a float in [0, 1]
+```
+
+---
+
+## Trace System
+
+The trace system records the full sequence of steps in every agent interaction, providing the raw data that the learning system uses to improve.
+
+### TraceStore
+
+`TraceStore` is an append-only SQLite store for interaction traces:
+
+```python
+from openjarvis.traces.store import TraceStore
+
+store = TraceStore("~/.openjarvis/traces.db")
+store.save(trace)                          # Persist a complete trace
+trace = store.get("abc123")                # Retrieve by trace ID
+traces = store.list_traces(                # Query with filters
+    agent="orchestrator",
+    model="qwen3:8b",
+    outcome="success",
+    since=1700000000.0,
+    limit=100,
+)
+count = store.count()                      # Total trace count
+```
+
+**Database schema:**
+
+- `traces` table -- one row per interaction (trace_id, query, agent, model, engine, result, outcome, feedback, timing, tokens, metadata)
+- `trace_steps` table -- one row per step within a trace (step_type, timestamp, duration, input, output, metadata)
+
+**EventBus integration:** The store can subscribe to `TRACE_COMPLETE` events for automatic persistence:

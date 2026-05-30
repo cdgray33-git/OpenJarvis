@@ -1,0 +1,48 @@
+﻿### Extracted Information from Chunk 3 of Qwen Core Bundle
+
+#### Threading and Concurrency Model
+- **Threading**: The threading module is used for concurrency. This includes the use of decorators and registries that manage components in a thread-safe manner.
+
+#### Design Principles
+1. **Offline-First**:
+   - OpenJarvis is designed to operate entirely without network access.
+   - Core functionalities like inference, memory, agents, tools, and telemetry are local by default.
+   - Cloud APIs are optional extensions but never required for core operations.
+
+2. **Hardware-Aware**:
+   - Auto-detection of system hardware at startup (NVIDIA GPUs, AMD GPUs, Apple Silicon, CPU, RAM).
+   - Recommendation of the optimal inference engine based on detected hardware.
+   - Detection methods include `nvidia-smi`, `rocm-smi`, `system_profiler SPDisplaysDataType`, `/proc/cpuinfo`, and `/proc/meminfo`.
+
+3. **Telemetry-Native**:
+   - Telemetry is a first-class concern, with automatic recording of timing, token counts, energy usage, and cost.
+   - Telemetry records are stored in a local SQLite database.
+   - Telemetry collection is best-effort and does not block the query flow if it fails.
+
+4. **Python-First**:
+   - Clean Python API provided through the `Jarvis` class.
+   - No framework lock-in; SDK is a standard Python package with dataclass-based types and no required web framework.
+   - Use of type hints throughout the codebase.
+   - Optional dependencies via extras (`openjarvis[server]`, `openjarvis[memory-colbert]`, etc.).
+
+5. **OpenAI-Compatible**:
+   - API server implements OpenAI chat completions API format.
+   - Supported endpoints include `/v1/chat/completions`, `/v1/models`, and `/health`.
+   - Requests and responses match the OpenAI API specification.
+   - Streaming responses use Server-Sent Events (SSE) with `data: [DONE]` termination.
+
+6. **Standalone**:
+   - Requires no external services for core functionality.
+   - Includes everything needed to run the system or uses standard system libraries.
+   - Optional features that require additional packages include FAISS memory, ColBERT memory, and BM25 memory.
+
+### Relevant Points for Integration with Tauri Application
+- **Threading**: Utilize Python's threading module for concurrent operations in the Tauri application.
+- **Offline Support**: Ensure the Tauri app can operate without network access by leveraging local functionalities provided by OpenJarvis.
+- **Hardware Detection and Engine Recommendation**: Implement hardware detection in the Tauri app to recommend the optimal inference engine.
+- **Telemetry Integration**: Integrate telemetry recording into the Tauri app for monitoring and analysis purposes.
+- **API Compatibility**: Use the OpenAI-compatible API endpoints for seamless integration with existing applications.
+- **Standalone Operation**: Ensure that the Tauri app can run independently without relying on external services.
+
+### Conclusion
+The extracted design principles and threading model from Chunk 3 of the Qwen Core Bundle provide a solid foundation for integrating OpenJarvis into a Tauri application. These principles emphasize offline-first capabilities, hardware-awareness, telemetry, Python-first design, compatibility with existing systems, and standalone operation, which are critical for building robust and efficient applications.

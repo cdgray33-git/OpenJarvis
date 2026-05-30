@@ -1,0 +1,713 @@
+
+```python
+store.subscribe_to_bus(bus)
+# Any TRACE_COMPLETE event will now auto-save the trace
+```
+
+### TraceCollector
+
+`TraceCollector` wraps any `BaseAgent` and automatically records a `Trace` for every `run()` call:
+
+```python
+from openjarvis.traces.collector import TraceCollector
+
+agent = OrchestratorAgent(engine, model, tools=tools, bus=bus)
+collector = TraceCollector(agent, store=trace_store, bus=bus)
+
+result = collector.run("What is 2+2?")
+# Trace is automatically saved to trace_store
+```
+
+How it works:
+
+1. Subscribes to EventBus events before running the agent:
+    - `INFERENCE_START` / `INFERENCE_END` -- creates `GENERATE` steps
+    - `TOOL_CALL_START` / `TOOL_CALL_END` -- creates `TOOL_CALL` steps
+    - `MEMORY_RETRIEVE` -- creates `RETRIEVE` steps
+2. Runs the wrapped agent's `run()` method
+3. Unsubscribes from events
+4. Adds a final `RESPOND` step
+5. Builds a `Trace` object with all collected steps
+6. Saves to the `TraceStore` and publishes `TRACE_COMPLETE`
+
+### TraceAnalyzer
+
+`TraceAnalyzer` provides a read-only query layer over stored traces, computing aggregated statistics:
+
+```python
+from openjarvis.traces.analyzer import TraceAnalyzer
+
+analyzer = TraceAnalyzer(store)
+
+# Overall summary
+summary = analyzer.summary()
+# TraceSummary(total_traces=150, avg_latency=2.3, success_rate=0.85, ...)
+
+# Stats grouped by (model, agent) routing decisions
+route_stats = analyzer.per_route_stats()
+# [RouteStats(model="qwen3:8b", agent="orchestrator", count=45, avg_latency=1.8, ...), ...]
+
+# Stats grouped by tool
+tool_stats = analyzer.per_tool_stats()
+# [ToolStats(tool_name="calculator", call_count=23, avg_latency=0.01, success_rate=1.0), ...]
+
+# Find traces matching query characteristics
+code_traces = analyzer.traces_for_query_type(has_code=True)
+
+# Export traces as plain dicts (for JSON serialization)
+exported = analyzer.export_traces(limit=1000)
+```
+
+**Computed statistics:**
+
+| Dataclass | Fields |
+|-----------|--------|
+| `TraceSummary` | total_traces, total_steps, avg_steps_per_trace, avg_latency, avg_tokens, success_rate, step_type_distribution |
+| `RouteStats` | model, agent, count, avg_latency, avg_tokens, success_rate, avg_feedback |
+| `ToolStats` | tool_name, call_count, avg_latency, success_rate |
+
+---
+
+## The Learning Loop
+
+The trace-driven learning loop connects all the pieces:
+
+```mermaid
+graph TB
+    subgraph "Runtime"
+        Q["User Query"] --> AGT["Agent executes"]
+        AGT --> ENG["Engine generates"]
+        ENG --> RESP["Response returned"]
+    end
+
+    subgraph "Recording"
+        AGT -.->|"events"| COL["TraceCollector"]
+        ENG -.->|"events"| COL
+        COL -->|"save"| STO["TraceStore<br/>(SQLite)"]
+    end
+
+    subgraph "Analysis"
+        STO -->|"read"| ANA["TraceAnalyzer"]
+        ANA -->|"summary(),<br/>per_route_stats()"| STATS["Aggregated<br/>Statistics"]
+    end
+
+    subgraph "Learning"
+        STATS -->|"update_from_traces()"| POL["TraceDrivenPolicy"]
+        POL -->|"select_model()"| Q
+    end
+
+    style Q fill:#e1f5fe
+    style RESP fill:#e8f5e9
+    style POL fill:#fff3e0
+```
+
+### Step-by-step cycle:
+
+1. **Query arrives** -- The system needs to select a model
+2. **Router policy selects model** -- `TraceDrivenPolicy.select_model()` checks the learned policy map; falls back to heuristic if insufficient data
+3. **Agent executes** -- The agent processes the query, calling tools and memory as needed
+4. **Events captured** -- The `TraceCollector` captures all events (inference, tool calls, memory retrieval) during execution
+5. **Trace saved** -- A complete `Trace` with all `TraceStep` objects is saved to `TraceStore`
+6. **Analysis** -- Periodically, `TraceAnalyzer` computes aggregate statistics from stored traces
+7. **Policy update** -- `TraceDrivenPolicy.update_from_traces()` recomputes the `query_class -> model` mapping based on success rates and feedback scores
+8. **Better routing** -- The next query benefits from the updated routing decisions
+
+### Trace Data Model
+
+Each interaction produces a `Trace` containing multiple `TraceStep` objects:
+
+```
+Trace
+  trace_id: "a1b2c3d4e5f6"
+  query: "What is 2+2?"
+  agent: "orchestrator"
+  model: "qwen3:8b"
+  engine: "ollama"
+  steps:
+    [0] GENERATE  -- model inference, 0.8s, 150 tokens
+    [1] TOOL_CALL -- calculator, 0.01s, success
+    [2] GENERATE  -- model inference, 0.5s, 80 tokens
+    [3] RESPOND   -- final answer
+  result: "2+2 = 4"
+  outcome: "success"
+  feedback: 1.0
+  total_latency_seconds: 1.31
+  total_tokens: 230
+```
+
+**Step types:**
+
+| StepType | Description | Created By |
+|----------|-------------|------------|
+| `ROUTE` | Model selection decision | Router policy |
+| `RETRIEVE` | Memory search | Memory backend |
+| `GENERATE` | LLM inference call | Engine |
+| `TOOL_CALL` | Tool execution | ToolExecutor |
+| `RESPOND` | Final response | TraceCollector |
+
+---
+
+## Optimization Framework
+
+The optimization subsystem (`learning/optimize/`) provides LLM-guided search
+over OpenJarvis's 5-primitive configuration space. It automates finding optimal
+configurations for accuracy, latency, cost, and energy consumption.
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| `SearchSpace` | Defines tunable dimensions across all 5 primitives |
+| `LLMOptimizer` | Proposes configurations using an LLM backend |
+| `OptimizationEngine` | Orchestrates the propose-evaluate-analyze loop |
+| `OptimizationStore` | SQLite-backed persistence for trials and runs |
+| `TrialRunner` | Evaluates proposed configurations against benchmarks |
+
+### Pareto Frontier
+
+The engine computes a Pareto frontier across multiple objectives
+(accuracy vs latency vs cost), identifying configurations where no single
+metric can be improved without degrading another.
+
+### Rust Backend
+
+The optimization framework has full Rust parity via the `openjarvis-learning`
+crate, with PyO3 bindings exposing `OptimizationStore` and `LLMOptimizer`
+to Python.
+
+---
+
+## LLM-Guided Spec Search (Frontier-Driven Harness Learning)
+
+LLM-guided spec search uses a frontier closed-source model (the "teacher") as a meta-engineer for the local student's full harness — not just its weights. Instead of pushing knowledge into a small model's weights, we push a frontier model's engineering judgement into the surrounding configuration: prompts, routing, agent class, tool availability, and tool descriptions.
+
+### Where it lives
+
+`learning/spec_search/` is the fifth subsystem within the Learning pillar, alongside `learning/routing/`, `learning/optimize/`, `learning/training/`, and `learning/intelligence/`.
+
+### Four-phase loop
+
+```
+Trigger → Diagnose → Plan → Execute → Record
+```
+
+1. **Diagnose** — TeacherAgent (frontier model with diagnostic tools) analyzes traces, runs student/teacher comparisons, identifies 2-5 failure clusters with evidence.
+2. **Plan** — LearningPlanner converts diagnosis into a typed LearningPlan with deterministic risk tier assignment and patch/replace downgrade.
+3. **Execute** — Per-edit loop: EditApplier validates + applies, BenchmarkGate scores, CheckpointStore commits or rolls back.
+4. **Record** — LearningSession persisted to SQLite + JSON artifact.
+
+### Key components
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `SpecSearchOrchestrator` | `orchestrator.py` | Top-level session driver |
+| `TeacherAgent` | `diagnose/teacher_agent.py` | Frontier model tool-calling loop |
+| `DiagnosisRunner` | `diagnose/runner.py` | Phase 1 orchestration |
+| `LearningPlanner` | `plan/planner.py` | Diagnosis → typed LearningPlan |
+| `EditApplier` + registry | `execute/base.py` | Abstract applier interface |
+| `BenchmarkGate` | `gate/benchmark_gate.py` | Benchmark-based accept/reject |
+| `CheckpointStore` | `checkpoint/store.py` | Git-backed config rollback |
+| `SessionStore` | `storage/session_store.py` | SQLite session persistence |
+
+### Relationship to existing subsystems
+
+| Existing | Relationship |
+|----------|-------------|
+| `LearningOrchestrator` | Sibling — stays untouched |
+| `LLMOptimizer` / `OptimizationStore` | Sibling — grid-search vs root-cause |
+| `LearnedRouterPolicy` | Reused — routing edits update it |
+| `TraceJudge` | Reused — benchmark scoring |
+| `PersonalBenchmarkSynthesizer` | Extended — auto-refresh, gold answers |
+| `TraceStore` | Reused — read-only access from diagnostic tools |
+
+### Risk tier system
+
+Every edit is assigned a tier from a deterministic lookup table:
+
+| Tier | Ops | Behavior |
+|------|-----|----------|
+| `auto` | Model routing/params, tool add/remove/description, agent params | Apply if gate passes |
+| `review` | System prompt edits, agent class, few-shot exemplars | Queue for user approval |
+| `manual` | LoRA fine-tuning (v2) | Never auto-apply |
+
+See [LLM-guided spec search guide](../user-guide/llm-guided-spec-search.md) for the architecture and the building blocks.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\memory.md
+
+`$(memory.md.Extension.TrimStart('.'))
+# Memory Primitive
+
+The Memory primitive provides **persistent, searchable storage** for documents and knowledge. It enables context injection -- retrieving relevant information from indexed documents and prepending it to prompts so the LLM can answer questions grounded in specific content.
+
+---
+
+## MemoryBackend ABC
+
+All memory backends implement the `MemoryBackend` abstract base class:
+
+```python
+class MemoryBackend(ABC):
+    backend_id: str
+
+    @abstractmethod
+    def store(
+        self,
+        content: str,
+        *,
+        source: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Persist *content* and return a unique document id."""
+
+    @abstractmethod
+    def retrieve(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        **kwargs: Any,
+    ) -> List[RetrievalResult]:
+        """Search for *query* and return the top-k results."""
+
+    @abstractmethod
+    def delete(self, doc_id: str) -> bool:
+        """Delete a document by id. Return True if it existed."""
+
+    @abstractmethod
+    def clear(self) -> None:
+        """Remove all stored documents."""
+```
+
+### RetrievalResult
+
+Search results are returned as `RetrievalResult` objects:
+
+```python
+@dataclass(slots=True)
+class RetrievalResult:
+    content: str                  # The document text
+    score: float = 0.0            # Relevance score (higher is better)
+    source: str = ""              # Originating file path or identifier
+    metadata: Dict[str, Any] = field(default_factory=dict)
+```
+
+---
+
+## Backend Comparison
+
+| Backend | Registry Key | Index Type | Extra Dependencies | GPU Required | Quality | Speed | Persistence |
+|---------|-------------|-----------|-------------------|-------------|---------|-------|-------------|
+| **SQLite/FTS5** | `sqlite` | Full-text (BM25) | None | No | Good | Fast | Disk (SQLite) |
+| **FAISS** | `faiss` | Dense vector | `faiss-cpu`, `sentence-transformers` | Optional | Very Good | Fast | In-memory |
+| **ColBERTv2** | `colbert` | Late interaction | `colbert-ai`, `torch` | Optional | Excellent | Slower | In-memory |
+| **BM25** | `bm25` | Term-frequency | `rank-bm25` | No | Good | Fast | In-memory |
+| **Hybrid** | `hybrid` | RRF fusion | Depends on sub-backends | Depends | Best | Moderate | Depends |
+
+### SQLite/FTS5 (Default)
+
+The zero-dependency default backend. Uses SQLite's built-in FTS5 extension for full-text search with BM25 ranking.
+
+- **Storage:** Documents stored in a `documents` table with automatic FTS5 indexing via triggers
+- **Search:** FTS5 `MATCH` queries with BM25 ranking (more negative rank = better match, converted to positive scores)
+- **Query escaping:** Each word is quoted to avoid FTS5 syntax errors
+- **Persistence:** Data persists across restarts in `~/.openjarvis/memory.db`
+
+### FAISS
+
+Dense retrieval using Facebook AI Similarity Search. Documents are embedded into vector space and searched via cosine similarity.
+
+- **Index type:** `IndexFlatIP` (inner-product, equivalent to cosine similarity when vectors are L2-normalized)
+- **Embedding model:** `all-MiniLM-L6-v2` by default (384-dim, ~22 MB)
+- **Deletion:** Soft-delete (documents are marked as deleted but remain in the index)
+- **Persistence:** In-memory only -- data is lost on restart
+
+### ColBERTv2
+
+Late interaction retrieval using token-level embeddings with MaxSim scoring. Provides the highest retrieval quality at the cost of higher latency.
+
+- **Scoring:** For each query token, finds the maximum cosine similarity across all document tokens, then sums across query tokens
+- **Checkpoint:** `colbert-ir/colbertv2.0` (lazily loaded on first use)
+- **Persistence:** In-memory only
+
+!!! warning "Heavy dependencies"
+    ColBERTv2 requires `colbert-ai` and `torch`, which are large packages. Install with:
+    `uv sync --extra memory-colbert`
+
+### BM25
+
+Classic Okapi BM25 probabilistic ranking function using the `rank_bm25` library.
+
+- **Tokenization:** Lowercase whitespace split
+- **Index:** Rebuilt on every `store()` and `delete()` operation
+- **Filtering:** Results are filtered to require at least one shared token with the query (handles edge cases where BM25 assigns IDF=0)
+- **Persistence:** In-memory only
+
+### Hybrid (RRF Fusion)
+
+Combines a sparse retriever and a dense retriever using Reciprocal Rank Fusion:
+
+$$\text{RRF}(d) = \sum_{i} \frac{w_i}{k + \text{rank}_i(d)}$$
+
+- **Sub-backends:** Any two `MemoryBackend` implementations (e.g., SQLite + FAISS)
+- **Over-fetch:** Retrieves `top_k * 3` results from each sub-backend for better fusion
+- **Configurable:** RRF constant `k` (default 60) and per-backend weights
+
+```python
+from openjarvis.tools.storage.sqlite import SQLiteMemory
+from openjarvis.tools.storage.faiss_backend import FAISSMemory
+from openjarvis.tools.storage.hybrid import HybridMemory
+
+hybrid = HybridMemory(
+    sparse=SQLiteMemory(db_path="memory.db"),
+    dense=FAISSMemory(),
+    sparse_weight=1.0,
+    dense_weight=1.5,  # Weight dense retrieval more heavily
+)
+```
+
+!!! note "Backward compatibility"
+    The old imports (e.g., `from openjarvis.memory.sqlite import SQLiteMemory`) still work via backward-compatibility shims in the `memory/` package, but the canonical location is now `openjarvis.tools.storage.*`.
+
+---
+
+## Chunking Pipeline
+
+Large documents are split into manageable chunks before storage. The chunking pipeline is defined in `tools/storage/chunking.py` (previously `memory/chunking.py`).
+
+### ChunkConfig
+
+```python
+@dataclass(slots=True)
+class ChunkConfig:
+    chunk_size: int = 512      # Maximum tokens per chunk (whitespace-split)
+    chunk_overlap: int = 64    # Tokens to overlap between consecutive chunks
+    min_chunk_size: int = 50   # Minimum tokens for a chunk to be kept
+```
+
+### Chunk
+
+```python
+@dataclass(slots=True)
+class Chunk:
+    content: str               # The chunk text
+    source: str = ""           # Originating file path
+    offset: int = 0            # Token offset within the original document
+    index: int = 0             # Chunk index (0, 1, 2, ...)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+```
+
+### Chunking Algorithm
+
+The `chunk_text()` function splits text using paragraph boundaries:
+
+1. Split the document on double newlines (`\n\n`) into paragraphs
+2. Accumulate paragraphs into the current chunk until `chunk_size` is exceeded
+3. When a chunk is full, flush it and keep the last `chunk_overlap` tokens as overlap for the next chunk
+4. If a single paragraph exceeds `chunk_size`, split it into fixed-size windows with overlap
+5. Discard chunks smaller than `min_chunk_size`
+
+```python
+from openjarvis.tools.storage.chunking import chunk_text, ChunkConfig
+
+config = ChunkConfig(chunk_size=256, chunk_overlap=32)
+chunks = chunk_text(document_text, source="docs/guide.md", config=config)
+```
+
+---
+
+## Document Ingestion
+
+The `tools/storage/ingest.py` module (previously `memory/ingest.py`) handles reading files and directories into chunks.
+
+### File Type Detection
+
+| Extension | Detected Type |
+|-----------|--------------|
+| `.md`, `.markdown`, `.mdx` | `markdown` |
+| `.pdf` | `pdf` |
+| `.py`, `.js`, `.ts`, `.rs`, `.go`, `.java`, `.c`, `.cpp`, `.yaml`, `.json`, `.html`, `.css`, ... | `code` |
+| Everything else | `text` |
+
+### `ingest_path(path, config=None)`
+
+Ingests a file or directory into chunks:
+
+- **Single file:** Reads the file, detects its type, and chunks the content
+- **Directory:** Recursively walks the tree, skipping:
+    - Hidden directories (starting with `.`)
+    - Common non-content directories (`__pycache__`, `node_modules`, `.git`, `.venv`, etc.)
+    - Binary files (images, audio, video, archives, compiled files)
+    - Hidden files (starting with `.`)
+
+```python
+from pathlib import Path
+from openjarvis.tools.storage.ingest import ingest_path
+
+# Ingest a single file
+chunks = ingest_path(Path("docs/guide.md"))
+
+# Ingest an entire directory
+chunks = ingest_path(Path("./docs/"))
+```
+
+### PDF Support
+
+PDF files are read using `pdfplumber`, extracting text from each page and joining with double newlines. This requires the optional `pdfplumber` dependency:
+
+```bash
+uv sync --extra memory-pdf
+```
+
+---
+
+## Embeddings
+
+Dense retrieval backends (FAISS, ColBERT) require text embeddings. The `tools/storage/embeddings.py` module (previously `memory/embeddings.py`) provides the `Embedder` ABC and a default implementation.
+
+### Embedder ABC
+
+```python
+class Embedder(ABC):
+    @abstractmethod
+    def embed(self, texts: list[str]) -> Any:
+        """Embed texts and return a numpy array of shape (n, dim)."""
+
+    @abstractmethod
+    def dim(self) -> int:
+        """Return the dimensionality of the embedding vectors."""
+```
+
+### SentenceTransformerEmbedder
+
+The default embedder wraps the `sentence-transformers` library:
+
+- **Default model:** `all-MiniLM-L6-v2` (384 dimensions, ~22 MB)
+- **Output:** NumPy arrays of shape `(n, dim)`
+
+```python
+from openjarvis.tools.storage.embeddings import SentenceTransformerEmbedder
+
+embedder = SentenceTransformerEmbedder(model_name="all-MiniLM-L6-v2")
+vectors = embedder.embed(["Hello world", "How are you?"])
+# Shape: (2, 384)
+```
+
+---
+
+## Context Injection
+
+The context injection pipeline retrieves relevant documents and prepends them to the prompt with source attribution. This is defined in `tools/storage/context.py` (previously `memory/context.py`).
+
+### ContextConfig
+
+```python
+@dataclass(slots=True)
+class ContextConfig:
+    enabled: bool = True           # Whether context injection is active
+    top_k: int = 5                 # Maximum results to retrieve
+    min_score: float = 0.1         # Minimum relevance score threshold
+    max_context_tokens: int = 2048 # Maximum tokens of context to inject
+```
+
+### `inject_context()`
+
+The main function for context injection:
+
+```python
+def inject_context(
+    query: str,
+    messages: List[Message],
+    backend: MemoryBackend,
+    *,
+    config: Optional[ContextConfig] = None,
+) -> List[Message]:
+```
+
+How it works:
+
+1. Retrieves results from the memory backend using the query
+2. Filters results below `min_score`
+3. Truncates to `max_context_tokens` (approximate token count via whitespace split)
+4. Formats results with source attribution tags: `[Source: docs/guide.md] The content...`
+5. Creates a system message with the formatted context
+6. Returns a **new** message list with the context message prepended
+
+```python
+from openjarvis.tools.storage.context import inject_context, ContextConfig
+
+config = ContextConfig(top_k=3, min_score=0.2)
+messages = inject_context("What is the API?", messages, backend, config=config)
+```
+
+### Source Attribution
+
+Context is injected as a system message with clear source tags:
+
+```
+The following context was retrieved from the knowledge base. Use it to
+inform your response, citing sources where applicable:
+
+[Source: docs/api.md] The API exposes a /v1/chat/completions endpoint...
+
+[Source: docs/setup.md] To configure the API server, edit config.toml...
+```
+
+---
+
+## Backend Registration
+
+Memory backends are registered via the `@MemoryRegistry.register("name")` decorator:
+
+```python
+from openjarvis.core.registry import MemoryRegistry
+from openjarvis.tools.storage._stubs import MemoryBackend
+
+@MemoryRegistry.register("my-backend")
+class MyMemoryBackend(MemoryBackend):
+    backend_id = "my-backend"
+
+    def store(self, content, *, source="", metadata=None) -> str: ...
+    def retrieve(self, query, *, top_k=5, **kwargs) -> list: ...
+    def delete(self, doc_id) -> bool: ...
+    def clear(self) -> None: ...
+```
+
+The default backend is configured in `~/.openjarvis/config.toml`. Storage settings live under `[tools.storage]`, and context injection is controlled by `agent.context_from_memory`:
+
+```toml
+[agent]
+context_from_memory = true
+
+[tools.storage]
+default_backend = "sqlite"
+db_path = "~/.openjarvis/memory.db"
+context_top_k = 5
+context_min_score = 0.1
+context_max_tokens = 2048
+chunk_size = 512
+chunk_overlap = 64
+```
+
+!!! note "Backward compatibility"
+    The `[memory]` TOML section is still accepted as a backward-compatible alias for `[tools.storage]`. The old `context_injection` field is automatically migrated to `agent.context_from_memory` at load time.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\overview.md
+
+`$(overview.md.Extension.TrimStart('.'))
+---
+title: Architecture Overview
+description: The five-primitive architecture behind OpenJarvis — Intelligence, Engine, Agents, Tools, and Learning
+search:
+  boost: 2
+---
+
+# Architecture Overview
+
+OpenJarvis is a research framework for studying on-device AI systems. Its architecture is organized around **five core abstractions** -- Intelligence, Engine, Agentic Logic, Memory, and Learning -- that work together through trace-driven feedback.
+
+![OpenJarvis Architecture](../assets/OpenJarvis_Architecture.png)
+
+---
+
+## Primitive Descriptions
+
+### Intelligence
+
+The Intelligence primitive handles **model definition and catalog**. It maintains a catalog of known models (`BUILTIN_MODELS`) with metadata such as parameter count, context length, VRAM requirements, and supported engines. The `IntelligenceConfig` captures the full identity of the configured model — its weight path, quantization format, preferred engine, fallback chain, and generation defaults (`temperature`, `max_tokens`, `top_p`, `top_k`, `repetition_penalty`, `stop_sequences`).
+
+Models discovered at runtime from running engines are automatically merged into the `ModelRegistry`, so the system always has an up-to-date view of what is available. Query routing has moved to the Learning primitive — see the [Learning & Traces](learning.md) documentation.
+
+### Engine
+
+The Engine primitive provides the **inference runtime** — the layer that actually runs language models. All backends implement the `InferenceEngine` ABC with a uniform interface: `generate()`, `stream()`, `list_models()`, and `health()`. Supported backends include Ollama, vLLM, SGLang, llama.cpp, and Cloud (OpenAI, Anthropic, Google).
+
+Each engine is configured via its own sub-section in `config.toml` (e.g., `[engine.ollama]`, `[engine.vllm]`, `[engine.llamacpp]`). Engine discovery probes all registered backends for health, returning healthy engines sorted with the user's configured default first. The system automatically falls back to any available engine if the preferred one is unavailable.
+
+### Agentic Logic
+
+The Agentic Logic primitive implements **pluggable agents** that handle queries with varying levels of sophistication. The agent hierarchy is organized around `BaseAgent` (ABC with concrete helpers) and `ToolUsingAgent` (intermediate base for agents that accept tools, with `accepts_tools = True`). Nine agent types are available: `SimpleAgent` (single-turn, no tools), `OrchestratorAgent` (multi-turn tool-calling loop with function_calling and structured modes), `NativeReActAgent` (Thought-Action-Observation loop), `NativeOpenHandsAgent` (CodeAct-style code execution), `RLMAgent` (recursive LM with persistent REPL), `OpenHandsAgent` (wraps real `openhands-sdk`), `ClaudeCodeAgent` (Claude Agent SDK via Node.js subprocess), `OperativeAgent` (persistent scheduled agent with state management), and `MonitorOperativeAgent` (long-horizon agent with configurable strategy axes).
+
+The sandbox module (`openjarvis.sandbox`) adds a `SandboxedAgent` wrapper that runs any `BaseAgent` inside a Docker or Podman container with mount-security enforcement, and a `ContainerRunner` that manages the container lifecycle.
+
+Agent behavior is configured through `[agent]` in `config.toml`, including the default agent, turn limits, tool list, optional system prompt, and the `context_from_memory` flag (previously `context_injection`) that controls automatic memory context injection. Sandbox configuration lives in `[sandbox]`. All agents implement the `BaseAgent` ABC with a `run()` method, and are registered via `@AgentRegistry.register("name")`.
+
+### Memory
+
+The Memory primitive provides **persistent, searchable storage** for documents and knowledge. Five backends are available: SQLite/FTS5 (zero-dependency default), FAISS (dense vector retrieval), ColBERTv2 (late interaction), BM25 (classic term-frequency), and Hybrid (Reciprocal Rank Fusion of sparse + dense). Storage backends are configured under `[tools.storage]` in `config.toml` (the `[memory]` section is still accepted as a backward-compatible alias).
+
+The memory pipeline includes document ingestion, chunking, embedding generation, and context injection. When a user sends a query and `agent.context_from_memory` is enabled, relevant documents are retrieved and prepended to the prompt with source attribution.
+
+### Learning & Traces
+
+The Learning system is the fifth primitive, connecting the other four through **trace-driven feedback**. Every agent interaction can produce a `Trace` capturing the full sequence of steps — routing decisions, memory retrieval, inference calls, tool invocations, and final responses. The `TraceAnalyzer` computes statistics from accumulated traces, and the `TraceDrivenPolicy` uses these statistics to learn which model/agent/tool combinations produce the best outcomes for different query types.
+
+The learning system is configured through nested sub-sections in `config.toml`: `[learning.routing]` controls the router policy (heuristic, learned, sft, grpo), `[learning.intelligence]` controls the model-level learning policy, `[learning.agent]` controls agent advisor and ICL updater policies, and `[learning.metrics]` sets the composite reward function weights. The pillar also includes LLM-guided spec search, a frontier-driven loop that improves the local harness — see [Learning architecture: LLM-guided spec search](learning.md#llm-guided-spec-search-frontier-driven-harness-learning).
+
+---
+
+## The Registry Pattern
+
+All extensible components in OpenJarvis use a **decorator-based registry** for runtime discovery. The pattern is implemented in `RegistryBase[T]`, a generic base class that provides isolated storage per typed subclass.
+
+```python
+from openjarvis.core.registry import EngineRegistry
+
+@EngineRegistry.register("ollama")
+class OllamaEngine(InferenceEngine):
+    ...
+```
+
+Each registry provides:
+
+| Method | Description |
+|--------|-------------|
+| `register(key)` | Decorator that registers a class under a key |
+| `register_value(key, value)` | Imperative registration |
+| `get(key)` | Retrieve by key (raises `KeyError` if missing) |
+| `create(key, *args, **kwargs)` | Look up and instantiate |
+| `items()` | All `(key, entry)` pairs |
+| `keys()` | All registered keys |
+| `contains(key)` | Check if key exists |
+| `clear()` | Remove all entries (for tests) |
+
+**Typed registries** in the system:
+
+| Registry | Type Parameter | Purpose |
+|----------|---------------|---------|
+| `ModelRegistry` | `Any` (ModelSpec) | Model metadata |
+| `EngineRegistry` | `Type[InferenceEngine]` | Inference backends |
+| `MemoryRegistry` | `Type[MemoryBackend]` | Memory backends |
+| `AgentRegistry` | `Type[BaseAgent]` | Agent implementations |
+| `ToolRegistry` | `Any` (BaseTool classes) | Tool implementations |
+| `RouterPolicyRegistry` | `Any` (RouterPolicy classes) | Router policies |
+| `BenchmarkRegistry` | `Any` (BaseBenchmark classes) | Benchmark implementations |
+| `ChannelRegistry` | `Any` (BaseChannel classes) | Channel implementations |
+
+!!! info "Adding a new component"
+    To add a new backend, implement the appropriate ABC and decorate it with
+    the corresponding registry decorator. No factory modifications are needed --
+    the component becomes automatically discoverable at runtime.
+
+---
+
+## Source Directory Layout
+
+```
+src/openjarvis/
+    core/               Core infrastructure shared by all primitives
+        registry.py         RegistryBase[T] and typed subclass registries
+        types.py            Message, ModelSpec, Trace, TelemetryRecord, etc.
+        config.py           JarvisConfig, hardware detection, TOML loading
+        events.py           EventBus pub/sub system (EventType, Event)
+
+    intelligence/       Intelligence primitive -- model definition & catalog
+        model_catalog.py    BUILTIN_MODELS list, merge_discovered_models()
+        _stubs.py           (backward-compat shim -- re-exports from learning._stubs)
+        router.py           (backward-compat shim -- re-exports from learning.router)
+
+    engine/             Engine primitive -- inference runtime backends
+        _stubs.py           InferenceEngine ABC

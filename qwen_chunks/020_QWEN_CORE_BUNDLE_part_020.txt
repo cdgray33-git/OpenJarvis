@@ -1,0 +1,200 @@
+  URL:    http://0.0.0.0:8000
+```
+
+!!! warning "Server dependency check"
+    If the `[server]` extra is not installed, `jarvis serve` exits with a clear error message explaining how to install the required dependencies.
+
+## Endpoints
+
+### `POST /v1/chat/completions`
+
+The primary endpoint for generating chat completions. Accepts the same request format as the OpenAI Chat Completions API.
+
+#### Request Body
+
+```json
+{
+  "model": "qwen3:8b",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "What is the capital of France?"}
+  ],
+  "temperature": 0.7,
+  "max_tokens": 1024,
+  "stream": false,
+  "tools": null
+}
+```
+
+| Parameter     | Type              | Default | Description                                                  |
+|---------------|-------------------|---------|--------------------------------------------------------------|
+| `model`       | `string`          | --      | **Required.** Model identifier to use for generation.        |
+| `messages`    | `array`           | --      | **Required.** Array of message objects with `role` and `content`. |
+| `temperature` | `float`           | `0.7`   | Sampling temperature (0.0 to 2.0).                           |
+| `max_tokens`  | `integer`         | `1024`  | Maximum number of tokens to generate.                        |
+| `stream`      | `boolean`         | `false` | Whether to stream the response via SSE.                      |
+| `tools`       | `array` or `null` | `null`  | Tool definitions in OpenAI function-calling format.          |
+
+Each message object:
+
+| Field          | Type              | Description                                           |
+|----------------|-------------------|-------------------------------------------------------|
+| `role`         | `string`          | One of `system`, `user`, `assistant`, or `tool`.      |
+| `content`      | `string`          | The message content.                                  |
+| `name`         | `string` or `null`| Optional name for the message author.                 |
+| `tool_calls`   | `array` or `null` | Tool calls made by the assistant (in assistant messages). |
+| `tool_call_id` | `string` or `null`| ID of the tool call this message responds to (in tool messages). |
+
+#### Response (Non-Streaming)
+
+```json
+{
+  "id": "chatcmpl-abc123def456",
+  "object": "chat.completion",
+  "created": 1740100800,
+  "model": "qwen3:8b",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris.",
+        "tool_calls": null
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 8,
+    "total_tokens": 33
+  }
+}
+```
+
+When an agent is configured on the server, non-streaming requests are routed through the agent, which can perform multi-turn reasoning with tool calls before returning a final response. When no agent is configured, requests go directly to the inference engine.
+
+#### Tool Calls
+
+When `tools` are provided in the request, the engine may return `tool_calls` in the assistant message:
+
+```json
+{
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "type": "function",
+            "function": {
+              "name": "calculator",
+              "arguments": "{\"expression\": \"2 + 2\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+### `GET /v1/models`
+
+Lists all models available on the configured inference engine.
+
+#### Response
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "qwen3:8b",
+      "object": "model",
+      "created": 1740100800,
+      "owned_by": "openjarvis"
+    },
+    {
+      "id": "llama3.1:8b",
+      "object": "model",
+      "created": 1740100800,
+      "owned_by": "openjarvis"
+    }
+  ]
+}
+```
+
+### `GET /health`
+
+Health check endpoint that verifies the inference engine is responsive.
+
+#### Response (Healthy)
+
+HTTP 200:
+
+```json
+{"status": "ok"}
+```
+
+#### Response (Unhealthy)
+
+HTTP 503:
+
+```json
+{"detail": "Engine unhealthy"}
+```
+
+### `GET /dashboard`
+
+Serves the built-in Savings Dashboard, an HTML page that displays real-time statistics on inference calls served locally and estimated cost savings compared to cloud API providers. The dashboard auto-refreshes every 5 seconds by polling the `/v1/savings` endpoint.
+
+### `GET /v1/channels`
+
+List registered channel backends and their connection status.
+
+#### Response
+
+```json
+{
+  "channels": ["slack", "discord", "telegram"]
+}
+```
+
+### `POST /v1/channels/send`
+
+Send a message to a specific channel.
+
+#### Request Body
+
+```json
+{
+  "target": "slack",
+  "message": "Hello from Jarvis!"
+}
+```
+
+#### Response
+
+```json
+{
+  "status": "sent",
+  "target": "slack"
+}
+```
+
+### `GET /v1/channels/status`
+
+Show connection status for all configured channels.
+
+#### Response
+
+```json
+{
+  "channels": {
+    "slack": "connected",
+    "discord": "connected",
+    "telegram": "disconnected"

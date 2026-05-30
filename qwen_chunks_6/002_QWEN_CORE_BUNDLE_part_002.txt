@@ -1,0 +1,713 @@
+Multiple handlers can be registered. They are stored in a list and called sequentially within the listener thread. Returning a value from a handler has no effect on message routing -- the return type `Optional[str]` is reserved for future use (for example, auto-reply routing).
+
+```python
+# ChannelHandler type alias
+ChannelHandler = Callable[[ChannelMessage], Optional[str]]
+```
+
+---
+
+## Threading Model
+
+Channel implementations use Python's `threading` module rather than asyncio. This is a deliberate choice: OpenJarvis's core inference path is synchronous, and daemon threads are simpler to compose with synchronous code than coroutines.
+
+| Component | Thread | Notes |
+|-----------|--------|-------|
+| `connect()`, `send()`, `disconnect()` | Caller thread | All public methods are thread-safe |
+| Listener loop | Background daemon thread | Started in `connect()`, joined in `disconnect()` |
+| Handler callbacks | Background daemon thread | Called from listener thread -- use thread-safe data structures |
+
+!!! warning "Handler thread safety"
+    Handler callbacks run on the listener thread, not the thread that called `connect()`. If your handler modifies shared state, protect it with a lock or use thread-safe data structures such as `queue.Queue`.
+
+---
+
+## Adding a New Channel Backend
+
+To add a new channel backend:
+
+1. Create a new file in `src/openjarvis/channels/`.
+2. Subclass `BaseChannel` and implement all six abstract methods.
+3. Set `channel_id` as a class attribute.
+4. Decorate with `@ChannelRegistry.register("name")`.
+5. Add the module name to `_CHANNEL_MODULES` in `channels/__init__.py`.
+
+```python
+from openjarvis.channels._stubs import BaseChannel, ChannelMessage, ChannelStatus
+from openjarvis.core.registry import ChannelRegistry
+
+@ChannelRegistry.register("my_platform")
+class MyPlatformChannel(BaseChannel):
+    channel_id = "my_platform"
+
+    def connect(self) -> None: ...
+    def disconnect(self) -> None: ...
+    def send(self, channel, content, *, conversation_id="", metadata=None) -> bool: ...
+    def status(self) -> ChannelStatus: ...
+    def list_channels(self) -> list[str]: ...
+    def on_message(self, handler) -> None: ...
+```
+
+After registration, the backend is discoverable via `ChannelRegistry.get("my_platform")`.
+
+---
+
+## See Also
+
+- [User Guide: Channels](../user-guide/channels.md) -- how to use channels in practice
+- [API Reference: Channels](../api-reference/openjarvis/channels/index.md) -- complete class and type signatures
+- [Architecture: Overview](overview.md) -- where channels fit in the overall system
+- [Architecture: Design Principles](design-principles.md) -- registry pattern and ABC conventions
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\design-principles.md
+
+`$(design-principles.md.Extension.TrimStart('.'))
+# Design Principles
+
+OpenJarvis follows a set of design principles that guide every architectural decision. These principles ensure the framework remains extensible, portable, and easy to work with.
+
+---
+
+## 1. Pluggable Everything
+
+Every major component in OpenJarvis is defined as an **abstract base class** (ABC) with concrete implementations registered at runtime. This means you can swap, extend, or replace any part of the system without modifying existing code.
+
+```mermaid
+graph LR
+    subgraph "ABC Interface"
+        ABC["InferenceEngine ABC<br/><code>generate(), stream(),<br/>list_models(), health()</code>"]
+    end
+
+    subgraph "Implementations"
+        A["OllamaEngine"]
+        B["VLLMEngine"]
+        C["SGLangEngine"]
+        D["LlamaCppEngine"]
+        E["CloudEngine"]
+        F["YourCustomEngine"]
+    end
+
+    ABC --> A
+    ABC --> B
+    ABC --> C
+    ABC --> D
+    ABC --> E
+    ABC -.->|"extend"| F
+```
+
+This pattern applies across all five primitives:
+
+| Primitive | ABC | Implementations |
+|--------|-----|----------------|
+| Engine | `InferenceEngine` | Ollama, vLLM, SGLang, llama.cpp, Cloud |
+| Memory | `MemoryBackend` | SQLite, FAISS, ColBERT, BM25, Hybrid |
+| Agents | `BaseAgent` | Simple, Orchestrator, NativeReAct, NativeOpenHands, RLM, OpenHands, ClaudeCode, Operative, MonitorOperative |
+| Learning | `RouterPolicy` | Heuristic, TraceDriven, GRPO |
+| Tools | `BaseTool` | Calculator, Think, Retrieval, LLM, FileRead |
+
+Adding a new implementation requires two things: implement the ABC and register it. The rest of the system discovers and uses it automatically.
+
+---
+
+## 2. Registry-Driven
+
+All extensible components use the **`@XRegistry.register("name")` decorator** pattern. Registration happens at import time, and no factory function or configuration file needs modification.
+
+```python
+from openjarvis.core.registry import EngineRegistry
+from openjarvis.engine._stubs import InferenceEngine
+
+@EngineRegistry.register("my-engine")
+class MyEngine(InferenceEngine):
+    engine_id = "my-engine"
+
+    def generate(self, messages, *, model, **kwargs):
+        ...
+    def stream(self, messages, *, model, **kwargs):
+        ...
+    def list_models(self):
+        ...
+    def health(self):
+        ...
+```
+
+The `RegistryBase[T]` generic base class provides:
+
+- **Class-specific isolation** -- Each typed subclass (`EngineRegistry`, `MemoryRegistry`, etc.) has its own entry storage, so registrations never leak between registries
+- **Duplicate detection** -- Registering the same key twice raises `ValueError`
+- **Runtime instantiation** -- `Registry.create(key, *args)` looks up and instantiates in one step
+- **Introspection** -- `keys()`, `items()`, `contains()` for discovering available components
+
+!!! info "Why decorators instead of configuration files?"
+    The decorator pattern means that adding a new component is a single-file change.
+    There is no central registry file to edit, no YAML to update, and no factory to modify.
+    The component self-registers simply by being imported.
+
+---
+
+## 3. Offline-First
+
+OpenJarvis is designed to work **entirely without network access**. All core functionality -- inference, memory, agents, tools, telemetry -- operates locally. Cloud APIs are optional extensions, never requirements.
+
+| Feature | Offline Behavior |
+|---------|-----------------|
+| Inference | Ollama, vLLM, SGLang, llama.cpp all run locally |
+| Memory | SQLite/FTS5 uses built-in Python `sqlite3` module |
+| Embeddings | `sentence-transformers` models run locally |
+| Telemetry | SQLite-based, fully local |
+| Traces | SQLite-based, fully local |
+| Tools | Calculator, Think, FileRead all local |
+| Configuration | TOML file on disk |
+
+Cloud engines (OpenAI, Anthropic, Google) are available through the optional `cloud` backend, but they are:
+
+- Only registered if the corresponding SDK packages are installed
+- Only activated if API keys are set as environment variables
+- Never required for any core functionality
+
+```python
+# This works without any network connection
+from openjarvis import Jarvis
+
+j = Jarvis(engine_key="ollama")  # Local Ollama server
+response = j.ask("Hello")
+```
+
+---
+
+## 4. Hardware-Aware
+
+OpenJarvis **auto-detects system hardware** at startup and recommends the optimal inference engine. The `detect_hardware()` function probes:
+
+| Hardware | Detection Method |
+|----------|-----------------|
+| NVIDIA GPUs | `nvidia-smi` (name, VRAM, count) |
+| AMD GPUs | `rocm-smi` (product name) |
+| Apple Silicon | `system_profiler SPDisplaysDataType` |
+| CPU | `/proc/cpuinfo` or `sysctl` (brand string) |
+| RAM | `/proc/meminfo` or `sysctl hw.memsize` |
+
+The `recommend_engine()` function maps hardware to engines:
+
+| Hardware | Recommended Engine |
+|----------|-------------------|
+| No GPU | `llamacpp` (CPU-optimized) |
+| Apple Silicon | `ollama` (Metal acceleration) |
+| NVIDIA datacenter (A100, H100, etc.) | `vllm` (high throughput) |
+| NVIDIA consumer | `ollama` (easy setup) |
+| AMD GPU | `vllm` (ROCm support) |
+
+This recommendation is written to `config.toml` during `jarvis init` and used as the default engine:
+
+```bash
+jarvis init --force
+# Detects hardware, writes ~/.openjarvis/config.toml with:
+# [engine]
+# default = "vllm"  # (for A100)
+```
+
+---
+
+## 5. Telemetry-Native
+
+Every inference call automatically records timing, token counts, energy usage, and cost to a local SQLite database. Telemetry is a **first-class concern**, not an afterthought.
+
+```python
+@dataclass(slots=True)
+class TelemetryRecord:
+    timestamp: float
+    model_id: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    latency_seconds: float
+    ttft: float              # Time to first token
+    cost_usd: float
+    energy_joules: float
+    power_watts: float
+    engine: str
+    agent: str
+```
+
+The `instrumented_generate()` wrapper handles all telemetry transparently:
+
+1. Records start time
+2. Calls the engine's `generate()` method
+3. Records end time and extracts token counts
+4. Publishes a `TELEMETRY_RECORD` event on the EventBus
+5. The `TelemetryStore` (subscribed to the bus) persists the record
+
+The `TelemetryAggregator` provides read-only queries over stored records:
+
+```bash
+jarvis telemetry stats          # Aggregated statistics
+jarvis telemetry export --json  # Export all records
+```
+
+!!! note "Telemetry is best-effort"
+    If telemetry setup fails (e.g., database is locked), the system continues
+    without telemetry rather than raising an error. Telemetry never blocks
+    the query flow.
+
+---
+
+## 6. Python-First
+
+OpenJarvis provides a **clean Python API** through the `Jarvis` class. There is no framework lock-in -- the SDK is a standard Python package with dataclass-based types and no required web framework.
+
+```python
+from openjarvis import Jarvis
+
+j = Jarvis()
+response = j.ask("Hello")
+
+# Full control
+result = j.ask_full(
+    "Explain quantum computing",
+    model="qwen3:8b",
+    agent="orchestrator",
+    tools=["think"],
+    temperature=0.5,
+    max_tokens=2048,
+)
+
+# Memory operations
+j.memory.index("./docs/")
+results = j.memory.search("quantum computing")
+
+# Resource cleanup
+j.close()
+```
+
+Design choices that support this principle:
+
+- **Dataclasses** for all structured types (`Message`, `ModelSpec`, `Trace`, etc.)
+- **Type hints** throughout the codebase
+- **No magic** -- explicit initialization, clear method signatures
+- **Optional dependencies** via extras (`openjarvis[server]`, `openjarvis[memory-colbert]`, etc.)
+- **Standard packaging** with `hatchling` build backend and `uv` package manager
+
+---
+
+## 7. OpenAI-Compatible
+
+The API server (`jarvis serve`) implements the **OpenAI chat completions API format**, making OpenJarvis a drop-in replacement for OpenAI in existing applications.
+
+Supported endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completions (streaming and non-streaming) |
+| `/v1/models` | GET | List available models |
+| `/health` | GET | Health check |
+
+Request and response formats match the OpenAI API specification:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3:8b",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "temperature": 0.7,
+    "max_tokens": 1024,
+    "stream": false
+  }'
+```
+
+Streaming responses use Server-Sent Events (SSE) with `data: [DONE]` termination, matching the OpenAI streaming protocol.
+
+Any OpenAI client library can connect to OpenJarvis:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+response = client.chat.completions.create(
+    model="qwen3:8b",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+---
+
+## 8. Standalone
+
+OpenJarvis requires **no external services** for core functionality. Everything needed to run the system is included or uses standard system libraries.
+
+| Component | Dependency |
+|-----------|-----------|
+| Configuration | TOML file, built-in `tomllib` (Python 3.11+) or `tomli` |
+| Memory (default) | Built-in `sqlite3` module |
+| Telemetry | Built-in `sqlite3` module |
+| Traces | Built-in `sqlite3` module |
+| HTTP client | `httpx` (lightweight, pure Python) |
+| CLI | `click` + `rich` |
+| Event bus | Built-in `threading` module |
+
+The only external requirement is a running inference engine (Ollama, vLLM, etc.), which is the model server itself -- not a dependency of OpenJarvis.
+
+Optional features that require additional packages:
+
+| Feature | Extra | Packages |
+|---------|-------|----------|
+| FAISS memory | `openjarvis[memory-faiss]` | `faiss-cpu`, `sentence-transformers` |
+| ColBERT memory | `openjarvis[memory-colbert]` | `colbert-ai`, `torch` |
+| BM25 memory | `openjarvis[memory-bm25]` | `rank-bm25` |
+| API server | `openjarvis[server]` | `fastapi`, `uvicorn` |
+| Cloud inference | `openjarvis[inference-cloud]` | `openai`, `anthropic`, `google-genai` |
+| vLLM engine | `openjarvis[inference-vllm]` | `vllm` |
+| PDF ingestion | `openjarvis[memory-pdf]` | `pdfplumber` |
+| WhatsApp Baileys | `openjarvis[channel-whatsapp-baileys]` | Node.js 22+ |
+
+This design ensures that a minimal installation (`uv sync`) gives you a fully functional system with SQLite memory, local inference, and the complete CLI -- no Docker, no external databases, no cloud accounts required.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\engine.md
+
+`$(engine.md.Extension.TrimStart('.'))
+# Inference Engine Primitive
+
+The Engine primitive provides the **inference runtime** -- the layer that connects OpenJarvis to language model servers. All backends implement a uniform interface, making it straightforward to swap between local and cloud inference without changing application code.
+
+---
+
+## InferenceEngine ABC
+
+Every engine backend extends the `InferenceEngine` abstract base class:
+
+```python
+class InferenceEngine(ABC):
+    engine_id: str
+
+    @abstractmethod
+    def generate(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Synchronous completion -- returns a dict with 'content' and 'usage'."""
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> AsyncIterator[str]:
+        """Yield token strings as they are generated."""
+
+    @abstractmethod
+    def list_models(self) -> List[str]:
+        """Return identifiers of models available on this engine."""
+
+    @abstractmethod
+    def health(self) -> bool:
+        """Return True when the engine is reachable and healthy."""
+
+    def prepare(self, model: str) -> None:
+        """Optional warm-up hook called before the first request."""
+```
+
+### Return Format
+
+The `generate()` method returns a dictionary with the following structure:
+
+```python
+{
+    "content": "The model's response text",
+    "usage": {
+        "prompt_tokens": 42,
+        "completion_tokens": 128,
+        "total_tokens": 170,
+    },
+    "model": "qwen3:8b",
+    "finish_reason": "stop",
+    "tool_calls": [...]  # Optional, present if model requested tool calls
+}
+```
+
+When the model requests tool calls, they are extracted and passed through in OpenAI format:
+
+```python
+{
+    "tool_calls": [
+        {
+            "id": "call_abc123",
+            "name": "calculator",
+            "arguments": "{\"expression\": \"2 + 2\"}"
+        }
+    ]
+}
+```
+
+### Multi-Provider Tool Call Extraction
+
+Engine backends normalize tool calls from different providers into the standard flat format used by agents:
+
+| Provider | Source Format | Extraction Logic |
+|----------|-------------|-----------------|
+| **OpenAI** | `choices[0].message.tool_calls[].function.{name, arguments}` | Direct extraction, add `id` from `tool_calls[].id` |
+| **Anthropic** | `content[]` blocks with `type: "tool_use"` | Filter `tool_use` blocks, map `input` dict to JSON `arguments` |
+| **Google** | `candidates[0].content.parts[]` with `function_call` | Extract `function_call.name` and `function_call.args`, serialize args to JSON |
+| **LiteLLM** | Flat `{id, name, arguments}` dicts (proxy pre-normalizes) | Pass through directly |
+| **Ollama** | `message.tool_calls[].function.{name, arguments}` | Extract from Ollama native format, serialize arguments dict to JSON |
+
+All providers produce the same output format consumed by agents:
+
+```python
+{
+    "tool_calls": [
+        {"id": "call_abc", "name": "calculator", "arguments": "{\"expression\": \"2+2\"}"}
+    ]
+}
+```
+
+---
+
+## Backend Comparison
+
+| Backend | Registry Key | Protocol | Default Port | GPU Required | Best For |
+|---------|-------------|----------|-------------|-------------|----------|
+| **Ollama** | `ollama` | Native HTTP API | 11434 | No (GPU optional) | Getting started, consumer GPUs, Apple Silicon |
+| **vLLM** | `vllm` | OpenAI-compatible | 8000 | NVIDIA recommended | Datacenter GPUs (A100, H100), high throughput |
+| **SGLang** | `sglang` | OpenAI-compatible | 30000 | NVIDIA recommended | Structured generation, speculative decoding |
+| **llama.cpp** | `llamacpp` | OpenAI-compatible | 8080 | No (CPU-optimized) | CPU-only systems, GGUF models, edge devices |
+| **MLX** | `mlx` | OpenAI-compatible | 8080 | Apple Silicon | Apple Silicon native inference via MLX |
+| **LM Studio** | `lmstudio` | OpenAI-compatible | 1234 | No (GPU optional) | Desktop GUI, easy model management |
+| **Exo** | `exo` | OpenAI-compatible | 52415 | No (distributed) | Distributed inference across heterogeneous devices |
+| **Nexa** | `nexa` | OpenAI-compatible | 18181 | No (CPU/GPU) | On-device inference with GGUF models |
+| **Lemonade** | `lemonade` | OpenAI-compatible | 8000 | AMD GPU/NPU | AMD consumer GPUs (RDNA), Ryzen AI NPUs |
+| **Uzu** | `uzu` | OpenAI-compatible | 8000 | Varies | Uzu inference runtime |
+| **Apple FM** | `apple_fm` | OpenAI-compatible | 8079 | Apple Silicon | Apple Foundation Model on-device inference |
+| **LiteLLM** | `litellm` | OpenAI-compatible | — | No | Unified proxy to 100+ LLM providers |
+| **Cloud** | `cloud` | Provider SDKs | — | No | OpenAI, Anthropic, Google API access |
+
+### Ollama
+
+The Ollama backend communicates via Ollama's native HTTP API at `/api/chat` and `/api/tags`. It is the default engine on Apple Silicon and consumer NVIDIA GPUs.
+
+- **Default host:** `http://localhost:11434`
+- **Health check:** `GET /api/tags`
+- **Model listing:** `GET /api/tags` (extracts model names)
+- **Tool support:** Passes `tools` in the request payload and extracts `tool_calls` from responses
+
+### vLLM
+
+The vLLM backend uses the OpenAI-compatible `/v1/chat/completions` API. It is recommended for datacenter GPUs (NVIDIA A100, H100, L40, A10, A30 and AMD MI300, MI325, MI350, MI355).
+
+- **Default host:** `http://localhost:8000`
+- **Health check:** `GET /v1/models`
+- **Tool fallback:** If the server returns HTTP 400 when tools are included, the engine automatically retries without tools
+
+### SGLang
+
+The SGLang backend also uses the OpenAI-compatible API. It shares the same `_OpenAICompatibleEngine` base class as vLLM and llama.cpp.
+
+- **Default host:** `http://localhost:30000`
+- **Health check:** `GET /v1/models`
+
+### llama.cpp
+
+The llama.cpp backend connects to a `llama-server` instance via the OpenAI-compatible API. It is recommended for CPU-only systems and GGUF-quantized models.
+
+- **Default host:** `http://localhost:8080`
+- **Health check:** `GET /v1/models`
+
+### Cloud
+
+The Cloud backend provides access to OpenAI, Anthropic, and Google models via their respective Python SDKs. It automatically detects the provider based on the model name:
+
+- Models containing `"claude"` route to the **Anthropic** client
+- Models containing `"gemini"` route to the **Google** client
+- All other models route to the **OpenAI** client
+
+!!! info "API Keys"
+    Cloud models require API keys set as environment variables:
+    `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`).
+    The cloud engine is only registered if the corresponding SDK packages are installed.
+
+### MLX
+
+The MLX backend serves models via the MLX framework on Apple Silicon. It uses the OpenAI-compatible `/v1/chat/completions` API.
+
+- **Default host:** `http://localhost:8080`
+- **Health check:** `GET /v1/models`
+- **Best for:** Apple Silicon Macs (M1/M2/M3/M4) running MLX-format or GGUF models natively
+
+### LM Studio
+
+The LM Studio backend connects to the LM Studio desktop application's built-in server, which exposes an OpenAI-compatible API.
+
+- **Default host:** `http://localhost:1234`
+- **Health check:** `GET /v1/models`
+- **Best for:** Users who prefer a GUI for model management and want a zero-configuration local server
+
+### Exo
+
+The Exo backend connects to the Exo distributed inference runtime, which partitions model layers across multiple heterogeneous devices (e.g., a Mac and a Linux box). Exo supports Apple Silicon, NVIDIA, and AMD GPUs.
+
+- **Default host:** `http://localhost:52415`
+- **Health check:** `GET /v1/models`
+- **Install:** `pip install exo` or from source at [github.com/exo-explore/exo](https://github.com/exo-explore/exo)
+- **Best for:** Running models too large for a single device by distributing across multiple Apple Silicon or heterogeneous machines
+
+### Nexa
+
+The Nexa backend connects to the Nexa SDK on-device inference server via a FastAPI shim (`nexa_shim.py`). It wraps `nexaai.LLM` as an OpenAI-compatible API on port 18181.
+
+- **Default host:** `http://localhost:18181`
+- **Health check:** `GET /v1/models`
+- **Install:** `pip install nexaai`
+- **Best for:** On-device inference with GGUF models on Apple Silicon or CPU
+
+### Lemonade
+
+The Lemonade backend connects to the [Lemonade](https://lemonade-server.ai/) inference server, which is optimized for AMD consumer GPUs (RDNA architecture) and Ryzen AI Neural Processing Units (NPUs). It uses the OpenAI-compatible `/v1/chat/completions` API.
+
+- **Default host:** `http://localhost:8000`
+- **Health check:** `GET /v1/models`
+- **Install:** Visit [lemonade-server.ai](https://lemonade-server.ai/) for platform-specific installation instructions
+- **Best for:** Ryzen AI GPUs and NPUs, and AMD-based desktop and laptop systems
+
+### Uzu
+
+The Uzu backend connects to the Uzu inference runtime. Unlike other OpenAI-compatible engines, Uzu serves its API at the root path (no `/v1` prefix).
+
+- **Default host:** `http://localhost:8000`
+- **API prefix:** (none — endpoints are `/chat/completions`, `/models`)
+- **Health check:** `GET /models`
+- **Best for:** Uzu-optimized inference workloads
+
+### Apple FM
+
+The Apple FM backend connects to Apple's Foundation Model SDK via a FastAPI shim (`apple_fm_shim.py`). It wraps `python-apple-fm-sdk` as an OpenAI-compatible API. Requires macOS 15+ with Apple Silicon.
+
+!!! note "Token counts"
+    The Apple FM SDK does not expose token counts. The shim returns 0 for all token counts. Benchmark throughput and energy-per-token metrics will reflect this limitation.
+
+- **Default host:** `http://localhost:8079`
+- **Health check:** `GET /v1/models`
+- **Install:** `pip install python-apple-fm-sdk`
+- **Best for:** Running Apple Foundation Models natively on Apple Silicon hardware
+
+### LiteLLM
+
+The LiteLLM backend connects to a LiteLLM proxy server, which provides a unified OpenAI-compatible interface to 100+ LLM providers (OpenAI, Anthropic, Google, Azure, AWS Bedrock, Groq, Together, and more).
+
+- **Registry key:** `litellm`
+- **Best for:** Teams that need a single endpoint to route across multiple cloud providers with unified logging and cost tracking
+
+---
+
+## Hardware Auto-Detection
+
+OpenJarvis automatically detects system hardware to recommend the best engine. Detection runs at config load time via `detect_hardware()`:
+
+| Detection | Method | Information Extracted |
+|-----------|--------|---------------------|
+| NVIDIA GPU | `nvidia-smi` | GPU name, VRAM (GB), count |
+| AMD GPU | `rocm-smi` | GPU name |
+| Apple Silicon | `system_profiler SPDisplaysDataType` | Chipset model name |
+| CPU | `/proc/cpuinfo` or `sysctl` | Brand string |
+| RAM | `/proc/meminfo` or `sysctl hw.memsize` | Total GB |
+
+### Engine Recommendation Logic
+
+The `recommend_engine()` function maps hardware to the best engine:
+
+```mermaid
+graph TD
+    A["detect_hardware()"] --> B{"GPU detected?"}
+    B -->|No| C["llamacpp"]
+    B -->|Yes| D{"GPU vendor?"}
+    D -->|Apple| E["ollama"]
+    D -->|NVIDIA| F{"Datacenter card?<br/>(A100, H100, H200,<br/>L40, A10, A30)"}
+    F -->|Yes| G["vllm"]
+    F -->|No| H["ollama"]
+    D -->|AMD| I{"Datacenter card?<br/>(MI300, MI325,<br/>MI350, MI355)"}
+    I -->|Yes| K["vllm"]
+    I -->|No| L["lemonade"]
+    D -->|Other| J["llamacpp"]
+```
+
+---
+
+## Engine Discovery
+
+The `_discovery.py` module provides three functions for finding and instantiating engines at runtime.
+
+### `get_engine(config, engine_key=None)`
+
+Returns a `(key, engine_instance)` tuple for the requested engine, or `None` if unavailable:
+
+1. If `engine_key` is specified, try to instantiate and health-check that specific engine
+2. Otherwise, try the default engine from config
+3. If the default is unhealthy, fall back to any healthy engine via `discover_engines()`
+
+### `discover_engines(config)`
+
+Probes all registered engines for health and returns a sorted list of healthy `(key, engine)` pairs. The config default engine is sorted first.
+
+```python
+from openjarvis.engine import discover_engines
+from openjarvis.core.config import load_config
+
+config = load_config()
+healthy = discover_engines(config)
+# [("ollama", OllamaEngine(...)), ("vllm", VLLMEngine(...))]
+```
+
+### `discover_models(engines)`
+
+Calls `list_models()` on each engine and returns a dictionary mapping engine keys to model ID lists:
+
+```python
+from openjarvis.engine import discover_engines, discover_models
+
+engines = discover_engines(config)
+models = discover_models(engines)
+# {"ollama": ["qwen3:8b", "llama3.2:3b"], "vllm": ["mistral:7b"]}
+```
+
+---
+
+## OpenAI Compatibility Layer
+
+The `_OpenAICompatibleEngine` base class provides a shared implementation for engines that serve the standard `/v1/chat/completions` endpoint. vLLM, SGLang, llama.cpp, Lemonade, and others all extend this base class with minimal overrides -- typically just setting `engine_id` and `_default_host`.
+
+```python
+class _OpenAICompatibleEngine(InferenceEngine):
+    engine_id: str = ""
+    _default_host: str = "http://localhost:8000"
+
+    def __init__(self, host: str | None = None, *, timeout: float = 120.0):
+        self._host = (host or self._default_host).rstrip("/")
+        self._client = httpx.Client(base_url=self._host, timeout=timeout)
+```
+
+Key behaviors:
+
+- **Synchronous generation:** `POST /v1/chat/completions` with `stream=False`
+- **Streaming:** `POST /v1/chat/completions` with `stream=True`, parsing SSE `data:` lines
+- **Model listing:** `GET /v1/models`, extracting `data[].id`
+- **Health check:** `GET /v1/models` with a 2-second timeout
+- **Tool call fallback:** On HTTP 400 with tools in the payload, retries without tools (handles engines that do not support function calling)
+
+---
+
+## Configuration
+
+Engine hosts and defaults are configured in `~/.openjarvis/config.toml` using **nested per-engine sub-sections**:
+
+```toml

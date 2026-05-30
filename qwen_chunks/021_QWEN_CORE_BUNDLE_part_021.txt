@@ -1,0 +1,200 @@
+  }
+}
+```
+
+!!! note "Channel endpoints"
+    Channel endpoints require `[channel] enabled = true` in your config and platform-specific credentials configured in `[channel.<platform>]` sub-sections. When not configured, `GET /v1/channels` returns an empty list and other channel endpoints return 503.
+
+## Streaming via SSE
+
+When `"stream": true` is set in the request, the server returns a `text/event-stream` response using Server-Sent Events (SSE). The response follows the same format as the OpenAI streaming API.
+
+Each event is a `data:` line containing a JSON chunk, followed by a blank line:
+
+```
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{"content":"The"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{"content":" capital"},"finish_reason":null}]}
+
+...
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1740100800,"model":"qwen3:8b","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+The stream follows this sequence:
+
+1. **Role chunk** -- first chunk contains `"delta": {"role": "assistant"}` with no content.
+2. **Content chunks** -- subsequent chunks each contain a `"delta": {"content": "..."}` with one or more tokens.
+3. **Finish chunk** -- a chunk with an empty `delta` and `"finish_reason": "stop"`.
+4. **Done signal** -- the literal string `data: [DONE]` indicates the stream is complete.
+
+Response headers include `Cache-Control: no-cache` and `Connection: keep-alive` for proper SSE behavior.
+
+## Client Examples
+
+=== "curl"
+
+    **Non-streaming request:**
+
+    ```bash
+    curl http://localhost:8000/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "model": "qwen3:8b",
+        "messages": [
+          {"role": "user", "content": "Explain quantum computing in one paragraph."}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 256
+      }'
+    ```
+
+    **Streaming request:**
+
+    ```bash
+    curl http://localhost:8000/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -N \
+      -d '{
+        "model": "qwen3:8b",
+        "messages": [
+          {"role": "user", "content": "Write a haiku about programming."}
+        ],
+        "stream": true
+      }'
+    ```
+
+    **List models:**
+
+    ```bash
+    curl http://localhost:8000/v1/models
+    ```
+
+    **Health check:**
+
+    ```bash
+    curl http://localhost:8000/health
+    ```
+
+=== "Python (openai)"
+
+    The OpenAI Python library works as a drop-in client by pointing `base_url` at the local server:
+
+    ```python
+    from openai import OpenAI
+
+    client = OpenAI(
+        base_url="http://localhost:8000/v1",
+        api_key="not-needed",  # Required by the library but not validated
+    )
+
+    # Non-streaming
+    response = client.chat.completions.create(
+        model="qwen3:8b",
+        messages=[
+            {"role": "user", "content": "What is the capital of France?"}
+        ],
+        temperature=0.7,
+        max_tokens=256,
+    )
+    print(response.choices[0].message.content)
+
+    # Streaming
+    stream = client.chat.completions.create(
+        model="qwen3:8b",
+        messages=[
+            {"role": "user", "content": "Write a short poem about AI."}
+        ],
+        stream=True,
+    )
+    for chunk in stream:
+        if chunk.choices[0].delta.content:
+            print(chunk.choices[0].delta.content, end="", flush=True)
+    print()
+
+    # List models
+    models = client.models.list()
+    for model in models.data:
+        print(model.id)
+    ```
+
+=== "Python (httpx)"
+
+    Using `httpx` for direct HTTP requests:
+
+    ```python
+    import httpx
+    import json
+
+    BASE_URL = "http://localhost:8000"
+
+    # Non-streaming request
+    response = httpx.post(
+        f"{BASE_URL}/v1/chat/completions",
+        json={
+            "model": "qwen3:8b",
+            "messages": [
+                {"role": "user", "content": "What is the capital of France?"}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 256,
+        },
+    )
+    data = response.json()
+    print(data["choices"][0]["message"]["content"])
+
+    # Streaming request
+    with httpx.stream(
+        "POST",
+        f"{BASE_URL}/v1/chat/completions",
+        json={
+            "model": "qwen3:8b",
+            "messages": [
+                {"role": "user", "content": "Write a haiku about code."}
+            ],
+            "stream": True,
+        },
+    ) as response:
+        for line in response.iter_lines():
+            if line.startswith("data: ") and line != "data: [DONE]":
+                chunk = json.loads(line[6:])
+                content = chunk["choices"][0]["delta"].get("content", "")
+                if content:
+                    print(content, end="", flush=True)
+    print()
+
+    # List models
+    response = httpx.get(f"{BASE_URL}/v1/models")
+    for model in response.json()["data"]:
+        print(model["id"])
+
+    # Health check
+    response = httpx.get(f"{BASE_URL}/health")
+    print(response.json())
+    ```
+
+## Configuration via `config.toml`
+
+The `[server]` section of `~/.openjarvis/config.toml` controls default server behavior:
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 8000
+agent = "orchestrator"
+model = ""
+workers = 1
+```
+
+| Key       | Type      | Default         | Description                                                                |
+|-----------|-----------|-----------------|----------------------------------------------------------------------------|
+| `host`    | `string`  | `"0.0.0.0"`    | Network address to bind to. Use `"127.0.0.1"` for localhost-only access.   |
+| `port`    | `integer` | `8000`          | Port number.                                                               |
+| `agent`   | `string`  | `"orchestrator"`| Default agent for non-streaming requests. Set to `""` for direct engine mode. |
+| `model`   | `string`  | `""`            | Default model name. When empty, falls back to `[intelligence] default_model` or the first model discovered on the engine. |
+| `workers` | `integer` | `1`             | Number of uvicorn workers (for future use).                                |
+

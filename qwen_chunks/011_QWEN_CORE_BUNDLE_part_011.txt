@@ -1,0 +1,200 @@
+    model="deepseek-coder-v2:16b",
+    outcome="success",
+    feedback=0.9,
+)
+```
+
+The online update uses a conservative strategy: it only switches the preferred model for a query class when the new model shows clearly better outcomes (`feedback > 0.7`) and the existing policy has fewer than `min_samples` observations.
+
+---
+
+## SFTRouterPolicy (Trace-Driven Router)
+
+The `SFTRouterPolicy` (in `learning/sft_policy.py`) is an `IntelligenceLearningPolicy` that learns routing decisions from historical traces. It analyzes trace outcomes, groups by query class (code, math, short, long, general), and builds a `query_class → model` mapping from the highest-scoring model per class. A backward-compatible alias `SFTPolicy = SFTRouterPolicy` is provided for code that used the old name.
+
+```python
+from openjarvis.learning.sft_policy import SFTRouterPolicy
+# or via the backward-compat alias:
+from openjarvis.learning.sft_policy import SFTPolicy
+```
+
+---
+
+## AgentAdvisorPolicy
+
+The `AgentAdvisorPolicy` (in `learning/agent_advisor.py`) is an `AgentLearningPolicy` that advises on agent strategy -- for example, recommending tool sets, turn limits, or agent type -- based on patterns observed in historical traces.
+
+```python
+from openjarvis.learning.agent_advisor import AgentAdvisorPolicy
+```
+
+---
+
+## ICLUpdaterPolicy
+
+The `ICLUpdaterPolicy` (in `learning/icl_updater.py`) is an `AgentLearningPolicy` that uses in-context learning to discover reusable examples and multi-tool skill sequences from traces. It analyzes successful tool-call patterns to recommend ICL examples and skill libraries that update agent behavior.
+
+```python
+from openjarvis.learning.icl_updater import ICLUpdaterPolicy
+```
+
+---
+
+## GRPORouterPolicy (Stub)
+
+The `GRPORouterPolicy` is a placeholder for future reinforcement learning-based routing. Currently, calling `select_model()` raises `NotImplementedError`:
+
+```python
+class GRPORouterPolicy(RouterPolicy):
+    def select_model(self, context: RoutingContext) -> str:
+        raise NotImplementedError(
+            "GRPORouterPolicy is not yet implemented. "
+            "GRPO training will be available in a future phase."
+        )
+```
+
+---
+
+## RewardFunction ABC
+
+The `RewardFunction` ABC defines how to score completed inferences for use in training:
+
+```python
+class RewardFunction(ABC):
+    @abstractmethod
+    def compute(
+        self,
+        context: RoutingContext,
+        model_key: str,
+        response: str,
+        **kwargs: Any,
+    ) -> float:
+        """Return a reward in [0, 1]."""
+```
+
+### HeuristicRewardFunction
+
+The built-in reward function computes a weighted combination of three factors:
+
+| Factor | Weight (default) | Normalization | Score Range |
+|--------|-----------------|---------------|-------------|
+| **Latency** | 0.4 | `1 - (latency / max_latency)` | 0 = 30s+, 1 = instant |
+| **Cost** | 0.3 | `1 - (cost / max_cost)` | 0 = $0.01+, 1 = free |
+| **Efficiency** | 0.3 | `completion_tokens / total_tokens` | 0 = all prompt, 1 = all completion |
+
+```python
+from openjarvis.learning.heuristic_reward import HeuristicRewardFunction
+
+reward_fn = HeuristicRewardFunction(
+    weight_latency=0.4,
+    weight_cost=0.3,
+    weight_efficiency=0.3,
+    max_latency=30.0,   # seconds
+    max_cost=0.01,       # USD
+)
+
+reward = reward_fn.compute(
+    context=routing_context,
+    model_key="qwen3:8b",
+    response="The answer is 42.",
+    latency_seconds=1.2,
+    cost_usd=0.0,
+    prompt_tokens=50,
+    completion_tokens=10,
+)
+# Returns a float in [0, 1]
+```
+
+---
+
+## Trace System
+
+The trace system records the full sequence of steps in every agent interaction, providing the raw data that the learning system uses to improve.
+
+### TraceStore
+
+`TraceStore` is an append-only SQLite store for interaction traces:
+
+```python
+from openjarvis.traces.store import TraceStore
+
+store = TraceStore("~/.openjarvis/traces.db")
+store.save(trace)                          # Persist a complete trace
+trace = store.get("abc123")                # Retrieve by trace ID
+traces = store.list_traces(                # Query with filters
+    agent="orchestrator",
+    model="qwen3:8b",
+    outcome="success",
+    since=1700000000.0,
+    limit=100,
+)
+count = store.count()                      # Total trace count
+```
+
+**Database schema:**
+
+- `traces` table -- one row per interaction (trace_id, query, agent, model, engine, result, outcome, feedback, timing, tokens, metadata)
+- `trace_steps` table -- one row per step within a trace (step_type, timestamp, duration, input, output, metadata)
+
+**EventBus integration:** The store can subscribe to `TRACE_COMPLETE` events for automatic persistence:
+
+```python
+store.subscribe_to_bus(bus)
+# Any TRACE_COMPLETE event will now auto-save the trace
+```
+
+### TraceCollector
+
+`TraceCollector` wraps any `BaseAgent` and automatically records a `Trace` for every `run()` call:
+
+```python
+from openjarvis.traces.collector import TraceCollector
+
+agent = OrchestratorAgent(engine, model, tools=tools, bus=bus)
+collector = TraceCollector(agent, store=trace_store, bus=bus)
+
+result = collector.run("What is 2+2?")
+# Trace is automatically saved to trace_store
+```
+
+How it works:
+
+1. Subscribes to EventBus events before running the agent:
+    - `INFERENCE_START` / `INFERENCE_END` -- creates `GENERATE` steps
+    - `TOOL_CALL_START` / `TOOL_CALL_END` -- creates `TOOL_CALL` steps
+    - `MEMORY_RETRIEVE` -- creates `RETRIEVE` steps
+2. Runs the wrapped agent's `run()` method
+3. Unsubscribes from events
+4. Adds a final `RESPOND` step
+5. Builds a `Trace` object with all collected steps
+6. Saves to the `TraceStore` and publishes `TRACE_COMPLETE`
+
+### TraceAnalyzer
+
+`TraceAnalyzer` provides a read-only query layer over stored traces, computing aggregated statistics:
+
+```python
+from openjarvis.traces.analyzer import TraceAnalyzer
+
+analyzer = TraceAnalyzer(store)
+
+# Overall summary
+summary = analyzer.summary()
+# TraceSummary(total_traces=150, avg_latency=2.3, success_rate=0.85, ...)
+
+# Stats grouped by (model, agent) routing decisions
+route_stats = analyzer.per_route_stats()
+# [RouteStats(model="qwen3:8b", agent="orchestrator", count=45, avg_latency=1.8, ...), ...]
+
+# Stats grouped by tool
+tool_stats = analyzer.per_tool_stats()
+# [ToolStats(tool_name="calculator", call_count=23, avg_latency=0.01, success_rate=1.0), ...]
+
+# Find traces matching query characteristics
+code_traces = analyzer.traces_for_query_type(has_code=True)
+
+# Export traces as plain dicts (for JSON serialization)
+exported = analyzer.export_traces(limit=1000)
+```
+
+**Computed statistics:**

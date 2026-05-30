@@ -1,0 +1,200 @@
+
+| Dataclass | Fields |
+|-----------|--------|
+| `TraceSummary` | total_traces, total_steps, avg_steps_per_trace, avg_latency, avg_tokens, success_rate, step_type_distribution |
+| `RouteStats` | model, agent, count, avg_latency, avg_tokens, success_rate, avg_feedback |
+| `ToolStats` | tool_name, call_count, avg_latency, success_rate |
+
+---
+
+## The Learning Loop
+
+The trace-driven learning loop connects all the pieces:
+
+```mermaid
+graph TB
+    subgraph "Runtime"
+        Q["User Query"] --> AGT["Agent executes"]
+        AGT --> ENG["Engine generates"]
+        ENG --> RESP["Response returned"]
+    end
+
+    subgraph "Recording"
+        AGT -.->|"events"| COL["TraceCollector"]
+        ENG -.->|"events"| COL
+        COL -->|"save"| STO["TraceStore<br/>(SQLite)"]
+    end
+
+    subgraph "Analysis"
+        STO -->|"read"| ANA["TraceAnalyzer"]
+        ANA -->|"summary(),<br/>per_route_stats()"| STATS["Aggregated<br/>Statistics"]
+    end
+
+    subgraph "Learning"
+        STATS -->|"update_from_traces()"| POL["TraceDrivenPolicy"]
+        POL -->|"select_model()"| Q
+    end
+
+    style Q fill:#e1f5fe
+    style RESP fill:#e8f5e9
+    style POL fill:#fff3e0
+```
+
+### Step-by-step cycle:
+
+1. **Query arrives** -- The system needs to select a model
+2. **Router policy selects model** -- `TraceDrivenPolicy.select_model()` checks the learned policy map; falls back to heuristic if insufficient data
+3. **Agent executes** -- The agent processes the query, calling tools and memory as needed
+4. **Events captured** -- The `TraceCollector` captures all events (inference, tool calls, memory retrieval) during execution
+5. **Trace saved** -- A complete `Trace` with all `TraceStep` objects is saved to `TraceStore`
+6. **Analysis** -- Periodically, `TraceAnalyzer` computes aggregate statistics from stored traces
+7. **Policy update** -- `TraceDrivenPolicy.update_from_traces()` recomputes the `query_class -> model` mapping based on success rates and feedback scores
+8. **Better routing** -- The next query benefits from the updated routing decisions
+
+### Trace Data Model
+
+Each interaction produces a `Trace` containing multiple `TraceStep` objects:
+
+```
+Trace
+  trace_id: "a1b2c3d4e5f6"
+  query: "What is 2+2?"
+  agent: "orchestrator"
+  model: "qwen3:8b"
+  engine: "ollama"
+  steps:
+    [0] GENERATE  -- model inference, 0.8s, 150 tokens
+    [1] TOOL_CALL -- calculator, 0.01s, success
+    [2] GENERATE  -- model inference, 0.5s, 80 tokens
+    [3] RESPOND   -- final answer
+  result: "2+2 = 4"
+  outcome: "success"
+  feedback: 1.0
+  total_latency_seconds: 1.31
+  total_tokens: 230
+```
+
+**Step types:**
+
+| StepType | Description | Created By |
+|----------|-------------|------------|
+| `ROUTE` | Model selection decision | Router policy |
+| `RETRIEVE` | Memory search | Memory backend |
+| `GENERATE` | LLM inference call | Engine |
+| `TOOL_CALL` | Tool execution | ToolExecutor |
+| `RESPOND` | Final response | TraceCollector |
+
+---
+
+## Optimization Framework
+
+The optimization subsystem (`learning/optimize/`) provides LLM-guided search
+over OpenJarvis's 5-primitive configuration space. It automates finding optimal
+configurations for accuracy, latency, cost, and energy consumption.
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| `SearchSpace` | Defines tunable dimensions across all 5 primitives |
+| `LLMOptimizer` | Proposes configurations using an LLM backend |
+| `OptimizationEngine` | Orchestrates the propose-evaluate-analyze loop |
+| `OptimizationStore` | SQLite-backed persistence for trials and runs |
+| `TrialRunner` | Evaluates proposed configurations against benchmarks |
+
+### Pareto Frontier
+
+The engine computes a Pareto frontier across multiple objectives
+(accuracy vs latency vs cost), identifying configurations where no single
+metric can be improved without degrading another.
+
+### Rust Backend
+
+The optimization framework has full Rust parity via the `openjarvis-learning`
+crate, with PyO3 bindings exposing `OptimizationStore` and `LLMOptimizer`
+to Python.
+
+---
+
+## LLM-Guided Spec Search (Frontier-Driven Harness Learning)
+
+LLM-guided spec search uses a frontier closed-source model (the "teacher") as a meta-engineer for the local student's full harness — not just its weights. Instead of pushing knowledge into a small model's weights, we push a frontier model's engineering judgement into the surrounding configuration: prompts, routing, agent class, tool availability, and tool descriptions.
+
+### Where it lives
+
+`learning/spec_search/` is the fifth subsystem within the Learning pillar, alongside `learning/routing/`, `learning/optimize/`, `learning/training/`, and `learning/intelligence/`.
+
+### Four-phase loop
+
+```
+Trigger → Diagnose → Plan → Execute → Record
+```
+
+1. **Diagnose** — TeacherAgent (frontier model with diagnostic tools) analyzes traces, runs student/teacher comparisons, identifies 2-5 failure clusters with evidence.
+2. **Plan** — LearningPlanner converts diagnosis into a typed LearningPlan with deterministic risk tier assignment and patch/replace downgrade.
+3. **Execute** — Per-edit loop: EditApplier validates + applies, BenchmarkGate scores, CheckpointStore commits or rolls back.
+4. **Record** — LearningSession persisted to SQLite + JSON artifact.
+
+### Key components
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| `SpecSearchOrchestrator` | `orchestrator.py` | Top-level session driver |
+| `TeacherAgent` | `diagnose/teacher_agent.py` | Frontier model tool-calling loop |
+| `DiagnosisRunner` | `diagnose/runner.py` | Phase 1 orchestration |
+| `LearningPlanner` | `plan/planner.py` | Diagnosis → typed LearningPlan |
+| `EditApplier` + registry | `execute/base.py` | Abstract applier interface |
+| `BenchmarkGate` | `gate/benchmark_gate.py` | Benchmark-based accept/reject |
+| `CheckpointStore` | `checkpoint/store.py` | Git-backed config rollback |
+| `SessionStore` | `storage/session_store.py` | SQLite session persistence |
+
+### Relationship to existing subsystems
+
+| Existing | Relationship |
+|----------|-------------|
+| `LearningOrchestrator` | Sibling — stays untouched |
+| `LLMOptimizer` / `OptimizationStore` | Sibling — grid-search vs root-cause |
+| `LearnedRouterPolicy` | Reused — routing edits update it |
+| `TraceJudge` | Reused — benchmark scoring |
+| `PersonalBenchmarkSynthesizer` | Extended — auto-refresh, gold answers |
+| `TraceStore` | Reused — read-only access from diagnostic tools |
+
+### Risk tier system
+
+Every edit is assigned a tier from a deterministic lookup table:
+
+| Tier | Ops | Behavior |
+|------|-----|----------|
+| `auto` | Model routing/params, tool add/remove/description, agent params | Apply if gate passes |
+| `review` | System prompt edits, agent class, few-shot exemplars | Queue for user approval |
+| `manual` | LoRA fine-tuning (v2) | Never auto-apply |
+
+See [LLM-guided spec search guide](../user-guide/llm-guided-spec-search.md) for the architecture and the building blocks.
+
+---
+
+## FILE: C:\Windows\System32\OpenJarvis\docs\architecture\memory.md
+
+`$(memory.md.Extension.TrimStart('.'))
+# Memory Primitive
+
+The Memory primitive provides **persistent, searchable storage** for documents and knowledge. It enables context injection -- retrieving relevant information from indexed documents and prepending it to prompts so the LLM can answer questions grounded in specific content.
+
+---
+
+## MemoryBackend ABC
+
+All memory backends implement the `MemoryBackend` abstract base class:
+
+```python
+class MemoryBackend(ABC):
+    backend_id: str
+
+    @abstractmethod
+    def store(
+        self,
+        content: str,
+        *,
+        source: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
