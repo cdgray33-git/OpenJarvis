@@ -472,7 +472,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         return;
     }
 
-    let mut project_root = std::env::var("OPENJARVIS_ROOT").ok().map(std::path::PathBuf::from).filter(|p| p.join("pyproject.toml").exists()).or_else(|| find_project_root());
+    let mut project_root = find_project_root();
 
     if project_root.is_none() {
         // Auto-clone on first launch
@@ -597,35 +597,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    // Start with STARTUP_MODEL (just pulled) or preferred if already available.
-    let pref = preferred_model();
-    let startup_model = if ollama_has_model(pref).await {
-        pref
-    } else if ollama_has_model(STARTUP_MODEL).await {
-        STARTUP_MODEL
-    } else {
-        FALLBACK_MODEL
-    };
-
     let root = project_root.as_ref().unwrap();
-
-    // Install dependencies automatically (handles fresh clones)
-    {
-        let mut s = status.lock().await;
-        s.detail = "Installing dependencies...".into();
-    }
-    let _ = tokio::process::Command::new(&uv_bin)
-        .args([
-            "sync",
-            "--extra", "server",
-            "--extra", "inference-cloud",
-            "--extra", "inference-google",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .current_dir(root)
-        .status()
-        .await;
 
     {
         let mut s = status.lock().await;
@@ -713,9 +685,18 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.phase = "ready".into();
         s.detail = "All systems ready.".into();
     }
-
-    // Phase 4: No local model bootstrapping in remote-Ollama mode.
 }
+
+
+    // Skip all the local setup code that normally handles:
+    // - Local Ollama instance checking
+    // - Local model downloading
+    // - Local uv sync
+    // - Local server startup
+    // - Project root finding
+    // - Git operations
+}
+
 
 // ---------------------------------------------------------------------------
 // Tauri commands
@@ -1660,7 +1641,8 @@ pub fn run() {
             fetch_memory_stats,
             search_memory,
             fetch_agents,
-            fetch_models,
+            fetch_models,
+
             fetch_recommended_model,
             run_jarvis_command,
             fetch_savings,
@@ -1686,5 +1668,3 @@ pub fn run() {
             }
         });
 }
-
-

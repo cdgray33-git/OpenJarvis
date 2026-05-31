@@ -3,7 +3,6 @@ import { Loader2, CheckCircle2, XCircle, Cpu, Server, Database } from 'lucide-re
 import { getSetupStatus, type SetupStatus } from '../lib/api';
 
 const STEPS = [
-  // Ollama check removed - no longer needed
   { key: 'ollama_ready', label: 'Remote Engine', icon: Server, detail: 'Checking remote Ollama...' },
   { key: 'model_ready', label: 'AI Model', icon: Database, detail: 'Loading model...' },
   { key: 'server_ready', label: 'API Server', icon: Server, detail: 'Starting server...' },
@@ -86,7 +85,7 @@ export function SetupScreen({ onReady }: { onReady: () => void }) {
   }, [poll]);
 
   const activeStep: StepKey | null =
-    status && !status.server_ready
+    status && !status.ollama_ready
       ? 'ollama_ready'
       : status && !status.model_ready
         ? 'model_ready'
@@ -160,7 +159,7 @@ export function SetupScreen({ onReady }: { onReady: () => void }) {
               style={{
                 background: 'var(--color-accent)',
                 width: `${
-                  ((status?.server_ready ? 1 : 0) +
+                  ((status?.ollama_ready ? 1 : 0) +
                     (status?.model_ready ? 1 : 0) +
                     (status?.server_ready ? 1 : 0)) *
                   33.33
