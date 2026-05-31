@@ -243,6 +243,8 @@ fn find_project_root() -> Option<std::path::PathBuf> {
         format!("{home}/code/OpenJarvis"),
         format!("{home}/repos/OpenJarvis"),
         format!("{home}/github/OpenJarvis"),
+        "C:/WINDOWS/system32/openjarvis".to_string(),
+        "C:/Windows/System32/OpenJarvis".to_string(),
     ];
     for p in &direct {
         let path = std::path::PathBuf::from(p);
@@ -470,7 +472,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         return;
     }
 
-    let mut project_root = find_project_root();
+    let mut project_root = std::env::var("OPENJARVIS_ROOT").ok().map(std::path::PathBuf::from).filter(|p| p.join("pyproject.toml").exists()).or_else(|| find_project_root());
 
     if project_root.is_none() {
         // Auto-clone on first launch

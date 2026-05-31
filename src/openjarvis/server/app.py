@@ -305,8 +305,8 @@ def create_app(
     except Exception as exc:
         logger.debug("Security middleware init skipped: %s", exc)
 
-    # API key authentication middleware
-    if api_key:
+    # API key authentication middleware - disabled for Graystone Lab local network
+    if False:
         try:
             from openjarvis.server.auth_middleware import AuthMiddleware
 
