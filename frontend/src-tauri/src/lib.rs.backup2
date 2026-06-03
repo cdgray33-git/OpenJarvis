@@ -5,51 +5,6 @@ use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
-// ---------------------------------------------------------------------------
-// Startup env loader - reads openjarvis.env from next to the exe
-// ---------------------------------------------------------------------------
-
-fn exe_dir() -> std::path::PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-}
-
-fn log_startup(msg: &str) {
-    let log_path = exe_dir().join("openjarvis-startup.log");
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true).append(true).open(&log_path)
-    {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(f, "[{}] {}", ts, msg);
-    }
-}
-
-fn load_env_file() {
-    let env_path = exe_dir().join("openjarvis.env");
-    log_startup(&format!("load_env_file: looking for {:?}", env_path));
-    if let Ok(contents) = std::fs::read_to_string(&env_path) {
-        for line in contents.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') { continue; }
-            if let Some((key, val)) = line.split_once('=') {
-                let key = key.trim();
-                let val = val.trim();
-                std::env::set_var(key, val);
-                log_startup(&format!("  set {}={}", key, val));
-            }
-        }
-        log_startup("load_env_file: done");
-    } else {
-        log_startup("load_env_file: openjarvis.env NOT FOUND - falling back to system env");
-    }
-}
-
 
 // Check if remote Ollama is configured
 fn is_remote_ollama() -> bool {
@@ -60,10 +15,10 @@ fn is_remote_ollama() -> bool {
 }
 
 const OLLAMA_PORT: u16 = 11434;
-const JARVIS_PORT: u16 = 8010;
+const JARVIS_PORT: u16 = 8000;
 
 /// Small, fast model pulled at startup so the app opens quickly.
-const STARTUP_MODEL: &str = "qwen2.5-coder:14b-instruct-q4_K_M";
+const STARTUP_MODEL: &str = "qwen3.5:4b";
 
 /// Tiny fallback model if even the startup model can't be pulled.
 const FALLBACK_MODEL: &str = "qwen3:0.6b";
@@ -139,7 +94,7 @@ fn models_that_fit() -> Vec<&'static str> {
         .collect()
 }
 
-/// Pick the default model - prefers STARTUP_MODEL if it fits, otherwise
+/// Pick the default model — prefers STARTUP_MODEL if it fits, otherwise
 /// falls back to the third-largest model that fits on this machine.
 fn preferred_model() -> &'static str {
     let fitting = models_that_fit();
@@ -182,7 +137,7 @@ fn resolve_bin(name: &str) -> String {
         let programfiles = std::env::var("ProgramFiles").unwrap_or_default();
         let programfiles_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
         vec![
-            // Git for Windows - standard install paths
+            // Git for Windows — standard install paths
             format!("{programfiles}\\Git\\cmd\\{name}.exe"),
             format!("{programfiles_x86}\\Git\\cmd\\{name}.exe"),
             format!("{localappdata}\\Programs\\Git\\cmd\\{name}.exe"),
@@ -251,15 +206,11 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     // 1. Explicit env var override
     if let Ok(root) = std::env::var("OPENJARVIS_ROOT") {
         let path = std::path::PathBuf::from(&root);
-        log_startup(&format!("find_project_root: OPENJARVIS_ROOT={:?} exists={}", path, path.join("pyproject.toml").exists()));
         if path.join("pyproject.toml").exists() {
-            log_startup(&format!("find_project_root: using {:?}", path));
             return Some(path);
-        } else {
-            log_startup("find_project_root: OPENJARVIS_ROOT set but pyproject.toml missing - aborting fallback");
-            return None;
         }
     }
+
     // 2. Walk up from the running executable (works in dev and .app bundle)
     if let Ok(exe) = std::env::current_exe() {
         let mut dir = exe.parent().map(|p| p.to_path_buf());
@@ -335,7 +286,7 @@ fn find_project_root() -> Option<std::path::PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
-// BackendManager - owns the Ollama + Jarvis server child processes
+// BackendManager — owns the Ollama + Jarvis server child processes
 // ---------------------------------------------------------------------------
 
 struct ChildHandle {
@@ -516,15 +467,14 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
 
     // Phase 2: Pull one small model (qwen3.5:2b) so the app can open fast.
-    // Skip in remote mode to avoid unwanted downloads.
-    if !is_remote_ollama() {
-        {
-            let mut s = status.lock().await;
-            s.phase = "model".into();
-            s.detail = format!("Checking for {}...", STARTUP_MODEL);
-        }
+    // Remaining models are pulled in the background after the server starts.
+    {
+        let mut s = status.lock().await;
+        s.phase = "model".into();
+        s.detail = format!("Checking for {}...", STARTUP_MODEL);
+    }
 
-        if !ollama_has_model(STARTUP_MODEL).await {
+    if !ollama_has_model(STARTUP_MODEL).await {
         {
             let mut s = status.lock().await;
             s.detail = format!("Downloading {}... (this may take a minute)", STARTUP_MODEL);
@@ -545,16 +495,10 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-        {
-            let mut s = status.lock().await;
-            s.model_ready = true;
-            s.detail = "Model ready.".into();
-        }
-    } else {
-        // Remote mode - skip model checks
+    {
         let mut s = status.lock().await;
         s.model_ready = true;
-        s.detail = "Using remote models.".into();
+        s.detail = "Model ready.".into();
     }
 
     // Phase 3: Start jarvis serve
@@ -675,7 +619,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             .await
             .is_ok()
         {
-            // Something is already listening - try to kill it
+            // Something is already listening — try to kill it
             #[cfg(unix)]
             {
                 let _ = tokio::process::Command::new("fuser")
@@ -702,18 +646,14 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    // Use configured model in remote mode, otherwise auto-detect
-    let startup_model = if is_remote_ollama() {
+    // Start with STARTUP_MODEL (just pulled) or preferred if already available.
+    let pref = preferred_model();
+    let startup_model = if ollama_has_model(pref).await {
+        pref
+    } else if ollama_has_model(STARTUP_MODEL).await {
         STARTUP_MODEL
     } else {
-        let pref = preferred_model();
-        if ollama_has_model(pref).await {
-            pref
-        } else if ollama_has_model(STARTUP_MODEL).await {
-            STARTUP_MODEL
-        } else {
-            FALLBACK_MODEL
-        }
+        FALLBACK_MODEL
     };
 
     let root = project_root.as_ref().unwrap();
@@ -845,8 +785,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 // ---------------------------------------------------------------------------
 
 fn api_base() -> String {
-    std::env::var("OPENJARVIS_API_URL")
-        .unwrap_or_else(|_| format!("http://127.0.0.1:{}", JARVIS_PORT))
+    format!("http://127.0.0.1:{}", JARVIS_PORT)
 }
 
 #[tauri::command]
@@ -1272,7 +1211,7 @@ async fn speech_health(api_url: String) -> Result<serde_json::Value, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Native macOS overlay - NSPanel + WKWebView, entirely bypassing Tauri's
+// Native macOS overlay — NSPanel + WKWebView, entirely bypassing Tauri's
 // window management so we get proper always-on-top, transparency, non-
 // activating panel behaviour and cross-Space support.
 // ---------------------------------------------------------------------------
@@ -1403,7 +1342,7 @@ mod native_overlay {
             decl.register();
         }
 
-        // --- WKNavigationDelegate - re-apply transparency after load --
+        // --- WKNavigationDelegate — re-apply transparency after load --
         if Class::get("JarvisOverlayNavDelegate").is_none() {
             let sup = Class::get("NSObject").unwrap();
             let mut decl = ClassDecl::new("JarvisOverlayNavDelegate", sup).unwrap();
@@ -1469,7 +1408,7 @@ mod native_overlay {
             defer: NO
         ];
 
-        // Window level - NSFloatingWindowLevel (3).
+        // Window level — NSFloatingWindowLevel (3).
         let _: () = msg_send![panel, setLevel: 3_i64];
         // canJoinAllSpaces (1) | fullScreenAuxiliary (1<<8)
         let _: () = msg_send![panel, setCollectionBehavior: 257_u64];
@@ -1517,7 +1456,7 @@ mod native_overlay {
         // Inject saved conversation into the HTML template, then load it.
         // Use the API server as the base URL so fetch() is same-origin.
         // Escape "</" so the JSON can't prematurely close the <script> tag.
-        // ("\/" is valid JSON - resolves back to "/" when parsed.)
+        // ("\/" is valid JSON — resolves back to "/" when parsed.)
         let saved = load_conversation().replace("</", "<\\/");
         let cloud = cloud_models_json();
         let filled = html
@@ -1664,8 +1603,6 @@ async fn hide_overlay() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    load_env_file();
-    log_startup(&format!("run(): OPENJARVIS_ROOT={:?}", std::env::var("OPENJARVIS_ROOT")));
     let backend: SharedBackend = Arc::new(Mutex::new(BackendManager::default()));
     let status: SharedStatus = Arc::new(Mutex::new(SetupStatus::default()));
 

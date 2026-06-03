@@ -5,26 +5,19 @@ import type { TokenUsage, MessageTelemetry } from '../../types';
 interface Props {
   usage?: TokenUsage;
   telemetry?: MessageTelemetry;
-  isResearch?: boolean;
 }
 
 function formatMs(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
+export function XRayFooter({ usage, telemetry }: Props) {
   const [expanded, setExpanded] = useState(false);
 
-  // Build collapsed summary parts. For Deep Research responses we hide the
-  // chat-side engine/model (which doesn't reflect the planner that actually
-  // produced the answer) and label the response with the mode instead.
+  // Build collapsed summary parts
   const parts: string[] = [];
-  if (isResearch) {
-    parts.push('Deep Research');
-  } else {
-    if (telemetry?.engine) parts.push(telemetry.engine);
-    if (telemetry?.model_id) parts.push(telemetry.model_id);
-  }
+  if (telemetry?.engine) parts.push(telemetry.engine);
+  if (telemetry?.model_id) parts.push(telemetry.model_id);
   if (telemetry?.complexity_tier) parts.push(telemetry.complexity_tier);
   if (telemetry?.total_ms) parts.push(formatMs(telemetry.total_ms));
   if (usage && (usage.prompt_tokens || usage.completion_tokens)) {
@@ -39,9 +32,7 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
 
   // Build expanded rows
   const rows: Array<{ label: string; value: string; color?: string }> = [];
-  if (isResearch) {
-    rows.push({ label: 'Mode', value: 'Deep Research' });
-  } else if (telemetry?.engine) {
+  if (telemetry?.engine) {
     const modelDetail = telemetry.model_id || '';
     rows.push({ label: 'Engine', value: `${telemetry.engine}${modelDetail ? ` (${modelDetail})` : ''}` });
   }

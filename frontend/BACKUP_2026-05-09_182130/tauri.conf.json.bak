@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.openjarvis.desktop",
   "build": {
-    "frontendDist": "../../src/openjarvis/server/static",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build:tauri"
@@ -20,12 +20,11 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
-        "transparent": false,
-        "devtools": true
+        "transparent": false
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* http://172.16.33.200:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' data: blob:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' data: blob:"
     }
   },
   "bundle": {
@@ -70,4 +69,3 @@
     }
   }
 }
-

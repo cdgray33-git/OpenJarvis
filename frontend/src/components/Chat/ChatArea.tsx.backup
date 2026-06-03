@@ -1,10 +1,9 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
-import { ThinkingCircle } from '../ThinkingCircle';
 import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
 
@@ -24,6 +23,7 @@ export function ChatArea() {
   const listRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
 
+  // Check if any data sources are connected
   const [hasConnectedSources, setHasConnectedSources] = useState<boolean | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
@@ -46,21 +46,24 @@ export function ChatArea() {
   };
 
   const isEmpty = messages.length === 0 && !streamState.isStreaming;
+
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
 
   return (
     <div className="flex flex-col h-full">
+      {/* Toggle bar */}
       <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
         <button
           onClick={toggleSystemPanel}
           className="p-1.5 rounded-md transition-colors cursor-pointer"
           style={{ color: 'var(--color-text-tertiary)' }}
-          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '?' : 'Ctrl'}+I)`}
+          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
         >
           <PanelIcon size={16} />
         </button>
       </div>
 
+      {/* Data sources banner */}
       {hasConnectedSources === false && !bannerDismissed && (
         <div
           className="mx-4 mb-2 flex items-center gap-3 px-4 py-3 rounded-lg text-sm shrink-0"
@@ -89,7 +92,6 @@ export function ChatArea() {
           </button>
         </div>
       )}
-
       <div
         ref={listRef}
         onScroll={handleScroll}
@@ -107,9 +109,10 @@ export function ChatArea() {
               {getGreeting()}
             </h2>
             <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally � private, fast, and always available.
+              Ask anything. Your AI runs locally — private, fast, and always available.
             </p>
 
+            {/* Quick action hints */}
             <div className="flex gap-3">
               <button
                 onClick={() => navigate('/data-sources')}
@@ -154,27 +157,7 @@ export function ChatArea() {
           </div>
         )}
       </div>
-
-      {/* ThinkingCircle component */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 120, 
-        right: 20, 
-        zIndex: 999998 
-      }}>
-        <ThinkingCircle 
-          state={streamState.isStreaming ? "thinking" : "idle"} 
-          size={80} 
-        />
-      </div>
-
       <InputArea />
     </div>
   );
 }
-
-
-
-
-
-

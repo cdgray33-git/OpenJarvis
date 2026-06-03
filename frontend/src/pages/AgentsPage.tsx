@@ -1403,8 +1403,10 @@ function AgentConfigGrid({ agent, onAgentUpdated }: { agent: ManagedAgent; onAge
     let cancelled = false;
     async function checkModel() {
       try {
-        const fetched = await fetchModels();
-        const loadedNames: string[] = fetched.map((m) => m.id);
+        const res = await fetch('http://localhost:11434/api/tags');
+        if (!res.ok) { setModelAvailable('unknown'); return; }
+        const data = await res.json();
+        const loadedNames: string[] = (data.models || []).map((m: { name: string }) => m.name);
         if (!cancelled) {
           setOllamaModels(loadedNames);
           if (currentModel === '(default)') {
@@ -1431,8 +1433,11 @@ function AgentConfigGrid({ agent, onAgentUpdated }: { agent: ManagedAgent; onAge
     } catch { /* ignore */ }
     // Also refresh Ollama models for availability indication
     try {
-      const fetched = await fetchModels();
-      setOllamaModels(fetched.map((m) => m.id));
+      const res = await fetch('http://localhost:11434/api/tags');
+      if (res.ok) {
+        const data = await res.json();
+        setOllamaModels((data.models || []).map((m: { name: string }) => m.name));
+      }
     } catch { /* ignore */ }
     setEditingModel(true);
   }

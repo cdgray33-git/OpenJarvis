@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.openjarvis.desktop",
   "build": {
-    "frontendDist": "../../src/openjarvis/server/static",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build:tauri"
@@ -70,4 +70,3 @@
     }
   }
 }
-

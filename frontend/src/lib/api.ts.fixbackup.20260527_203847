@@ -31,7 +31,7 @@ export async function initApiBase(): Promise<void> {
   }
 }
 
-const DESKTOP_API_FALLBACK = 'http://127.0.0.1:8010';
+const DESKTOP_API_FALLBACK = 'http://';
 
 const getSettingsApiUrl = (): string => {
   try {
@@ -58,19 +58,11 @@ function getAuthHeaders(): Record<string, string> {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed.apiKey) {
-        return { Authorization: `Bearer ${parsed.apiKey}` };
+        return { 'Authorization': `Bearer ${parsed.apiKey}` };
       }
     }
   } catch {}
   return {};
-}
-
-async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers || {});
-  for (const [key, value] of Object.entries(getAuthHeaders())) {
-    headers.set(key, value);
-  }
-  return fetch(input, { ...init, headers });
 }
 
 async function tauriInvoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
@@ -111,9 +103,7 @@ export async function fetchModels(): Promise<ModelInfo[]> {
     try {
       const result = await tauriInvoke<{ data?: ModelInfo[] }>('fetch_models');
       return result?.data || [];
-    } catch {
-      // Fall through to fetch
-    }
+    } catch {}
   }
   const res = await apiFetch(`${getBase()}/v1/models`);
   if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);

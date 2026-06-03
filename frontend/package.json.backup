@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:tauri": "vite build",
+    "build:tauri": "vite build --outDir dist",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -56,4 +56,3 @@
     "vite-plugin-pwa": "^1.2.0"
   }
 }
-

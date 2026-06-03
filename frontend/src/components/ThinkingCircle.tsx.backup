@@ -1,0 +1,81 @@
+﻿import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+
+type ThinkingState = 'idle' | 'thinking' | 'speaking';
+
+interface ThinkingCircleProps {
+  state: ThinkingState;
+  size?: number;
+}
+
+function ThinkingCircleInner({ state, size = 80 }: ThinkingCircleProps) {
+  const colors = {
+    idle: 'rgba(100,100,120,0.4)',
+    thinking: 'rgba(0,200,150,0.8)',
+    speaking: 'rgba(0,255,200,1)',
+  };
+
+  const color = colors[state];
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 120,
+        right: 20,
+        width: size,
+        height: size,
+        zIndex: 999999,
+        pointerEvents: 'none',
+      }}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={size * 0.4}
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          opacity={state === 'idle' ? 0.3 : 1}
+        />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
+          const rad = (angle * Math.PI) / 180;
+          const x = size / 2 + size * 0.4 * Math.cos(rad);
+          const y = size / 2 + size * 0.4 * Math.sin(rad);
+          return (
+            <circle
+              key={i}
+              cx={x}
+              cy={y}
+              r={size * 0.04}
+              fill={color}
+              opacity={state === 'idle' ? 0.3 : 0.9}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+export function ThinkingCircle(props: ThinkingCircleProps) {
+  const el = useRef<HTMLDivElement | null>(null);
+
+  if (!el.current) {
+    el.current = document.createElement('div');
+    el.current.style.cssText =
+      'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:999999;';
+  }
+
+  useEffect(() => {
+    document.body.appendChild(el.current!);
+    return () => {
+      if (el.current && document.body.contains(el.current)) {
+        document.body.removeChild(el.current);
+      }
+    };
+  }, []);
+
+  return createPortal(<ThinkingCircleInner {...props} />, el.current);
+}

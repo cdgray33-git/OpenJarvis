@@ -24,7 +24,7 @@ export function Layout() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden relative" style={{ paddingTop: '3px' }}>
+    <div className="flex flex-col h-full w-full relative" style={{ paddingTop: '3px' }}>
       <div className="hud-backdrop" aria-hidden="true" />
       <SystemPulse apiReachable={apiReachable} />
 
@@ -61,7 +61,7 @@ export function Layout() {
             onClick={() => useAppStore.getState().setSidebarOpen(false)}
           />
         )}
-        <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden" style={{ background: 'transparent' }}>
+        <main className="flex-1 flex flex-col min-w-0 h-full relative" style={{ background: 'transparent' }}>
           <div className="flex-1 flex flex-col min-w-0 min-h-0 relative z-[2]">
             <Outlet />
           </div>

@@ -1,0 +1,15 @@
+﻿      </div>
+      
+      <div style={{ position: 'fixed', top: 20, right: 20, zIndex: 999 }}>
+        <ThinkingCircle 
+          state={streamState.isStreaming ? "thinking" : "idle"} 
+          size={80} 
+        />
+      </div>
+      
+      <TestCircle />
+      
+      <InputArea />
+    </div>
+  );
+}

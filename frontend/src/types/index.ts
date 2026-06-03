@@ -61,69 +61,12 @@ export interface MessageTelemetry {
   suggested_max_tokens?: number;
 }
 
-export interface TimeRange {
-  start?: string;
-  end?: string;
-}
-
-export interface ResearchSource {
-  ref: number;
-  title?: string;
-  sender?: string;
-  date?: string;
-  url?: string;
-}
-
-export interface ResearchSearchTrace {
-  id: string;
-  query: string;
-  person?: string;
-  timeRange?: TimeRange | string;
-  status: 'pending' | 'complete';
-  numHits?: number;
-  topTitles?: string[];
-}
-
-export type ResearchEvent =
-  | {
-      type: 'search_call';
-      arguments: {
-        query: string;
-        person?: string;
-        time_range?: TimeRange | string;
-      };
-    }
-  | {
-      type: 'search_result';
-      num_hits: number;
-      top_titles?: string[];
-      sources?: ResearchSource[];
-    }
-  | { type: 'synthesis'; text: string }
-  | {
-      type: 'system_metrics';
-      power_w: number;
-      energy_j: number;
-      duration_s: number;
-    }
-  | { type: 'done'; usage?: TokenUsage }
-  | { type: 'error'; message: string };
-
-export interface LiveEnergyMetrics {
-  power_w: number;
-  energy_j: number;
-  duration_s: number;
-}
-
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
   toolCalls?: ToolCallInfo[];
-  researchTraces?: ResearchSearchTrace[];
-  researchSources?: ResearchSource[];
-  isResearch?: boolean;
   usage?: TokenUsage;
   telemetry?: MessageTelemetry;
   audio?: { url: string };
@@ -197,4 +140,29 @@ export interface LogEntry {
   level: 'info' | 'warn' | 'error';
   category: 'server' | 'model' | 'chat' | 'tool';
   message: string;
+}
+
+// --- Research Types ---
+export interface ResearchSource {
+  url: string;
+  title: string;
+  snippet?: string;
+  cited?: boolean;
+  sender?: string;
+  date?: string;
+}
+export interface TimeRange {
+  start: string;
+  end: string;
+}
+export interface ResearchSearchTrace {
+  id: string;
+  query: string;
+  status: 'pending' | 'complete' | 'error';
+  numHits?: number;
+  topTitles?: string[];
+  person?: string;
+  timeRange?: TimeRange | string;
+  timestamp?: number;
+  results?: ResearchSource[];
 }

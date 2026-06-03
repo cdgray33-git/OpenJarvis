@@ -1,7 +1,5 @@
-import type { SSEEvent } from '../types';
+import type { ResearchEvent, SSEEvent } from '../types';
 import { getBase } from './api';
-
-export type ResearchEvent = SSEEvent;
 
 export interface ChatRequest {
   model: string;
