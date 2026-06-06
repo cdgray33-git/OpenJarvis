@@ -149,8 +149,10 @@ async def _stream_openai(
     if not api_key:
         raise ValueError(f"{api_key_name} not set — add it in the Cloud Models tab")
 
+    actual_model = model.removeprefix("openrouter/")
+    import sys; print(f"[DEBUG] OpenRouter model string: {actual_model!r}", flush=True, file=sys.stderr)
     payload = {
-        "model": model,
+        "model": actual_model,
         "messages": _to_openai_msgs(messages),
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -302,8 +304,10 @@ async def stream_local(
     max_tokens: int = 1024,
 ) -> AsyncIterator[str]:
     """Stream tokens directly from Ollama, bypassing the engine system."""
+    actual_model = model.removeprefix("openrouter/")
+    import sys; print(f"[DEBUG] OpenRouter model string: {actual_model!r}", flush=True, file=sys.stderr)
     payload = {
-        "model": model,
+        "model": actual_model,
         "messages": _to_openai_msgs(messages),
         "stream": True,
         # Disable extended thinking (Qwen3.5 etc.) — when enabled all tokens
