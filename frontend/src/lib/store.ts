@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import type {
   Conversation,
   ChatMessage,
@@ -86,7 +86,7 @@ function loadSettings(): Settings {
     defaultAgent: '',
     temperature: 0.7,
     maxTokens: 4096,
-    speechEnabled: false,
+    speechEnabled: true,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);

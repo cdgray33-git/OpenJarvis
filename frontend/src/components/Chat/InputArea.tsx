@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, Paperclip } from 'lucide-react';
+import { useRef as useFileRef } from 'react';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
@@ -10,6 +11,7 @@ import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '..
 export function InputArea() {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -303,6 +305,13 @@ export function InputArea() {
     resetStream,
   ]);
 
+  // Auto-focus textarea after streaming completes
+  useEffect(() => {
+    if (!streamState.isStreaming) {
+      textareaRef.current?.focus();
+    }
+  }, [streamState.isStreaming]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -320,6 +329,26 @@ export function InputArea() {
           boxShadow: 'var(--shadow-sm)',
         }}
       >
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept="image/*,.pdf,.txt,.md,.csv,.json"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) setInput((prev) => prev + (prev ? " " : "") + `[Attached: ${file.name}]`);
+            e.target.value = "";
+          }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={streamState.isStreaming}
+          className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30"
+          style={{ color: "var(--color-text-tertiary)" }}
+          title="Attach file"
+        >
+          <Paperclip size={16} />
+        </button>
         <textarea
           ref={textareaRef}
           value={input}
