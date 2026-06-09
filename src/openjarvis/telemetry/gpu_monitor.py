@@ -12,10 +12,11 @@ from typing import Dict, Generator, List, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    import pynvml
-
+    import warnings
+    warnings.filterwarnings('ignore', category=FutureWarning, message='.*pynvml.*')
+    import pynvml  # ✅ Inside try block
     _PYNVML_AVAILABLE = True
-except ImportError:
+except ImportError:  # ✅ Required except block
     _PYNVML_AVAILABLE = False
 
 

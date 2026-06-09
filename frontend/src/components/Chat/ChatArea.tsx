@@ -163,8 +163,9 @@ export function ChatArea() {
         zIndex: 999998 
       }}>
         <ThinkingCircle 
-          state={streamState.isStreaming ? "thinking" : "idle"} 
-          size={80} 
+          isLoading={streamState.isStreaming}
+          phase={streamState.isStreaming ? "processing..." : undefined}
+          variant="cyan"
         />
       </div>
 

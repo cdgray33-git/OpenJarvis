@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Sequence
 
+import asyncio
 import httpx
 
 from openjarvis.core.types import Message
@@ -159,30 +160,41 @@ async def _stream_openai(
         "stream": True,
     }
 
+    _retry_delays = [5, 10, 20]
     async with httpx.AsyncClient(timeout=180) as client:
-        async with client.stream(
-            "POST",
-            f"{base_url}/chat/completions",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data = line[6:].strip()
-                if data == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                    delta = chunk["choices"][0]["delta"].get("content") or ""
-                    if delta:
-                        yield delta
-                except Exception:
-                    pass
+        for _attempt, _delay in enumerate([0] + _retry_delays):
+            if _delay:
+                import sys; print(f"[RETRY] 429 received, waiting {_delay}s", flush=True, file=sys.stderr)
+                await asyncio.sleep(_delay)
+            async with client.stream(
+                "POST",
+                f"{base_url}/chat/completions",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            ) as resp:
+                if resp.status_code == 429:
+                    if _attempt < len(_retry_delays):
+                        continue
+                    yield "\n\nRate limited by OpenRouter. Try a different model or wait a moment."
+                    return
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        delta = chunk["choices"][0]["delta"].get("content") or ""
+                        if delta:
+                            yield delta
+                    except Exception:
+                        pass
+                return
 
 
 async def _stream_anthropic(

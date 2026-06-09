@@ -206,8 +206,11 @@ async def memory_stats(request: Request):
     if backend is None:
         return {"entries": 0, "backend": "none", "status": "not_configured"}
     try:
+        count = backend.count() if hasattr(backend, "count") else 0
         return {
-            "entries": backend.count(),
+            "entries": count,
+            "total_documents": count,
+            "total_chunks": count,
             "backend": getattr(backend, "backend_id", "unknown"),
         }
     except Exception as exc:

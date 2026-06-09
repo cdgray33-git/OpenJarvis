@@ -305,7 +305,12 @@ export function InputArea() {
     resetStream,
   ]);
 
-  // Auto-focus textarea after streaming completes
+  // Auto-focus textarea on mount and after streaming completes
+  useEffect(() => {
+    const t = setTimeout(() => textareaRef.current?.focus(), 1000);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     if (!streamState.isStreaming) {
       textareaRef.current?.focus();
@@ -341,7 +346,7 @@ export function InputArea() {
           }}
         />
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={async () => { const { open } = await import('@tauri-apps/plugin-dialog'); const file = await open({ multiple: false, filters: [{ name: 'Files', extensions: ['png','jpg','jpeg','pdf','txt','md','csv','json'] }] }); if (file) setInput((prev) => prev + (prev ? ' ' : '') + `[Attached: ${file}]`); }}
           disabled={streamState.isStreaming}
           className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30"
           style={{ color: "var(--color-text-tertiary)" }}

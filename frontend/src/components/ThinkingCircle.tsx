@@ -1,60 +1,71 @@
-import { useEffect, useRef } from 'react';
-type ThinkingState = 'idle' | 'thinking' | 'speaking';
-interface ThinkingCircleProps {
-  state: ThinkingState;
-  size?: number;
+import React from 'react';
+
+interface Props {
+  isLoading: boolean;
+  phase?: string;
+  variant?: 'cyan' | 'purple' | 'green' | 'red';
 }
-export function ThinkingCircle({ state, size = 90 }: ThinkingCircleProps) {
-  const rotRef = useRef<SVGGElement>(null);
-  const rot2Ref = useRef<SVGGElement>(null);
-  const angleRef = useRef(0);
-  const angle2Ref = useRef(0);
-  const rafRef = useRef<number>(0);
-  useEffect(() => {
-    const speed = state === 'thinking' ? 2.2 : state === 'speaking' ? 3.5 : 0.3;
-    const speed2 = -speed * 0.6;
-    const animate = () => {
-      angleRef.current = (angleRef.current + speed) % 360;
-      angle2Ref.current = (angle2Ref.current + speed2 + 360) % 360;
-      if (rotRef.current) rotRef.current.setAttribute('transform', `rotate(${angleRef.current} ${size/2} ${size/2})`);
-      if (rot2Ref.current) rot2Ref.current.setAttribute('transform', `rotate(${angle2Ref.current} ${size/2} ${size/2})`);
-      rafRef.current = requestAnimationFrame(animate);
-    };
-    rafRef.current = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [state, size]);
-  const cx = size / 2;
-  const cy = size / 2;
-  const accent = state === 'idle' ? 'rgba(100,160,255,0.35)' : state === 'thinking' ? 'rgba(0,220,255,0.9)' : 'rgba(0,255,200,1)';
-  const glow = state === 'idle' ? 'none' : `drop-shadow(0 0 6px ${accent})`;
-  const r1 = size * 0.42;
-  const r2 = size * 0.32;
-  const r3 = size * 0.20;
+
+const COLORS = {
+  cyan:   { glow: 'rgb(0, 231, 255)',   border: '#22d3ee' },
+  purple: { glow: 'rgb(168, 85, 247)',  border: '#a855f7' },
+  green:  { glow: 'rgb(52, 211, 153)',  border: '#34d399' },
+  red:    { glow: 'rgb(239, 68, 68)',   border: '#ef4444' },
+};
+
+export function ThinkingCircle({ isLoading, phase, variant = 'cyan' }: Props) {
+  if (!isLoading) return null;
+  const c = COLORS[variant];
   return (
-    <div style={{ width: size, height: size, pointerEvents: 'none', filter: glow }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={cx} cy={cy} r={r1} fill="none" stroke={accent} strokeWidth="1.5" opacity={0.5} strokeDasharray="4 6" />
-        <g ref={rotRef}>
-          <circle cx={cx} cy={cy} r={r2} fill="none" stroke={accent} strokeWidth="2" opacity={0.8} strokeDasharray={`${r2 * 0.8} ${r2 * 0.4}`} />
-          {[0, 72, 144, 216, 288].map((a, i) => {
-            const rad = (a * Math.PI) / 180;
-            return <circle key={i} cx={cx + r2 * Math.cos(rad)} cy={cy + r2 * Math.sin(rad)} r={size * 0.04} fill={accent} opacity={0.9} />;
-          })}
-        </g>
-        <g ref={rot2Ref}>
-          <circle cx={cx} cy={cy} r={r3} fill="none" stroke={accent} strokeWidth="1.5" opacity={0.7} strokeDasharray={`${r3 * 1.2} ${r3 * 0.5}`} />
-        </g>
-        <circle cx={cx} cy={cy} r={size * 0.09} fill={accent} opacity={state === 'idle' ? 0.3 : 0.9} />
-        <circle cx={cx} cy={cy} r={size * 0.05} fill="white" opacity={state === 'idle' ? 0.2 : 0.95} />
-        {[0, 90, 180, 270].map((a, i) => {
-          const rad = (a * Math.PI) / 180;
-          const x1 = cx + (r1 - 4) * Math.cos(rad);
-          const y1 = cy + (r1 - 4) * Math.sin(rad);
-          const x2 = cx + (r1 + 4) * Math.cos(rad);
-          const y2 = cy + (r1 + 4) * Math.sin(rad);
-          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={accent} strokeWidth="2" opacity={0.8} />;
-        })}
-      </svg>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '16px 0' }}>
+      <div style={{ position: 'relative', width: 120, height: 120 }}>
+        {/* Core */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 20, height: 20, borderRadius: '50%',
+          background: `radial-gradient(circle, white, ${c.border})`,
+          boxShadow: `0 0 15px ${c.glow}, 0 0 30px ${c.glow}`,
+          animation: 'jarvis-pulse 2s ease-in-out infinite',
+        }} />
+        {/* Inner dashed ring */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 70, height: 70, borderRadius: '50%',
+          border: `2px dashed ${c.border}`,
+          opacity: 0.7,
+          filter: `drop-shadow(0 0 4px ${c.glow})`,
+          animation: 'jarvis-spin-cw 3s linear infinite',
+        }} />
+        {/* Outer ring */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 100, height: 100, borderRadius: '50%',
+          border: `2px solid transparent`,
+          borderTop: `3px solid ${c.border}`,
+          borderBottom: `3px solid ${c.border}`,
+          filter: `drop-shadow(0 0 6px ${c.glow})`,
+          animation: 'jarvis-spin-ccw 4s linear infinite',
+        }} />
+        {/* Scanner */}
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: 110, height: 110, borderRadius: '50%',
+          border: `1px solid ${c.border}22`,
+          borderLeft: `2px solid ${c.border}`,
+          animation: 'jarvis-spin-cw 1.5s linear infinite',
+        }} />
+      </div>
+      {phase && (
+        <span style={{
+          fontSize: 11, fontFamily: 'monospace',
+          letterSpacing: '0.1em', color: c.border,
+          animation: 'pulse 2s ease-in-out infinite',
+        }}>{phase}</span>
+      )}
     </div>
   );
 }

@@ -708,3 +708,32 @@
   --color-background: var(--background);
   /* Keep project radius tokens — don't override with shadcn calc values */
 }
+/* Jarvis HUD Animations */
+@keyframes jarvis-pulse {
+  0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 0.6; transform: translate(-50%, -50%) scale(1.15); }
+}
+@keyframes jarvis-spin-cw {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+@keyframes jarvis-spin-ccw {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(-360deg); }
+}
+@keyframes jarvis-spin-cw-fast {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+.animate-jarvis-pulse {
+  animation: jarvis-pulse 2s ease-in-out infinite;
+}
+.animate-jarvis-spin-cw {
+  animation: jarvis-spin-cw 3s linear infinite;
+}
+.animate-jarvis-spin-ccw {
+  animation: jarvis-spin-ccw 4s linear infinite;
+}
+.animate-jarvis-spin-cw-fast {
+  animation: jarvis-spin-cw-fast 1.5s linear infinite;
+}

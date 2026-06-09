@@ -255,16 +255,13 @@ export async function transcribeAudio(audioBlob: Blob, filename = 'recording.web
 }
 
 export async function fetchSpeechHealth(): Promise<SpeechHealth> {
-  if (isTauri()) {
-    try {
-      return await tauriInvoke<SpeechHealth>('speech_health');
-    } catch {
-      return { available: false };
-    }
+  try {
+    const res = await apiFetch(`${getBase()}/v1/speech/health`);
+    if (!res.ok) return { available: false };
+    return res.json();
+  } catch {
+    return { available: false };
   }
-  const res = await apiFetch(`${getBase()}/v1/speech/health`);
-  if (!res.ok) return { available: false };
-  return res.json();
 }
 
 // ---------------------------------------------------------------------------
