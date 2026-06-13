@@ -233,24 +233,14 @@ export interface SpeechHealth {
 }
 
 export async function transcribeAudio(audioBlob: Blob, filename = 'recording.webm'): Promise<TranscriptionResult> {
-  if (isTauri()) {
-    try {
-      const buffer = await audioBlob.arrayBuffer();
-      return await tauriInvoke<TranscriptionResult>('transcribe_audio', {
-        audioData: Array.from(new Uint8Array(buffer)),
-        filename,
-      });
-    } catch {
-      // Fall through to fetch
-    }
-  }
+  // Direct HTTP only - Tauri invoke path does not exist in Rust layer
   const formData = new FormData();
   formData.append('file', audioBlob, filename);
-  const res = await apiFetch(`${getBase()}/v1/speech/transcribe`, {
+  const res = await apiFetch(getBase() + '/v1/speech/transcribe', {
     method: 'POST',
     body: formData,
   });
-  if (!res.ok) throw new Error(`Transcription failed: ${res.status}`);
+  if (!res.ok) throw new Error('Transcription failed: ' + res.status);
   return res.json();
 }
 
