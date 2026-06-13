@@ -263,7 +263,15 @@ export async function fetchSpeechHealth(): Promise<SpeechHealth> {
     return { available: false };
   }
 }
-
+export async function synthesizeSpeech(text: string, voiceId = 'am_adam', speed = 0.85): Promise<Blob> {
+  const res = await apiFetch(`${getBase()}/v1/speech/synthesize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice_id: voiceId, speed, output_format: 'wav' }),
+  });
+  if (!res.ok) throw new Error(`Synthesis failed: ${res.status}`);
+  return res.blob();
+}
 // ---------------------------------------------------------------------------
 // Agent Manager
 // ---------------------------------------------------------------------------

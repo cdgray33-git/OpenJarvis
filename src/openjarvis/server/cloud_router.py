@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import asyncio
+import sys
 import httpx
 
 from openjarvis.core.types import Message
@@ -151,7 +152,7 @@ async def _stream_openai(
         raise ValueError(f"{api_key_name} not set — add it in the Cloud Models tab")
 
     actual_model = model.removeprefix("openrouter/")
-    import sys; print(f"[DEBUG] OpenRouter model string: {actual_model!r}", flush=True, file=sys.stderr)
+    print(f"[DEBUG] OpenRouter model string: {actual_model!r}", flush=True, file=sys.stderr)
     payload = {
         "model": actual_model,
         "messages": _to_openai_msgs(messages),
@@ -164,37 +165,47 @@ async def _stream_openai(
     async with httpx.AsyncClient(timeout=180) as client:
         for _attempt, _delay in enumerate([0] + _retry_delays):
             if _delay:
-                import sys; print(f"[RETRY] 429 received, waiting {_delay}s", flush=True, file=sys.stderr)
+                print(f"[RETRY] 429 received, waiting {_delay}s", flush=True, file=sys.stderr)
                 await asyncio.sleep(_delay)
-            async with client.stream(
-                "POST",
-                f"{base_url}/chat/completions",
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-            ) as resp:
-                if resp.status_code == 429:
-                    if _attempt < len(_retry_delays):
-                        continue
-                    yield "\n\nRate limited by OpenRouter. Try a different model or wait a moment."
+            try:
+                async with client.stream(
+                    "POST",
+                    f"{base_url}/chat/completions",
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://openjarvis.local",
+                        "X-Title": "OpenJarvis",
+                    },
+                ) as resp:
+                    if resp.status_code == 429:
+                        # Must drain body before exiting stream context
+                        await resp.aread()
+                        if _attempt < len(_retry_delays):
+                            print(f"[RETRY] 429 on attempt {_attempt}, retrying...", flush=True, file=sys.stderr)
+                            continue
+                        yield "\n\nRate limited by OpenRouter. Try a different model or wait a moment."
+                        return
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            delta = chunk["choices"][0]["delta"].get("content") or ""
+                            if delta:
+                                yield delta
+                        except Exception:
+                            pass
                     return
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    data = line[6:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                        delta = chunk["choices"][0]["delta"].get("content") or ""
-                        if delta:
-                            yield delta
-                    except Exception:
-                        pass
-                return
+            except httpx.HTTPStatusError:
+                if _attempt < len(_retry_delays):
+                    continue
+                raise
 
 
 async def _stream_anthropic(
@@ -317,7 +328,7 @@ async def stream_local(
 ) -> AsyncIterator[str]:
     """Stream tokens directly from Ollama, bypassing the engine system."""
     actual_model = model.removeprefix("openrouter/")
-    import sys; print(f"[DEBUG] OpenRouter model string: {actual_model!r}", flush=True, file=sys.stderr)
+    print(f"[DEBUG] Ollama model string: {actual_model!r}", flush=True, file=sys.stderr)
     payload = {
         "model": actual_model,
         "messages": _to_openai_msgs(messages),

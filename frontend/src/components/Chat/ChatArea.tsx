@@ -1,12 +1,13 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { ThinkingCircle } from '../ThinkingCircle';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Volume2, VolumeX } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
+import { synthesizeSpeech } from '../../lib/api';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -14,6 +15,8 @@ function getGreeting(): string {
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+const MUTE_KEY = 'openjarvis_tts_muted';
 
 export function ChatArea() {
   const messages = useAppStore((s) => s.messages);
@@ -23,9 +26,14 @@ export function ChatArea() {
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastSpokenIdRef = useRef<string | null>(null);
 
   const [hasConnectedSources, setHasConnectedSources] = useState<boolean | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [muted, setMuted] = useState<boolean>(() => {
+    try { return localStorage.getItem(MUTE_KEY) === 'true'; } catch { return false; }
+  });
 
   useEffect(() => {
     listConnectors()
@@ -45,12 +53,70 @@ export function ChatArea() {
     shouldAutoScroll.current = scrollHeight - scrollTop - clientHeight < 100;
   };
 
+  const toggleMute = useCallback(() => {
+    setMuted((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(MUTE_KEY, String(next)); } catch {}
+      if (next && audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      return next;
+    });
+  }, []);
+
+  // Auto-speak the last assistant message when streaming finishes
+  useEffect(() => {
+    if (streamState.isStreaming || muted) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'assistant') return;
+    if (lastMsg.id === lastSpokenIdRef.current) return;
+    if (!lastMsg.content || lastMsg.content.trim().length === 0) return;
+
+    lastSpokenIdRef.current = lastMsg.id;
+
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    // Strip markdown for cleaner TTS
+    const plainText = lastMsg.content
+      .replace(/```[\s\S]*?```/g, 'code block.')
+      .replace(/`[^`]+`/g, '')
+      .replace(/[#*_~>]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .trim();
+
+    if (!plainText) return;
+
+    synthesizeSpeech(plainText)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.play().catch(() => {});
+        audio.onended = () => URL.revokeObjectURL(url);
+      })
+      .catch(() => {});
+  }, [streamState.isStreaming, messages, muted]);
+
   const isEmpty = messages.length === 0 && !streamState.isStreaming;
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
+      <div className="flex items-center justify-end px-3 py-1.5 shrink-0 gap-1">
+        {/* Mute toggle */}
+        <button
+          onClick={toggleMute}
+          className="p-1.5 rounded-md transition-colors cursor-pointer"
+          style={{ color: muted ? 'var(--color-text-tertiary)' : 'var(--color-accent)' }}
+          title={muted ? 'Unmute Jarvis voice' : 'Mute Jarvis voice'}
+        >
+          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </button>
         <button
           onClick={toggleSystemPanel}
           className="p-1.5 rounded-md transition-colors cursor-pointer"
@@ -94,6 +160,7 @@ export function ChatArea() {
         ref={listRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto"
+        style={{ paddingBottom: '0.5rem' }}
       >
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full px-4">
@@ -107,7 +174,7 @@ export function ChatArea() {
               {getGreeting()}
             </h2>
             <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally — private, fast, and always available.
+              Ask anything. Your AI runs locally â€” private, fast, and always available.
             </p>
 
             <div className="flex gap-3">
@@ -142,7 +209,7 @@ export function ChatArea() {
             </div>
           </div>
         ) : (
-          <div className="max-w-[var(--chat-max-width)] mx-auto px-4 py-6">
+          <div className="max-w-[var(--chat-max-width)] mx-auto px-4 py-4 pb-2">
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
@@ -156,26 +223,17 @@ export function ChatArea() {
       </div>
 
       {/* ThinkingCircle component */}
-      <div style={{ 
-        position: 'fixed', 
-        top: 120, 
-        right: 20, 
-        zIndex: 999998 
-      }}>
-        <ThinkingCircle 
+      <div style={{ position: 'fixed', top: 120, right: 20, zIndex: 999998 }}>
+        <ThinkingCircle
           isLoading={streamState.isStreaming}
           phase={streamState.isStreaming ? "processing..." : undefined}
           variant="cyan"
         />
       </div>
 
-      <InputArea />
+      <div style={{ paddingBottom: '0.75rem' }}>
+        <InputArea />
+      </div>
     </div>
   );
 }
-
-
-
-
-
-

@@ -77,12 +77,13 @@ def list_agents() -> None:
                 "paused": "yellow",
                 "error": "red",
                 "archived": "dim strike",
-            }.get(a["status"], "")
+            }.get(a["status"], "default")
+            status_label = f"[{status_style}]{a['status']}[/{status_style}]" if status_style else a["status"]
             table.add_row(
                 a["id"],
                 a["name"],
                 a["agent_type"],
-                f"[{status_style}]{a['status']}[/{status_style}]",
+                status_label,
                 str(len(tasks)),
                 str(len(bindings)),
             )
@@ -748,3 +749,4 @@ def messages(agent_id):
 
 
 __all__ = ["agent"]
+

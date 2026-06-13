@@ -1,4 +1,4 @@
-"""FastAPI routes for the morning digest."""
+﻿"""FastAPI routes for the morning digest."""
 
 from __future__ import annotations
 
@@ -34,7 +34,15 @@ def create_digest_router(*, db_path: str = "") -> APIRouter:
         """Return the latest digest artifact."""
         artifact = store.get_today()
         if artifact is None:
-            raise HTTPException(status_code=404, detail="No digest for today")
+            return {
+                "text": "",
+                "sections": [],
+                "sources_used": [],
+                "generated_at": None,
+                "model_used": None,
+                "voice_used": None,
+                "audio_available": False,
+            }
         return {
             "text": artifact.text,
             "sections": artifact.sections,
@@ -122,3 +130,4 @@ def create_digest_router(*, db_path: str = "") -> APIRouter:
         }
 
     return router
+
