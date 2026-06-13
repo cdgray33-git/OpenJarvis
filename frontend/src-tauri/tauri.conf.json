@@ -21,7 +21,8 @@
         "fullscreen": false,
         "decorations": true,
         "transparent": false,
-        "devtools": true
+        "devtools": true,
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream"
       }
     ],
     "security": {
@@ -65,9 +66,10 @@
     },
     "deep-link": {
       "desktop": {
-        "schemes": ["openjarvis"]
+        "schemes": [
+          "openjarvis"
+        ]
       }
     }
   }
 }
-
