@@ -22,11 +22,11 @@
         "decorations": true,
         "transparent": false,
         "devtools": true,
-        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream"
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --remote-debugging-port=9222"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* http://172.16.33.200:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' data: blob:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* http://127.0.0.1:* http://172.16.33.200:* ws://localhost:* ws://127.0.0.1:*; img-src 'self' data: blob:; media-src blob: data:"
     }
   },
   "bundle": {
