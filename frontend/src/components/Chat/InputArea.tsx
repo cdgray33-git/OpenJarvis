@@ -146,7 +146,7 @@ export function InputArea() {
       timestamp: Date.now(),
       level: 'info',
       category: 'chat',
-      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${selectedModel}`,
+      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" â†’ ${selectedModel}`,
     });
 
     try {
@@ -228,7 +228,7 @@ export function InputArea() {
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        // User cancelled or model switch — keep whatever was accumulated
+        // User cancelled or model switch â€” keep whatever was accumulated
         if (!accumulatedContent) accumulatedContent = '(Generation stopped)';
       } else {
         const errMsg = err?.message || String(err);
@@ -267,7 +267,7 @@ export function InputArea() {
           }
         }
       } catch {
-        // Not a digest response or server unavailable — skip
+        // Not a digest response or server unavailable â€” skip
       }
 
       updateLastAssistant(
@@ -304,6 +304,28 @@ export function InputArea() {
     setStreamState,
     resetStream,
   ]);
+
+  // Listen for option-button selections from numbered question UI
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (!text || streamState.isStreaming) return;
+      setInput(text);
+      // Defer so React state flushes before sendMessage reads it
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('jarvis-send-now'));
+      }, 50);
+    };
+    window.addEventListener('jarvis-submit-text', handler);
+    return () => window.removeEventListener('jarvis-submit-text', handler);
+  }, [streamState.isStreaming]);
+
+  // Fire sendMessage when jarvis-send-now arrives (after state flush)
+  useEffect(() => {
+    const handler = () => sendMessage();
+    window.addEventListener('jarvis-send-now', handler);
+    return () => window.removeEventListener('jarvis-send-now', handler);
+  }, [sendMessage]);
 
   // Auto-focus textarea on mount and after streaming completes
   useEffect(() => {

@@ -21,6 +21,69 @@ interface Props {
   message: ChatMessage;
 }
 
+interface ParsedOptions {
+  preamble: string;
+  options: { number: string; text: string }[];
+}
+
+/**
+ * Detects numbered lists in assistant responses and extracts them as options.
+ * Returns null if the message doesn't look like a question with numbered choices.
+ *
+ * Matches patterns like:
+ *   1. Option text
+ *   1) Option text
+ *   **1.** Option text  (bold markdown)
+ */
+function parseNumberedOptions(text: string): ParsedOptions | null {
+  const lines = text.split('\n');
+
+  // Find the first numbered item
+  const numberedLineRegex = /^\s*\*{0,2}(\d+)[.)]\*{0,2}\s+(.+)/;
+  let firstIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (numberedLineRegex.test(lines[i])) {
+      firstIndex = i;
+      break;
+    }
+  }
+
+  if (firstIndex === -1) return null;
+
+  // Collect consecutive numbered items
+  const options: { number: string; text: string }[] = [];
+  let lastIndex = firstIndex;
+
+  for (let i = firstIndex; i < lines.length; i++) {
+    const match = lines[i].match(numberedLineRegex);
+    if (match) {
+      options.push({ number: match[1], text: match[2].replace(/\*+/g, '').trim() });
+      lastIndex = i;
+    } else if (lines[i].trim() === '') {
+      // Allow blank lines within the list
+      continue;
+    } else if (/^\s+[*\-]/.test(lines[i])) {
+      // Sub-bullet under a numbered item -- skip
+      continue;
+    } else {
+      // Non-numbered non-blank non-sub-bullet -- stop
+      break;
+    }
+  }
+
+  // Only render as buttons if there are 2–8 options
+  if (options.length < 2 || options.length > 8) return null;
+
+  const preamble = lines.slice(0, firstIndex).join('\n').trim();
+
+  // Check for trailing content after the list — if there's significant text after,
+  // it's probably not a "pick one" prompt, just render normally
+  const trailing = lines.slice(lastIndex + 1).join('\n').trim();
+  if (trailing.length > 500) return null;
+
+  return { preamble, options };
+}
+
 function getTextContent(node: any): string {
   if (typeof node === 'string' || typeof node === 'number') {
     return String(node);
@@ -97,6 +160,113 @@ function CopyMessageButton({ content }: { content: string }) {
   );
 }
 
+function NumberedOptionButtons({ parsed }: { parsed: ParsedOptions }) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const handleSelect = (option: { number: string; text: string }) => {
+    if (selected) return; // already chosen
+    setSelected(option.number);
+    window.dispatchEvent(
+      new CustomEvent('jarvis-option-select', { detail: option.text })
+    );
+  };
+
+  return (
+    <div>
+      {/* Preamble text rendered as markdown */}
+      {parsed.preamble && (
+        <div className="prose max-w-none mb-3">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[[rehypeHighlight, { detect: true }], rehypeKatex]}
+            components={{ pre: CodeBlockPre }}
+          >
+            {parsed.preamble}
+          </ReactMarkdown>
+        </div>
+      )}
+
+      {/* Option buttons */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          marginTop: parsed.preamble ? '0' : '0.25rem',
+        }}
+      >
+        {parsed.options.map((opt) => {
+          const isSelected = selected === opt.number;
+          const isDimmed = selected !== null && !isSelected;
+
+          return (
+            <button
+              key={opt.number}
+              onClick={() => handleSelect(opt)}
+              disabled={selected !== null}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.6rem 1rem',
+                borderRadius: 'var(--radius-lg)',
+                border: isSelected
+                  ? '1.5px solid var(--color-accent)'
+                  : '1.5px solid var(--color-border)',
+                background: isSelected
+                  ? 'var(--color-accent-subtle)'
+                  : 'var(--color-bg-secondary)',
+                color: isDimmed
+                  ? 'var(--color-text-tertiary)'
+                  : 'var(--color-text)',
+                cursor: selected ? 'default' : 'pointer',
+                opacity: isDimmed ? 0.45 : 1,
+                textAlign: 'left',
+                fontSize: '0.875rem',
+                transition: 'all 0.15s ease',
+                width: '100%',
+              }}
+              onMouseEnter={(e) => {
+                if (!selected) {
+                  e.currentTarget.style.borderColor = 'var(--color-accent)';
+                  e.currentTarget.style.background = 'var(--color-accent-subtle)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!selected) {
+                  e.currentTarget.style.borderColor = 'var(--color-border)';
+                  e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                }
+              }}
+            >
+              {/* Number badge */}
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '1.5rem',
+                  height: '1.5rem',
+                  borderRadius: '50%',
+                  background: isSelected ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                  color: isSelected ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {opt.number}
+              </span>
+              <span>{opt.text}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function MessageBubble({ message }: Props) {
   const isUser = message.role === 'user';
 
@@ -120,6 +290,7 @@ export function MessageBubble({ message }: Props) {
   }
 
   const cleanContent = useMemo(() => stripThinkTags(message.content), [message.content]);
+  const parsedOptions = useMemo(() => parseNumberedOptions(cleanContent), [cleanContent]);
 
   return (
     <div className="group mb-6">
@@ -135,19 +306,23 @@ export function MessageBubble({ message }: Props) {
       {/* Audio player (e.g. morning digest) */}
       {message.audio?.url && <AudioPlayer src={message.audio.url} />}
 
-      {/* Assistant message */}
+      {/* Assistant message — numbered options OR regular markdown */}
       {cleanContent && (
-        <div className="prose max-w-none">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[[rehypeHighlight, { detect: true }], rehypeKatex]}
-            components={{
-              pre: CodeBlockPre,
-            }}
-          >
-            {cleanContent}
-          </ReactMarkdown>
-        </div>
+        parsedOptions ? (
+          <NumberedOptionButtons parsed={parsedOptions} />
+        ) : (
+          <div className="prose max-w-none">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[[rehypeHighlight, { detect: true }], rehypeKatex]}
+              components={{
+                pre: CodeBlockPre,
+              }}
+            >
+              {cleanContent}
+            </ReactMarkdown>
+          </div>
+        )
       )}
 
       {/* Footer: copy + x-ray */}

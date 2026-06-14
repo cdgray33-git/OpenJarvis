@@ -102,6 +102,17 @@ export function ChatArea() {
       .catch(() => {});
   }, [streamState.isStreaming, messages, muted]);
 
+  // Relay numbered-option button clicks into InputArea's submit flow
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (!text) return;
+      window.dispatchEvent(new CustomEvent('jarvis-submit-text', { detail: text }));
+    };
+    window.addEventListener('jarvis-option-select', handler);
+    return () => window.removeEventListener('jarvis-option-select', handler);
+  }, []);
+
   const isEmpty = messages.length === 0 && !streamState.isStreaming;
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
 
@@ -174,7 +185,7 @@ export function ChatArea() {
               {getGreeting()}
             </h2>
             <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally — private, fast, and always available.
+              Ask anything. Your AI runs locally â€” private, fast, and always available.
             </p>
 
             <div className="flex gap-3">

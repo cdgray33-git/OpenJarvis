@@ -5,13 +5,13 @@ import { pullModel, deleteModel, fetchModels, preloadModel, isTauri } from '../l
 
 /** Popular models that users can download from the catalogue. */
 const CATALOGUE_MODELS = [
-  { id: 'qwen3.5:0.8b', size: '~1 GB', desc: 'Qwen 3.5 0.8B — fast, lightweight' },
+  { id: 'qwen3.5:0.8b', size: '~1 GB', desc: 'Qwen 3.5 0.8B ΓÇö fast, lightweight' },
   { id: 'qwen3.5:2b', size: '~2.7 GB', desc: 'Qwen 3.5 2B' },
-  { id: 'qwen3.5:4b', size: '~3.4 GB', desc: 'Qwen 3.5 4B — recommended default' },
+  { id: 'qwen3.5:4b', size: '~3.4 GB', desc: 'Qwen 3.5 4B ΓÇö recommended default' },
   { id: 'qwen3.5:9b', size: '~6.6 GB', desc: 'Qwen 3.5 9B' },
   { id: 'qwen3.5:27b', size: '~17 GB', desc: 'Qwen 3.5 27B' },
   { id: 'qwen3.5:35b', size: '~24 GB', desc: 'Qwen 3.5 35B' },
-  { id: 'qwen3.5:122b', size: '~81 GB', desc: 'Qwen 3.5 122B — largest' },
+  { id: 'qwen3.5:122b', size: '~81 GB', desc: 'Qwen 3.5 122B ΓÇö largest' },
   { id: 'llama3.3:latest', size: '~4.9 GB', desc: 'Llama 3.3 8B' },
   { id: 'mistral:latest', size: '~4.1 GB', desc: 'Mistral 7B' },
   { id: 'gemma3:latest', size: '~3.3 GB', desc: 'Gemma 3 4B' },
@@ -33,9 +33,9 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
     envKey: 'OPENAI_API_KEY',
     storageKey: 'openjarvis-openai-key',
     models: [
-      { id: 'gpt-4o', desc: 'GPT-4o — fast, multimodal' },
-      { id: 'gpt-4o-mini', desc: 'GPT-4o Mini — cheap, fast' },
-      { id: 'o3-mini', desc: 'o3-mini — reasoning' },
+      { id: 'gpt-4o', desc: 'GPT-4o ΓÇö fast, multimodal' },
+      { id: 'gpt-4o-mini', desc: 'GPT-4o Mini ΓÇö cheap, fast' },
+      { id: 'o3-mini', desc: 'o3-mini ΓÇö reasoning' },
     ],
   },
   {
@@ -43,9 +43,9 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
     envKey: 'ANTHROPIC_API_KEY',
     storageKey: 'openjarvis-anthropic-key',
     models: [
-      { id: 'claude-sonnet-4-6', desc: 'Claude Sonnet 4.6 — balanced' },
-      { id: 'claude-opus-4-6', desc: 'Claude Opus 4.6 — most capable' },
-      { id: 'claude-haiku-4-5', desc: 'Claude Haiku 4.5 — fastest' },
+      { id: 'claude-sonnet-4-6', desc: 'Claude Sonnet 4.6 ΓÇö balanced' },
+      { id: 'claude-opus-4-6', desc: 'Claude Opus 4.6 ΓÇö most capable' },
+      { id: 'claude-haiku-4-5', desc: 'Claude Haiku 4.5 ΓÇö fastest' },
     ],
   },
   {
@@ -53,9 +53,9 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
     envKey: 'GEMINI_API_KEY',
     storageKey: 'openjarvis-gemini-key',
     models: [
-      { id: 'gemini-2.5-pro', desc: 'Gemini 2.5 Pro — flagship' },
-      { id: 'gemini-2.5-flash', desc: 'Gemini 2.5 Flash — fast' },
-      { id: 'gemini-3-pro', desc: 'Gemini 3 Pro — latest' },
+      { id: 'gemini-2.5-pro', desc: 'Gemini 2.5 Pro ΓÇö flagship' },
+      { id: 'gemini-2.5-flash', desc: 'Gemini 2.5 Flash ΓÇö fast' },
+      { id: 'gemini-3-pro', desc: 'Gemini 3 Pro ΓÇö latest' },
     ],
   },
   {
@@ -63,22 +63,22 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
     storageKey: 'openjarvis-openrouter-key',
     envKey: 'OPENROUTER_API_KEY',
     models: [
-      { id: 'openrouter/auto', desc: 'Auto — best model for the task' },
-      { id: 'openrouter/openai/gpt-oss-120b:free', desc: 'GPT OSS 120B — free' },
-      { id: 'openrouter/openai/gpt-oss-20b:free', desc: 'GPT OSS 20B — free' },
-      { id: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free', desc: 'Nemotron Ultra 550B — free' },
-      { id: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', desc: 'Nemotron Super 120B — free' },
-      { id: 'openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', desc: 'Nemotron Nano Omni 30B Reasoning — free' },
-      { id: 'openrouter/nvidia/nemotron-3-nano-30b-a3b:free', desc: 'Nemotron Nano 30B — free' },
-      { id: 'openrouter/nvidia/nemotron-nano-12b-v2-vl:free', desc: 'Nemotron Nano 12B — free' },
-      { id: 'openrouter/nvidia/nemotron-nano-9b-v2:free', desc: 'Nemotron Nano 9B — free' },
-      { id: 'openrouter/google/gemma-4-31b-it:free', desc: 'Gemma 4 31B — free' },
-      { id: 'openrouter/poolside/laguna-m.1:free', desc: 'Laguna M.1 — free' },
-      { id: 'openrouter/poolside/laguna-xs.2:free', desc: 'Laguna XS.2 — free' },
-      { id: 'openrouter/liquid/lfm-2.5-1.2b-thinking:free', desc: 'LFM 2.5 1.2B Thinking — free' },
-      { id: 'openrouter/liquid/lfm-2.5-1.2b-instruct:free', desc: 'LFM 2.5 1.2B Instruct — free' },
-      { id: 'openrouter/nex-agi/nex-n2-pro:free', desc: 'Nex N2 Pro — free' },
-      { id: 'openrouter/nvidia/nemotron-3.5-content-safety:free', desc: 'Nemotron 3.5 Content Safety — free' },
+      { id: 'openrouter/auto', desc: 'Auto ΓÇö best model for the task' },
+      { id: 'openrouter/openai/gpt-oss-120b:free', desc: 'GPT OSS 120B ΓÇö free' },
+      { id: 'openrouter/openai/gpt-oss-20b:free', desc: 'GPT OSS 20B ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-3-ultra-550b-a55b:free', desc: 'Nemotron Ultra 550B ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', desc: 'Nemotron Super 120B ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', desc: 'Nemotron Nano Omni 30B Reasoning ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-3-nano-30b-a3b:free', desc: 'Nemotron Nano 30B ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-nano-12b-v2-vl:free', desc: 'Nemotron Nano 12B ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-nano-9b-v2:free', desc: 'Nemotron Nano 9B ΓÇö free' },
+      { id: 'openrouter/google/gemma-4-31b-it:free', desc: 'Gemma 4 31B ΓÇö free' },
+      { id: 'openrouter/poolside/laguna-m.1:free', desc: 'Laguna M.1 ΓÇö free' },
+      { id: 'openrouter/poolside/laguna-xs.2:free', desc: 'Laguna XS.2 ΓÇö free' },
+      { id: 'openrouter/liquid/lfm-2.5-1.2b-thinking:free', desc: 'LFM 2.5 1.2B Thinking ΓÇö free' },
+      { id: 'openrouter/liquid/lfm-2.5-1.2b-instruct:free', desc: 'LFM 2.5 1.2B Instruct ΓÇö free' },
+      { id: 'openrouter/nex-agi/nex-n2-pro:free', desc: 'Nex N2 Pro ΓÇö free' },
+      { id: 'openrouter/nvidia/nemotron-3.5-content-safety:free', desc: 'Nemotron 3.5 Content Safety ΓÇö free' },
       { id: 'openrouter/owl-alpha', desc: 'OWL Alpha' },
     ],
   },
@@ -118,6 +118,24 @@ export function CommandPalette() {
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const setModels = useAppStore((s) => s.setModels);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    import("@tauri-apps/api/core").then(({ invoke }) => {
+      invoke("get_cloud_key_status").then((status) => {
+        setApiKeys((prev) => {
+          const next = { ...prev };
+          for (const p of CLOUD_PROVIDERS) {
+            const entry = status.find((s) => s.key === p.envKey);
+            if (entry && entry.set && !next[p.storageKey]) {
+              next[p.storageKey] = "__backend_set__";
+            }
+          }
+          return next;
+        });
+      }).catch(() => {});
+    });
+  }, []);
 
   const installedIds = new Set(models.map((m) => m.id));
 
@@ -237,7 +255,7 @@ export function CommandPalette() {
 
     useAppStore.getState().addLogEntry({
       timestamp: Date.now(), level: 'info', category: 'model',
-      message: `${provider.name} API key ${value ? 'saved' : 'removed'}. Refreshing model list…`,
+      message: `${provider.name} API key ${value ? 'saved' : 'removed'}. Refreshing model listΓÇª`,
     });
 
     // Refresh the model list so cloud models appear immediately.
@@ -344,7 +362,7 @@ export function CommandPalette() {
             filtered.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
                 {models.length === 0
-                  ? 'No models available — switch to "Download" to get started'
+                  ? 'No models available ΓÇö switch to "Download" to get started'
                   : 'No matching models'}
               </div>
             ) : (
@@ -442,7 +460,7 @@ export function CommandPalette() {
               </div>
             </>
           ) : (
-            /* ── Cloud Models tab ── */
+            /* ΓöÇΓöÇ Cloud Models tab ΓöÇΓöÇ */
             <div className="px-4 py-2">
               <div className="text-[11px] mb-3" style={{ color: 'var(--color-text-tertiary)' }}>
                 Add your API keys to use cloud models. Keys are stored locally on your device only.
@@ -543,7 +561,7 @@ export function CommandPalette() {
         >
           {tab === 'installed' ? (
             <>
-              <span><kbd className="font-mono">↑↓</kbd> Navigate</span>
+              <span><kbd className="font-mono">ΓåæΓåô</kbd> Navigate</span>
               <span><kbd className="font-mono">Enter</kbd> Select</span>
               <span><kbd className="font-mono">Esc</kbd> Close</span>
             </>
