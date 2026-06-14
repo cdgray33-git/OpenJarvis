@@ -1,3 +1,10 @@
+# FRONTEND REBUILD NOTE:
+# To rebuild the Tauri frontend (UI changes only):
+#   cd frontend && npm run build:tauri
+# To rebuild the Rust exe (required after ANY Rust/Tauri changes):
+#   cd frontend && npx tauri build
+# After exe rebuild: kill msedgewebview2, delete %LOCALAPPDATA%\com.openjarvis.desktop, relaunch
+#
 ﻿# Rebuild openjarvis_rust extension after any venv wipe, then start server
 Write-Host "Rebuilding openjarvis_rust..." -ForegroundColor Cyan
 cd "C:\Windows\System32\OpenJarvis"
