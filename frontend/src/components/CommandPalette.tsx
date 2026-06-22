@@ -126,7 +126,7 @@ export function CommandPalette() {
         setApiKeys((prev) => {
           const next = { ...prev };
           for (const p of CLOUD_PROVIDERS) {
-            const entry = status.find((s) => s.key === p.envKey);
+            const entry = (status as Array<{key: string; value: string; set: boolean}>).find((s) => s.key === p.envKey);
             if (entry && entry.set && !next[p.storageKey]) {
               next[p.storageKey] = "__backend_set__";
             }

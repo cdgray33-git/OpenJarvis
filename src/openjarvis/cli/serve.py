@@ -1,9 +1,11 @@
-"""``jarvis serve`` — OpenAI-compatible API server."""
+"""jarvis serve - OpenAI-compatible API server."""
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
+from logging.handlers import RotatingFileHandler
 
 import click
 from rich.console import Console
@@ -21,6 +23,33 @@ from openjarvis.intelligence import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_file_logging() -> str:
+    """Route all server logs to a rotating file instead of the console.
+
+    Writing to a console with active text selection (QuickEdit mode) blocks
+    the writing thread indefinitely on Windows, which freezes the entire
+    single-threaded asyncio event loop. Logging to a file removes this
+    dependency entirely.
+    """
+    log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "OpenJarvis", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "backend.log")
+
+    file_handler = RotatingFileHandler(
+        log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(logging.INFO)
+
+    return log_path
 
 
 @click.command()
@@ -49,6 +78,14 @@ def serve(
 ) -> None:
     """Start the OpenAI-compatible API server."""
     console = Console(stderr=True)
+    # >>> openjarvis-eventloop-patch start
+    if sys.platform == "win32":
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # <<< openjarvis-eventloop-patch end
+
+    log_path = _configure_file_logging()
+    console.print(f"[dim]Logs: {log_path}[/dim]")
 
     # Check for server dependencies
     try:
@@ -249,7 +286,7 @@ def serve(
             console.print(f"[yellow]Channel failed to start: {exc}[/yellow]")
             channel_bridge = None
 
-    # Wire channel messages → agent / engine (per-chat session isolation)
+    # Wire channel messages ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ agent / engine (per-chat session isolation)
     if channel_bridge is not None:
         from openjarvis.system import JarvisSystem
 
@@ -429,7 +466,7 @@ def serve(
         if _set > 0:
             _cred_parts.append(f"{_tool_name}: {_set}/{_total} keys")
     if _cred_parts:
-        logger.info("Credentials loaded — %s", ", ".join(_cred_parts))
+        logger.info("Credentials loaded ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â %s", ", ".join(_cred_parts))
 
     webhook_config = {
         "twilio_auth_token": _os.environ.get("TWILIO_AUTH_TOKEN", ""),
@@ -503,4 +540,6 @@ def serve(
 
     import uvicorn
 
-    uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
+    config = uvicorn.Config(app, host=bind_host, port=bind_port, log_level="info", loop="asyncio", log_config=None)
+    server = uvicorn.Server(config)
+    asyncio.run(server.serve())

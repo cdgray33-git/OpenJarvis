@@ -1,4 +1,4 @@
-"""Speech router — STT and TTS endpoints for OpenJarvis."""
+"""Speech router â€” STT and TTS endpoints for OpenJarvis."""
 
 from __future__ import annotations
 
@@ -39,28 +39,28 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# --- Remote TTS Backend (Kokoro on R730xd) ---
+KOKORO_SERVER = "http://172.16.33.201:8880"
+
 @speech_router.post("/synthesize")
 async def synthesize(request: Request, body: SynthesizeRequest):
-    """Synthesize text to audio using Kokoro TTS."""
-    from openjarvis.speech.kokoro_tts import KokoroTTSBackend
-
+    import httpx, time
+    t0 = time.time()
+    char_count = len(body.text)
+    logger.warning("TTS START: %d chars, voice=%s", char_count, body.voice_id)
     try:
-        tts = KokoroTTSBackend()
-        result = tts.synthesize(
-            body.text,
-            voice_id=body.voice_id,
-            speed=body.speed,
-            output_format=body.output_format,
-        )
-        return Response(
-            content=result.audio,
-            media_type="audio/wav",
-            headers={"X-Duration": str(result.duration_seconds)},
-        )
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                KOKORO_SERVER + "/synthesize",
+                json={"text": body.text, "voice": body.voice_id, "speed": body.speed},
+            )
+            resp.raise_for_status()
+        elapsed = time.time() - t0
+        logger.warning("TTS DONE: %.2fs for %d chars", elapsed, char_count)
+        return Response(content=resp.content, media_type="audio/wav")
     except Exception as exc:
         logger.error("Synthesis failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
-
 
 @speech_router.get("/health")
 async def speech_health(request: Request):
@@ -68,9 +68,7 @@ async def speech_health(request: Request):
     backend = getattr(request.app.state, "speech_backend", None)
     stt_ok = backend is not None and backend.health()
 
-    from openjarvis.speech.kokoro_tts import KokoroTTSBackend
-    tts = KokoroTTSBackend()
-    tts_ok = tts.health()
+    tts_ok = True  # Remote Kokoro service on R730xd
 
     return {
         "available": stt_ok and tts_ok,

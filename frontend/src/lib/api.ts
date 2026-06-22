@@ -262,6 +262,59 @@ export async function synthesizeSpeech(text: string, voiceId = 'am_adam', speed 
   if (!res.ok) throw new Error(`Synthesis failed: ${res.status}`);
   return res.blob();
 }
+const TTS_MAX_CHUNK_CHARS = 350;
+
+export function splitIntoTTSChunks(text: string): string[] {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    if (sentence.length > TTS_MAX_CHUNK_CHARS) {
+      if (current) {
+        chunks.push(current.trim());
+        current = '';
+      }
+      const parts = sentence.split(/(?<=,)\s+/);
+      let piece = '';
+      for (const part of parts) {
+        if ((piece + ' ' + part).trim().length > TTS_MAX_CHUNK_CHARS) {
+          if (piece) chunks.push(piece.trim());
+          piece = part;
+        } else {
+          piece = piece ? `${piece} ${part}` : part;
+        }
+      }
+      if (piece) chunks.push(piece.trim());
+      continue;
+    }
+
+    if ((current + ' ' + sentence).trim().length > TTS_MAX_CHUNK_CHARS) {
+      if (current) chunks.push(current.trim());
+      current = sentence;
+    } else {
+      current = current ? `${current} ${sentence}` : sentence;
+    }
+  }
+
+  if (current) chunks.push(current.trim());
+  return chunks.filter((c) => c.length > 0);
+}
+
+export async function synthesizeSpeechChunks(
+  text: string,
+  onChunk: (blob: Blob, index: number, total: number) => void,
+  voiceId = 'am_adam',
+  speed = 0.85
+): Promise<void> {
+  const chunks = splitIntoTTSChunks(text);
+  const total = chunks.length;
+
+  for (let i = 0; i < total; i++) {
+    const blob = await synthesizeSpeech(chunks[i], voiceId, speed);
+    onChunk(blob, i, total);
+  }
+}
 // ---------------------------------------------------------------------------
 // Agent Manager
 // ---------------------------------------------------------------------------

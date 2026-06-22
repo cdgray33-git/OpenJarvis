@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+﻿import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
@@ -7,7 +7,7 @@ import { useAppStore } from '../../lib/store';
 import { ThinkingCircle } from '../ThinkingCircle';
 import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Volume2, VolumeX } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
-import { synthesizeSpeech } from '../../lib/api';
+import { synthesizeSpeechChunks } from '../../lib/api';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -28,6 +28,9 @@ export function ChatArea() {
   const shouldAutoScroll = useRef(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastSpokenIdRef = useRef<string | null>(null);
+  const ttsInFlightRef = useRef<boolean>(false);
+  const chunkQueueRef = useRef<Blob[]>([]);
+  const isPlayingRef = useRef<boolean>(false);
 
   const [hasConnectedSources, setHasConnectedSources] = useState<boolean | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -65,6 +68,31 @@ export function ChatArea() {
     });
   }, []);
 
+  // Play next chunk in queue
+  const playNextChunk = useCallback(() => {
+    if (chunkQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      ttsInFlightRef.current = false;
+      return;
+    }
+    const blob = chunkQueueRef.current.shift()!;
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      playNextChunk();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      playNextChunk();
+    };
+    audio.play().catch(() => {
+      URL.revokeObjectURL(url);
+      playNextChunk();
+    });
+  }, []);
+
   // Auto-speak the last assistant message when streaming finishes
   useEffect(() => {
     if (streamState.isStreaming || muted) return;
@@ -73,7 +101,11 @@ export function ChatArea() {
     if (lastMsg.id === lastSpokenIdRef.current) return;
     if (!lastMsg.content || lastMsg.content.trim().length === 0) return;
 
+    if (ttsInFlightRef.current) return;
     lastSpokenIdRef.current = lastMsg.id;
+    ttsInFlightRef.current = true;
+    chunkQueueRef.current = [];
+    isPlayingRef.current = false;
 
     // Stop any currently playing audio
     if (audioRef.current) {
@@ -89,18 +121,24 @@ export function ChatArea() {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .trim();
 
-    if (!plainText) return;
+    if (!plainText) {
+      ttsInFlightRef.current = false;
+      return;
+    }
 
-    synthesizeSpeech(plainText)
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.play().catch(() => {});
-        audio.onended = () => URL.revokeObjectURL(url);
-      })
-      .catch(() => {});
-  }, [streamState.isStreaming, messages, muted]);
+    synthesizeSpeechChunks(
+      plainText,
+      (blob, index, total) => {
+        chunkQueueRef.current.push(blob);
+        if (!isPlayingRef.current) {
+          isPlayingRef.current = true;
+          playNextChunk();
+        }
+      }
+    ).catch(() => {
+      ttsInFlightRef.current = false;
+    });
+  }, [streamState.isStreaming, messages, muted, playNextChunk]);
 
   // Relay numbered-option button clicks into InputArea's submit flow
   useEffect(() => {
@@ -185,7 +223,7 @@ export function ChatArea() {
               {getGreeting()}
             </h2>
             <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally â€” private, fast, and always available.
+              Ask anything. Your AI runs locally — private, fast, and always available.
             </p>
 
             <div className="flex gap-3">
