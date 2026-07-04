@@ -1,0 +1,215 @@
+﻿import { ToolInfo } from './types'; // Assuming types are defined in a separate file
+
+// Supabase credentials
+const SUPABASE_URL = 'https://your-supabase-url.supabase.co';
+const SUPABASE_ANON_KEY = 'your-anon-key';
+
+// Function to check if an object is empty
+function isEmpty(obj: Record<string, unknown>): boolean {
+  return Object.keys(obj).length === 0;
+}
+
+// Supabase credentials verification
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Supabase URL and ANON_KEY must be set');
+}
+
+// Function to get the base URL
+function getBase(): string {
+  const settings = localStorage.getItem('settings');
+  if (settings) {
+    try {
+      const parsedSettings = JSON.parse(settings);
+      return parsedSettings.base_url || 'https://your-default-base-url.com';
+    } catch (error) {
+      console.error('Error parsing settings:', error);
+    }
+  }
+  return 'https://your-default-base-url.com';
+}
+
+// Function to get the tauri invoke function
+function getTauriInvoke(): ((cmd: string, args?: unknown) => Promise<unknown>) | undefined {
+  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+    return (window as any).__TAURI__.invoke;
+  }
+  return undefined;
+}
+
+// Function to handle errors
+function handleError(error: Error): void {
+  console.error('An error occurred:', error);
+}
+
+// Main API functions
+
+export interface ModelConfig {
+  model: string;
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+}
+
+export async function fetchModels(): Promise<{ models: string[] }> {
+  const res = await fetch(`${getBase()}/v1/models`);
+  if (!res.ok) throw new Error(`Failed to fetch models: ${res.status}`);
+  return res.json();
+}
+
+export async function generateText(
+  config: ModelConfig,
+  prompt: string,
+): Promise<{ text: string; usage?: Record<string, number>; telemetry?: Record<string, unknown> }> {
+  const res = await fetch(`${getBase()}/v1/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...config, prompt }),
+  });
+  if (!res.ok) throw new Error(`Failed to generate text: ${res.status}`);
+
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('text/event-stream') && res.body) {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let lastUsage: Record<string, number> | undefined;
+    let lastTelemetry: Record<string, unknown> | undefined;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const chunk = JSON.parse(data);
+              fullContent += chunk.choices?.[0]?.text || '';
+              lastUsage = chunk.usage;
+              lastTelemetry = chunk.telemetry;
+            } catch {
+              /* skip malformed chunks */
+            }
+          }
+        }
+      }
+    } catch { /* stream ended */ }
+
+    return { text: fullContent, usage: lastUsage, telemetry: lastTelemetry };
+  }
+
+  const data = await res.json();
+  return { text: data.choices?.[0]?.text || '', usage: data.usage, telemetry: data.telemetry };
+}
+
+export async function fetchModelConfig(model: string): Promise<ModelConfig> {
+  const res = await fetch(`${getBase()}/v1/models/${model}`);
+  if (!res.ok) throw new Error(`Failed to fetch model config: ${res.status}`);
+  return res.json();
+}
+
+// Function to submit savings
+export interface SavingsSubmission {
+  anon_id: string;
+  display_name: string;
+  email: string;
+  total_calls: number;
+  total_tokens: number;
+  dollar_savings: number;
+  energy_wh_saved: number;
+  flops_saved: number;
+  token_counting_version?: number;
+}
+
+export async function submitSavings(data: SavingsSubmission): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/savings_entries?on_conflict=anon_id`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(data),
+      },
+    );
+    return res.ok || res.status === 201 || res.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+// Function to fetch memory stats
+export interface MemoryStats {
+  entries: number;
+  backend: string;
+  [key: string]: unknown;
+}
+
+export async function getMemoryStats(): Promise<MemoryStats> {
+  const res = await fetch(`${getBase()}/v1/memory/stats`);
+  if (!res.ok) throw new Error('Failed to fetch memory stats');
+  return res.json();
+}
+
+// Function to search memory
+export interface MemorySearchResult {
+  content: string;
+  score: number;
+  metadata: Record<string, unknown>;
+}
+
+export async function searchMemory(query: string, topK: number = 5): Promise<MemorySearchResult[]> {
+  const res = await fetch(`${getBase()}/v1/memory/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, top_k: topK }),
+  });
+  if (!res.ok) throw new Error('Failed to search memory');
+  const data = await res.json();
+  return data.results;
+}
+
+// Function to store memory
+export async function storeMemory(content: string, metadata?: Record<string, unknown>): Promise<void> {
+  const res = await fetch(`${getBase()}/v1/memory/store`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, metadata }),
+  });
+  if (!res.ok) throw new Error('Failed to store memory');
+}
+
+// Function to index memory path
+export async function indexMemoryPath(path: string): Promise<{ chunks_indexed: number }> {
+  const res = await fetch(`${getBase()}/v1/memory/index`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+  if (!res.ok) throw new Error('Failed to index path');
+  return res.json();
+}
+
+// Function to get memory config
+export interface MemoryConfig {
+  backend: string;
+  context_from_memory: boolean;
+  context_top_k: number;
+  context_min_score: number;
+  context_max_tokens: number;
+}
+
+export async function getMemoryConfig(): Promise<MemoryConfig> {
+  const res = await fetch(`${getBase()}/v1/memory/config`);
+  if (!res.ok) throw new Error('Failed to fetch memory config');
+  return res.json();
+}

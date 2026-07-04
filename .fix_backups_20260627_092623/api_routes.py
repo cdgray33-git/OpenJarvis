@@ -9,9 +9,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from openjarvis.core.types import Message, Role
-from openjarvis.tools.storage.context import inject_context, ContextConfig
-from openjarvis.connectors.store import KnowledgeStore
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +67,7 @@ async def list_agents(request: Request):
     """List available agent types and running agents."""
     registered = []
     try:
-        import openjarvis.agents  # noqa: F401 â€” side-effect registration
+        import openjarvis.agents  # noqa: F401 — side-effect registration
         from openjarvis.core.registry import AgentRegistry
 
         for key in sorted(AgentRegistry.keys()):
@@ -605,18 +602,7 @@ async def websocket_chat_stream(websocket: WebSocket):
                 )
                 continue
 
-            user_message_obj = Message(role=Role.USER, content=message)
-            messages = [user_message_obj]
-
-            # === RETRIEVAL SETUP & INJECTION ===
-            knowledge_store = KnowledgeStore()
-            context_config = ContextConfig(
-                enabled=True,
-                top_k=5,
-                min_score=0.0,
-                max_context_tokens=2048,
-            )
-            messages = inject_context(message, messages, knowledge_store, config=context_config)
+            messages = [{"role": "user", "content": message}]
 
             try:
                 # Prefer streaming if the engine supports it
@@ -635,7 +621,7 @@ async def websocket_chat_stream(websocket: WebSocket):
                                     {"type": "chunk", "content": token},
                                 )
                         else:
-                            # Sync generator â€” iterate in a thread to avoid
+                            # Sync generator — iterate in a thread to avoid
                             # blocking the event loop
                             for token in gen:
                                 full_content += token
@@ -662,7 +648,7 @@ async def websocket_chat_stream(websocket: WebSocket):
                         {"type": "done", "content": full_content},
                     )
                 else:
-                    # No stream method â€” single-shot generate
+                    # No stream method — single-shot generate
                     result = engine.generate(messages, model=model)
                     content = (
                         result.get("content", "")
@@ -685,7 +671,7 @@ async def websocket_chat_stream(websocket: WebSocket):
                     {"type": "error", "detail": str(exc)},
                 )
     except WebSocketDisconnect:
-        pass  # Client disconnected â€” nothing to clean up
+        pass  # Client disconnected — nothing to clean up
 
 
 # ---- Learning routes ----

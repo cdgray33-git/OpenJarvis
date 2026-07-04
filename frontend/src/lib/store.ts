@@ -26,7 +26,9 @@ export interface AgentEvent {
   data: Record<string, unknown>;
 }
 
-// â”€â”€ localStorage persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
+// localStorage persistence
+// ──────────────────────────────────────────────────────────────────────
 
 const CONVERSATIONS_KEY = 'openjarvis-conversations';
 const SETTINGS_KEY = 'openjarvis-settings';
@@ -79,7 +81,7 @@ interface Settings {
 function loadSettings(): Settings {
   const defaults: Settings = {
     theme: 'system',
-    apiUrl: '',  
+    apiUrl: '',
     apiKey: '',
     fontSize: 'default',
     defaultModel: '',
@@ -101,7 +103,9 @@ function saveSettings(settings: Settings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-// â”€â”€ Store â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ──────────────────────────────────────────────────────────────────────
+// Store
+// ──────────────────────────────────────────────────────────────────────
 
 const INITIAL_STREAM: StreamState = {
   isStreaming: false,
@@ -160,6 +164,7 @@ interface AppState {
     usage?: TokenUsage,
     telemetry?: MessageTelemetry,
     audio?: { url: string },
+    persist?: boolean,
   ) => void;
   setStreamState: (state: Partial<StreamState>) => void;
   resetStream: () => void;
@@ -170,16 +175,6 @@ interface AppState {
   setSelectedModel: (model: string) => void;
   setServerInfo: (info: ServerInfo | null) => void;
   setSavings: (data: SavingsData | null) => void;
-
-  // Actions: settings
-  updateSettings: (partial: Partial<Settings>) => void;
-
-  // Actions: UI
-  setCommandPaletteOpen: (open: boolean) => void;
-  toggleSidebar: () => void;
-  setSidebarOpen: (open: boolean) => void;
-  toggleSystemPanel: () => void;
-  setSystemPanelOpen: (open: boolean) => void;
 
   // Data sources (cached between visits to avoid empty-state flicker)
   cachedConnectors: CachedConnector[] | null;
@@ -207,7 +202,7 @@ interface AppState {
 
   // Logs
   logEntries: LogEntry[];
-  addLogEntry: (entry: LogEntry) => void;
+  addLogEntry: (entry: Omit<LogEntry, 'id'>) => void;
   clearLogs: () => void;
 
   // Model loading
@@ -249,7 +244,9 @@ export const useAppStore = create<AppState>((set, get) => {
     optInModalSeen: localStorage.getItem(OPTIN_SEEN_KEY) === 'true',
     optInModalOpen: false,
 
-    // â”€â”€ Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Conversations
+    // ──────────────────────────────────────────────────────────────────────
 
     loadConversations: () => {
       const store = loadConversations();
@@ -383,6 +380,7 @@ export const useAppStore = create<AppState>((set, get) => {
       usage?: TokenUsage,
       telemetry?: MessageTelemetry,
       audio?: { url: string },
+      persist: boolean = true,
     ) => {
       const store = loadConversations();
       const conv = store.conversations[conversationId];
@@ -395,11 +393,10 @@ export const useAppStore = create<AppState>((set, get) => {
         if (telemetry) lastMsg.telemetry = telemetry;
         if (audio) lastMsg.audio = audio;
         conv.updatedAt = Date.now();
-        saveConversations(store);
+        if (persist) saveConversations(store);
         set({ messages: [...conv.messages] });
       }
     },
-
     setStreamState: (partial: Partial<StreamState>) => {
       set((s) => ({ streamState: { ...s.streamState, ...partial } }));
     },
@@ -408,7 +405,9 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ streamState: INITIAL_STREAM });
     },
 
-    // â”€â”€ Models & server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Models & server
+    // ──────────────────────────────────────────────────────────────────────
 
     setModels: (models: ModelInfo[]) => set({ models }),
     setModelsLoading: (loading: boolean) => set({ modelsLoading: loading }),
@@ -419,7 +418,9 @@ export const useAppStore = create<AppState>((set, get) => {
     cachedConnectors: null,
     setCachedConnectors: (list) => set({ cachedConnectors: list }),
 
-    // â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Settings
+    // ──────────────────────────────────────────────────────────────────────
 
     updateSettings: (partial: Partial<Settings>) => {
       const updated = { ...get().settings, ...partial };
@@ -427,7 +428,9 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ settings: updated });
     },
 
-    // â”€â”€ UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // UI
+    // ──────────────────────────────────────────────────────────────────────
 
     setCommandPaletteOpen: (open: boolean) => set({ commandPaletteOpen: open }),
     toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -435,7 +438,9 @@ export const useAppStore = create<AppState>((set, get) => {
     toggleSystemPanel: () => set((s) => ({ systemPanelOpen: !s.systemPanelOpen })),
     setSystemPanelOpen: (open: boolean) => set({ systemPanelOpen: open }),
 
-    // â”€â”€ Agents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Agents
+    // ──────────────────────────────────────────────────────────────────────
 
     managedAgents: [],
     managedAgentsLoading: false,
@@ -451,18 +456,24 @@ export const useAppStore = create<AppState>((set, get) => {
     })),
     clearAgentEvents: () => set({ agentEvents: [] }),
 
-    // â”€â”€ Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Logs
+    // ──────────────────────────────────────────────────────────────────────
     logEntries: [],
     addLogEntry: (entry) => set((s) => ({
-      logEntries: [...s.logEntries.slice(-499), entry],
+      logEntries: [...s.logEntries.slice(-499), { ...entry, id: generateId() }],
     })),
     clearLogs: () => set({ logEntries: [] }),
 
-    // â”€â”€ Model loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Model loading
+    // ──────────────────────────────────────────────────────────────────────
     modelLoading: false,
     setModelLoading: (loading) => set({ modelLoading: loading }),
 
-    // â”€â”€ Opt-in sharing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────────────────────────
+    // Opt-in sharing
+    // ──────────────────────────────────────────────────────────────────────
 
     setOptIn: (enabled: boolean, displayName: string, email: string) => {
       const anonId = get().optInAnonId;
@@ -481,5 +492,3 @@ export const useAppStore = create<AppState>((set, get) => {
 });
 
 export { generateId };
-
-

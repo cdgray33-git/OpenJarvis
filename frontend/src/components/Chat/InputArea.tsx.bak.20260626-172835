@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, Paperclip } from 'lucide-react';
 import { useRef as useFileRef } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat } from '../../lib/sse';
 import { fetchSavings, getBase } from '../../lib/api';
@@ -11,7 +10,6 @@ import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '..
 
 export function InputArea() {
   const [input, setInput] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -29,24 +27,8 @@ export function InputArea() {
   const updateLastAssistant = useAppStore((s) => s.updateLastAssistant);
   const setStreamState = useAppStore((s) => s.setStreamState);
   const resetStream = useAppStore((s) => s.resetStream);
-  const managedAgents = useAppStore((s) => s.managedAgents);
-  const setManagedAgents = useAppStore((s) => s.setManagedAgents);
-  const setSelectedAgentId = useAppStore((s) => s.setSelectedAgentId);
-
+  
   const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
-
-  // Fetch agents on mount
-  useEffect(() => {
-    fetch(`${getBase()}/v1/agents`)
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setManagedAgents(data.registered || []))
-      .catch(() => {});
-  }, [setManagedAgents]);
-
-  // Sync local selectedAgent with store
-  useEffect(() => {
-    setSelectedAgentId(selectedAgent);
-  }, [selectedAgent, setSelectedAgentId]);
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
@@ -164,12 +146,12 @@ export function InputArea() {
       timestamp: Date.now(),
       level: 'info',
       category: 'chat',
-      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`,
+      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ ${selectedModel}`,
     });
 
     try {
       for await (const sseEvent of streamChat(
-        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens, agent: selectedAgent || undefined },
+        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
       )) {
         const eventName = sseEvent.event;
@@ -250,7 +232,7 @@ export function InputArea() {
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        // User cancelled or model switch
+        // User cancelled or model switch ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â keep whatever was accumulated
         if (!accumulatedContent) accumulatedContent = '(Generation stopped)';
       } else {
         const errMsg = err?.message || String(err);
@@ -289,7 +271,7 @@ export function InputArea() {
           }
         }
       } catch {
-        // Not a digest response or server unavailable
+        // Not a digest response or server unavailable ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â skip
       }
 
       updateLastAssistant(
@@ -384,62 +366,26 @@ export function InputArea() {
           className="hidden"
           accept=".pdf,.txt,.md,.csv,.docx"
           onChange={async (e) => {
-            try {
-              const probeRes = await fetch("http://localhost:8010/health", { method: "POST" });
-              setInput((prev) => prev + " | DBG: POST/health status=" + probeRes.status);
-            } catch (probeErr) {
-              setInput((prev) => prev + " | DBG: POST/health FAILED " + (probeErr instanceof Error ? probeErr.message : String(probeErr)));
-            }
-            try {
-              const probeFormData = new FormData();
-              probeFormData.append("test", "value");
-              const probeRes2 = await fetch("http://localhost:8010/health", { method: "POST", body: probeFormData });
-              setInput((prev) => prev + " | DBG: POST-FormData/health status=" + probeRes2.status);
-            } catch (probeErr2) {
-              setInput((prev) => prev + " | DBG: POST-FormData/health FAILED " + (probeErr2 instanceof Error ? probeErr2.message : String(probeErr2)));
-            }
-            try {
-              const fdB = new FormData();
-              fdB.append("files", "just a text string, not a file");
-              const resB = await fetch("http://localhost:8010/v1/connectors/upload/ingest/files", { method: "POST", body: fdB });
-              setInput((prev) => prev + " | DBG: textFormData/realRoute status=" + resB.status);
-            } catch (errB) {
-              setInput((prev) => prev + " | DBG: textFormData/realRoute FAILED " + (errB instanceof Error ? errB.message : String(errB)));
-            }
             const file = e.target.files?.[0];
             e.target.value = "";
-            if (!file) { setInput((prev) => prev + " | DBG: NO FILE SELECTED"); return; }
-            setInput((prev) => prev + " | DBG: isFile=" + (file instanceof File) + " isBlob=" + (file instanceof Blob) + " name=" + file.name + " size=" + file.size + " type=" + file.type);
-            try {
-              const fdA = new FormData();
-              fdA.append("test", file);
-              const resA = await fetch("http://localhost:8010/health", { method: "POST", body: fdA });
-              setInput((prev) => prev + " | DBG: FormData+File/health status=" + resA.status);
-            } catch (errA) {
-              setInput((prev) => prev + " | DBG: FormData+File/health FAILED " + (errA instanceof Error ? errA.message : String(errA)));
-            }
+            if (!file) return;
             const formData = new FormData();
             formData.append("files", file);
-            setInput((prev) => prev + " | DBG: formData built, entries=" + Array.from(formData.keys()).join(","));
             try {
-              setInput((prev) => prev + " | DBG: calling fetch now");
               setInput((prev) => prev + (prev ? " " : "") + `[Uploading: ${file.name}...]`);
               const res = await fetch("http://localhost:8010/v1/connectors/upload/ingest/files", {
                 method: "POST",
                 body: formData,
               });
-                            setInput((prev) => prev + " | DBG: fetch returned status=" + res.status);
               if (!res.ok) {
                 const errText = await res.text();
                 throw new Error(errText || `Upload failed (${res.status})`);
               }
               const result = await res.json();
-              setInput((prev) => prev + " | DBG: success chunks=" + result.chunks_added);
               setInput((prev) =>
                 prev.replace(`[Uploading: ${file.name}...]`, `[Attached: ${file.name} - ${result.chunks_added} chunks ingested]`)
               );
             } catch (err) {
-              setInput((prev) => prev + " | DBG: CAUGHT name=" + (err instanceof Error ? err.name : "?") + " msg=" + (err instanceof Error ? err.message : String(err)));
               console.error("File upload failed:", err);
               setInput((prev) =>
                 prev.replace(`[Uploading: ${file.name}...]`, `[Attach failed: ${file.name} - ${err instanceof Error ? err.message : "unknown error"}]`)
@@ -467,17 +413,6 @@ export function InputArea() {
           style={{ color: 'var(--color-text)', maxHeight: '200px' }}
           disabled={streamState.isStreaming}
         />
-        <Select value={selectedAgent || ''} onValueChange={setSelectedAgent} className="w-40 shrink-0" disabled={streamState.isStreaming}>
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="Agent" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">None (Chat)</SelectItem>
-            {managedAgents.map((a: { key: string; class: string }) => (
-              <SelectItem key={a.key} value={a.key}>{a.key}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         {streamState.isStreaming ? (
           <button
             onClick={stopStreaming}

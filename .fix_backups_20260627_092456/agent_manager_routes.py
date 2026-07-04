@@ -1,4 +1,4 @@
-﻿"""FastAPI routes for the Agent Manager."""
+"""FastAPI routes for the Agent Manager."""
 
 from __future__ import annotations
 
@@ -14,9 +14,6 @@ try:
     from pydantic import BaseModel
 except ImportError:
     raise ImportError("fastapi and pydantic are required for server routes")
-
-from openjarvis.tools.storage.context import inject_context, ContextConfig
-from openjarvis.connectors.store import KnowledgeStore
 
 logger = logging.getLogger("openjarvis.server.agent_manager")
 
@@ -73,7 +70,7 @@ _BROWSER_SUB_TOOLS = {
 
 
 class _LightweightSystem:
-    """Minimal system facade for the executor â€” avoids rebuilding the
+    """Minimal system facade for the executor — avoids rebuilding the
     full JarvisSystem (which picks a random model from Ollama)."""
 
     def __init__(self, engine: Any, model: str, config: Any = None):
@@ -325,9 +322,9 @@ def _resolve_tool_specs(
       * Dict entries pass through as-is (allows advanced configs to
         supply fully-formed specs).
       * ``browser`` is a synthetic display-only meta-tool that expands
-        to the 6 real browser sub-tools (browser_navigate, click, â€¦).
-      * Channel names (``slack``, ``gmail``, â€¦) come from the
-        ``ChannelRegistry`` and are not directly callable by the LLM â€”
+        to the 6 real browser sub-tools (browser_navigate, click, …).
+      * Channel names (``slack``, ``gmail``, …) come from the
+        ``ChannelRegistry`` and are not directly callable by the LLM —
         they're destinations for ``channel_send``. Silently skip them.
       * Unknown tool names are dropped with a warning.
     """
@@ -343,7 +340,7 @@ def _resolve_tool_specs(
             spec = ToolRegistry.get(name)().spec
         except Exception as exc:
             logger.warning(
-                "Could not build spec for tool '%s' (%s) â€” dropping",
+                "Could not build spec for tool '%s' (%s) — dropping",
                 name,
                 exc,
             )
@@ -378,8 +375,8 @@ def _resolve_tool_specs(
                     seen.add(sub)
             continue
 
-        # Channels (slack, gmail, â€¦) live in ChannelRegistry and aren't
-        # callable by the LLM. Skip silently â€” the agent talks to them
+        # Channels (slack, gmail, …) live in ChannelRegistry and aren't
+        # callable by the LLM. Skip silently — the agent talks to them
         # through the `channel_send` tool with a `channel` argument.
         if ChannelRegistry.contains(entry):
             continue
@@ -521,7 +518,7 @@ def _get_mcp_tools(app_state: Any) -> Tuple[List[Dict[str, Any]], Dict[str, Any]
                 transport = StdioTransport(command=[command] + args)
             else:
                 logger.warning(
-                    "MCP server '%s' has neither 'url' nor 'command' â€” skipping",
+                    "MCP server '%s' has neither 'url' nor 'command' — skipping",
                     name,
                 )
                 continue
@@ -609,7 +606,7 @@ def _tool_progress_label(tool_name: str, args: str) -> str:
             parsed = _json.loads(args)
             q = parsed.get("query") or parsed.get("question") or ""
             if q:
-                label += f' â€” "{q[:50]}"'
+                label += f' — "{q[:50]}"'
         except Exception:
             pass
     return label
@@ -1043,17 +1040,6 @@ async def _stream_managed_agent(
         except Exception as _qs_exc:
             logger.warning("Log query_start failed: %s", _qs_exc)
 
-
-        # === RETRIEVAL SETUP & INJECTION ===
-        knowledge_store = KnowledgeStore()
-        context_config = ContextConfig(
-            enabled=True,
-            top_k=5,
-            min_score=0.0,
-            max_context_tokens=2048,
-        )
-        messages_for_llm = inject_context(user_content, messages_for_llm, knowledge_store, config=context_config)
-
         while turns < max_turns:
             turns += 1
             turn_content = ""
@@ -1191,7 +1177,7 @@ async def _stream_managed_agent(
                             if tool_cls is not None:
                                 tool_instance = tool_cls()
                                 # Tools the user explicitly added to this
-                                # agent's toolkit are considered pre-approved â€”
+                                # agent's toolkit are considered pre-approved —
                                 # selecting them in the wizard is the
                                 # confirmation. Without this, tools that have
                                 # `requires_confirmation=True` (shell_exec,
@@ -1283,7 +1269,7 @@ async def _stream_managed_agent(
                 persist_state["tool_calls"] = list(collected_tool_calls)
                 continue
 
-            # No tool calls â€” this is the final response
+            # No tool calls — this is the final response
             collected_content += turn_content
             persist_state["content"] = collected_content
             persist_state["tool_calls"] = list(collected_tool_calls)
@@ -1326,7 +1312,7 @@ def create_agent_manager_router(
     agents_router = APIRouter(prefix="/v1/managed-agents", tags=["managed-agents"])
     templates_router = APIRouter(prefix="/v1/templates", tags=["templates"])
 
-    # â”€â”€ Agent lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Agent lifecycle ──────────────────────────────────────
 
     @agents_router.get("")
     async def list_agents():
@@ -1406,7 +1392,7 @@ def create_agent_manager_router(
         if agent["status"] in ("error", "needs_attention"):
             manager.update_agent(agent_id, status="idle")
 
-        # Acquire tick BEFORE spawning thread â€” prevents race
+        # Acquire tick BEFORE spawning thread — prevents race
         try:
             manager.start_tick(agent_id)
         except ValueError:
@@ -1460,7 +1446,7 @@ def create_agent_manager_router(
         threading.Thread(target=_run_tick, daemon=True).start()
         return {"status": "running", "agent_id": agent_id}
 
-    # â”€â”€ Recover â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Recover ──────────────────────────────────────────────
 
     @agents_router.post("/{agent_id}/recover")
     def recover_agent(agent_id: str):
@@ -1469,7 +1455,7 @@ def create_agent_manager_router(
         checkpoint = manager.recover_agent(agent_id)
         return {"recovered": True, "checkpoint": checkpoint}
 
-    # â”€â”€ Tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Tasks ────────────────────────────────────────────────
 
     @agents_router.get("/{agent_id}/tasks")
     async def list_tasks(agent_id: str, status: Optional[str] = None):
@@ -1506,7 +1492,7 @@ def create_agent_manager_router(
         manager.delete_task(task_id)
         return {"status": "deleted"}
 
-    # â”€â”€ Channel bindings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Channel bindings ─────────────────────────────────────
 
     @agents_router.get("/{agent_id}/channels")
     async def list_channels(agent_id: str):
@@ -1731,7 +1717,7 @@ def create_agent_manager_router(
         manager.unbind_channel(binding_id)
         return {"status": "unbound"}
 
-    # â”€â”€ Messaging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Messaging ────────────────────────────────────────────
 
     @agents_router.get("/{agent_id}/messages")
     def list_messages(agent_id: str):
@@ -1844,7 +1830,7 @@ def create_agent_manager_router(
             app_state=request.app.state,
         )
 
-    # â”€â”€ State inspection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── State inspection ─────────────────────────────────────
 
     @agents_router.get("/{agent_id}/state")
     def get_agent_state(agent_id: str):
@@ -1859,7 +1845,7 @@ def create_agent_manager_router(
             "checkpoint": manager.get_latest_checkpoint(agent_id),
         }
 
-    # â”€â”€ Learning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Learning ─────────────────────────────────────────────
 
     @agents_router.get("/{agent_id}/learning")
     def get_learning_log(agent_id: str):
@@ -1877,7 +1863,7 @@ def create_agent_manager_router(
         bus.publish(EventType.AGENT_LEARNING_STARTED, {"agent_id": agent_id})
         return {"status": "triggered"}
 
-    # â”€â”€ Traces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Traces ───────────────────────────────────────────────
 
     @agents_router.get("/{agent_id}/traces")
     def list_traces(agent_id: str, limit: int = 20):
@@ -1939,7 +1925,7 @@ def create_agent_manager_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=str(exc))
 
-    # â”€â”€ Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Templates ────────────────────────────────────────────
 
     @templates_router.get("")
     async def list_templates():
@@ -1949,7 +1935,7 @@ def create_agent_manager_router(
     async def instantiate_template(template_id: str, req: CreateAgentRequest):
         return manager.create_from_template(template_id, req.name, overrides=req.config)
 
-    # â”€â”€ Global agent endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Global agent endpoints ───────────────────────────────
 
     global_router = APIRouter(tags=["agents-global"])
 
@@ -1985,7 +1971,7 @@ def create_agent_manager_router(
             models = []
         return _pick_recommended_model(models)
 
-    # â”€â”€ Tools & credentials â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Tools & credentials ──────────────────────────────────
 
     tools_router = APIRouter(prefix="/v1/tools", tags=["tools"])
 
@@ -2028,7 +2014,7 @@ def create_agent_manager_router(
 
         return get_credential_status(tool_name)
 
-    # â”€â”€ SendBlue auto-setup helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── SendBlue auto-setup helpers ─────────────────────────
 
     sendblue_router = APIRouter(prefix="/v1/channels/sendblue", tags=["sendblue"])
 

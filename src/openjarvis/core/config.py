@@ -256,9 +256,9 @@ _MODEL_TIERS = [
     (8, "qwen3.5:2b"),
     (16, "qwen3.5:4b"),
     (32, "qwen3.5:9b"),
-    (64, "qwen3.5:27b"),
+    (64, "qwen2.5-coder:32b"),
 ]
-_MODEL_TIER_FALLBACK = "qwen3.5:27b"
+_MODEL_TIER_FALLBACK = "qwen3.5:9b"
 
 
 def recommend_model(hw: HardwareInfo, engine: str) -> str:
@@ -326,7 +326,7 @@ class OllamaEngineConfig:
 class VLLMEngineConfig:
     """Per-engine config for vLLM."""
 
-    host: str = "http://localhost:8000"
+    host: str = "http://localhost:8010"
 
 
 @dataclass(slots=True)
@@ -377,7 +377,7 @@ class NexaEngineConfig:
 class UzuEngineConfig:
     """Per-engine config for Uzu."""
 
-    host: str = "http://localhost:8000"
+    host: str = "http://localhost:8010"
 
 
 @dataclass(slots=True)
@@ -401,7 +401,7 @@ class GemmaCppEngineConfig:
 class LemonadeEngineConfig:
     """Per-engine config for Lemonade."""
 
-    host: str = "http://localhost:8000"
+    host: str = "http://localhost:8010"
 
 
 @dataclass
@@ -943,7 +943,7 @@ class ServerConfig:
     """API server settings."""
 
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 8010
     agent: str = "orchestrator"
     model: str = ""
     workers: int = 1
@@ -1867,7 +1867,7 @@ default = "{engine}"
 host = "http://localhost:11434"
 
 [engine.vllm]
-host = "http://localhost:8000"
+host = "http://localhost:8010"
 
 [engine.sglang]
 host = "http://localhost:30000"
@@ -1933,8 +1933,8 @@ enabled = true
 
 [server]
 host = "0.0.0.0"
-port = 8000
-agent = "orchestrator"
+port = 8010
+agent = "native_openhands"
 
 [learning]
 enabled = false

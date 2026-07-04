@@ -1,4 +1,4 @@
-"""Upload / Paste router for ingesting documents into the knowledge store."""
+"""Upload / Paste router for ingesting documents into the memory backend."""
 
 from __future__ import annotations
 
@@ -7,10 +7,9 @@ import logging
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from openjarvis.connectors.store import KnowledgeStore
 from openjarvis.core.config import DEFAULT_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
@@ -101,10 +100,15 @@ def _extract_text_from_docx(data: bytes) -> str:
         )
 
 
-def _get_store() -> KnowledgeStore:
-    """Return a KnowledgeStore pointing at the default knowledge DB."""
-    db_path = DEFAULT_CONFIG_DIR / "knowledge.db"
-    return KnowledgeStore(db_path=db_path)
+def _get_memory_backend(request: Request):
+    """Retrieve the shared memory backend instance from app.state."""
+    backend = getattr(request.app.state, "memory_backend", None)
+    if backend is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Memory backend not configured. Enable 'agent.context_from_memory' in config.",
+        )
+    return backend
 
 
 # ---------------------------------------------------------------------------
@@ -128,24 +132,28 @@ class IngestResponse(BaseModel):
 
 
 @router.post("/ingest", response_model=IngestResponse)
-async def ingest_paste(body: PasteRequest) -> IngestResponse:
-    """Ingest pasted text into the knowledge store."""
+async def ingest_paste(request: Request, body: PasteRequest) -> IngestResponse:
+    """Ingest pasted text into the shared memory backend."""
     text = body.content.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Content is empty")
 
-    store = _get_store()
+    memory_backend = _get_memory_backend(request)
     doc_id = str(uuid.uuid4())
     chunks = _chunk_text(text)
 
     for idx, chunk in enumerate(chunks):
-        store.store(
+        # Use the memory backend's store/add method (assumes compatible API)
+        # The memory backend (SQLiteMemory or similar) should accept these kwargs
+        memory_backend.store(
             chunk,
             source="upload",
-            doc_type="paste",
-            doc_id=doc_id,
-            title=body.title or "Pasted text",
-            chunk_index=idx,
+            metadata={
+                "doc_type": "paste",
+                "doc_id": doc_id,
+                "title": body.title or "Pasted text",
+                "chunk_index": idx,
+            },
         )
 
     logger.info("Ingested %d chunks from pasted text (doc_id=%s)", len(chunks), doc_id)
@@ -154,11 +162,12 @@ async def ingest_paste(body: PasteRequest) -> IngestResponse:
 
 @router.post("/ingest/files", response_model=IngestResponse)
 async def ingest_files(
+    request: Request,
     files: List[UploadFile] = File(...),
     title: Optional[str] = Form(None),
 ) -> IngestResponse:
-    """Ingest uploaded files into the knowledge store."""
-    store = _get_store()
+    """Ingest uploaded files into the shared memory backend."""
+    memory_backend = _get_memory_backend(request)
     total_chunks = 0
 
     for upload in files:
@@ -198,13 +207,15 @@ async def ingest_files(
         chunks = _chunk_text(text)
 
         for idx, chunk in enumerate(chunks):
-            store.store(
+            memory_backend.store(
                 chunk,
                 source="upload",
-                doc_type=ext.lstrip("."),
-                doc_id=doc_id,
-                title=doc_title,
-                chunk_index=idx,
+                metadata={
+                    "doc_type": ext.lstrip("."),
+                    "doc_id": doc_id,
+                    "title": doc_title,
+                    "chunk_index": idx,
+                },
             )
 
         total_chunks += len(chunks)

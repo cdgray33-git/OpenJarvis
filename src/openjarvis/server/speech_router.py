@@ -1,4 +1,4 @@
-"""Speech router â€” STT and TTS endpoints for OpenJarvis."""
+﻿"""Speech router Ã¢â‚¬â€ STT and TTS endpoints for OpenJarvis."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ async def synthesize(request: Request, body: SynthesizeRequest):
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
-                KOKORO_SERVER + "/synthesize",
+                KOKORO_SERVER + "/synthesize-stream",
                 json={"text": body.text, "voice": body.voice_id, "speed": body.speed},
             )
             resp.raise_for_status()
@@ -78,3 +78,4 @@ async def speech_health(request: Request):
         "tts_backend": "kokoro",
         "voice": "am_adam",
     }
+

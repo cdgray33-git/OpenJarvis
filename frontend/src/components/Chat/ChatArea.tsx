@@ -1,11 +1,11 @@
-﻿import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { ThinkingCircle } from '../ThinkingCircle';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Volume2, VolumeX } from 'lucide-react';
+import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Volume2, VolumeX, Plus } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
 import { synthesizeSpeechChunks } from '../../lib/api';
 
@@ -23,6 +23,9 @@ export function ChatArea() {
   const streamState = useAppStore((s) => s.streamState);
   const systemPanelOpen = useAppStore((s) => s.systemPanelOpen);
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
+  const selectedModel = useAppStore((s) => s.selectedModel);
+  const createConversation = useAppStore((s) => s.createConversation);
+  const setActiveId = useAppStore((s) => s.setActiveId);
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -31,12 +34,19 @@ export function ChatArea() {
   const ttsInFlightRef = useRef<boolean>(false);
   const chunkQueueRef = useRef<Blob[]>([]);
   const isPlayingRef = useRef<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const spokenCharsRef = useRef<number>(0);
+  const hasMountedRef = useRef(false);
 
   const [hasConnectedSources, setHasConnectedSources] = useState<boolean | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [muted, setMuted] = useState<boolean>(() => {
     try { return localStorage.getItem(MUTE_KEY) === 'true'; } catch { return false; }
   });
+
+  useEffect(() => {
+    hasMountedRef.current = true;
+  }, []);
 
   useEffect(() => {
     listConnectors()
@@ -93,8 +103,57 @@ export function ChatArea() {
     });
   }, []);
 
+  // Mid-stream TTS: speak completed sentences while still streaming
+  useEffect(() => {
+    if (!hasMountedRef.current) return;
+    if (!streamState.isStreaming || muted) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg || lastMsg.role !== 'assistant') return;
+    if (lastMsg.id !== lastSpokenIdRef.current && lastMsg.id) {
+      lastSpokenIdRef.current = lastMsg.id; // Track new message
+      spokenCharsRef.current = 0;
+    }
+
+    const fullText = lastMsg.content || '';
+    const unspokenText = fullText.slice(spokenCharsRef.current);
+
+    // Look for sentence boundaries: . ! ? followed by space or end
+    const sentenceMatch = unspokenText.match(/^([^.!?]*[.!?])(\s+|$)/);
+    if (!sentenceMatch) return; // No complete sentence yet
+
+    const sentenceLength = sentenceMatch[1].length;
+    const plainText = sentenceMatch[1]
+      .replace(/`[\s\S]*?`/g, 'code block.')
+      .replace(/[^]+/g, '')
+      .replace(/[#*_~>]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '')
+      .trim();
+
+    if (!plainText) return;
+
+    spokenCharsRef.current += sentenceLength;
+    ttsInFlightRef.current = true;
+
+    synthesizeSpeechChunks(
+      plainText,
+      (blob, index, total) => {
+        chunkQueueRef.current.push(blob);
+        if (!isPlayingRef.current) {
+          isPlayingRef.current = true;
+          playNextChunk();
+        }
+      }
+    ).catch(() => {
+      ttsInFlightRef.current = false;
+    });
+  }, [streamState.isStreaming, messages, muted, playNextChunk]);
+
   // Auto-speak the last assistant message when streaming finishes
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return; // Skip TTS on initial mount/hydration
+    }
     if (streamState.isStreaming || muted) return;
     const lastMsg = messages[messages.length - 1];
     if (!lastMsg || lastMsg.role !== 'assistant') return;
@@ -104,8 +163,12 @@ export function ChatArea() {
     if (ttsInFlightRef.current) return;
     lastSpokenIdRef.current = lastMsg.id;
     ttsInFlightRef.current = true;
-    chunkQueueRef.current = [];
-    isPlayingRef.current = false;
+    const tailText = lastMsg.content.slice(spokenCharsRef.current).trim();
+    spokenCharsRef.current = 0;
+    if (!tailText) {
+      ttsInFlightRef.current = false;
+      return;
+    }
 
     // Stop any currently playing audio
     if (audioRef.current) {
@@ -114,7 +177,7 @@ export function ChatArea() {
     }
 
     // Strip markdown for cleaner TTS
-    const plainText = lastMsg.content
+    const plainText = tailText
       .replace(/```[\s\S]*?```/g, 'code block.')
       .replace(/`[^`]+`/g, '')
       .replace(/[#*_~>]/g, '')
@@ -151,29 +214,45 @@ export function ChatArea() {
     return () => window.removeEventListener('jarvis-option-select', handler);
   }, []);
 
+  const handleNewChat = () => {
+    const id = createConversation(selectedModel);
+    setActiveId(id);
+  };
+
   const isEmpty = messages.length === 0 && !streamState.isStreaming;
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0 gap-1">
-        {/* Mute toggle */}
-        <button
-          onClick={toggleMute}
-          className="p-1.5 rounded-md transition-colors cursor-pointer"
-          style={{ color: muted ? 'var(--color-text-tertiary)' : 'var(--color-accent)' }}
-          title={muted ? 'Unmute Jarvis voice' : 'Mute Jarvis voice'}
-        >
-          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-        </button>
-        <button
-          onClick={toggleSystemPanel}
-          className="p-1.5 rounded-md transition-colors cursor-pointer"
-          style={{ color: 'var(--color-text-tertiary)' }}
-          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '?' : 'Ctrl'}+I)`}
-        >
-          <PanelIcon size={16} />
-        </button>
+      <div className="flex items-center justify-between px-3 py-1.5 shrink-0 gap-1 border-b" style={{ borderColor: 'var(--color-border)' }}>
+        <h2 className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>OpenJarvis</h2>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer"
+            style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)' }}
+            title="New chat"
+          >
+            <Plus size={14} /> New Chat
+          </button>
+          {/* Mute toggle */}
+          <button
+            onClick={toggleMute}
+            className="p-1.5 rounded-md transition-colors cursor-pointer"
+            style={{ color: muted ? 'var(--color-text-tertiary)' : 'var(--color-accent)' }}
+            title={muted ? 'Unmute Jarvis voice' : 'Mute Jarvis voice'}
+          >
+            {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+          <button
+            onClick={toggleSystemPanel}
+            className="p-1.5 rounded-md transition-colors cursor-pointer"
+            style={{ color: 'var(--color-text-tertiary)' }}
+            title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
+          >
+            <PanelIcon size={16} />
+          </button>
+        </div>
       </div>
 
       {hasConnectedSources === false && !bannerDismissed && (
@@ -274,7 +353,7 @@ export function ChatArea() {
       {/* ThinkingCircle component */}
       <div style={{ position: 'fixed', top: 120, right: 20, zIndex: 999998 }}>
         <ThinkingCircle
-          isLoading={streamState.isStreaming}
+          isLoading={streamState.isStreaming || isSpeaking}
           phase={streamState.isStreaming ? "processing..." : undefined}
           variant="cyan"
         />
