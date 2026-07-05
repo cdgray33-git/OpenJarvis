@@ -243,7 +243,7 @@ class AgentStreamBridge:
             engine = getattr(self._agent, "_engine", None)
             used_real_streaming = False
 
-            if engine is not None and hasattr(engine, "stream_full") and content:
+            if False and engine is not None and hasattr(engine, "stream_full") and content:
                 # Re-stream using the engine for real token delivery.
                 # Build the same messages the agent used for its final turn.
                 try:

@@ -12,23 +12,23 @@ const statusConfig = {
   error: { icon: XCircle, color: 'var(--color-error)' },
 };
 
-function previewArgs(raw: string): string {
-  if (!raw) return '';
+function previewArgs(raw: string | object): string {
+  const rawStr = typeof raw === 'object' ? JSON.stringify(raw) : raw; if (!rawStr) return '';
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(rawStr);
     if (parsed && typeof parsed === 'object') {
       const entries = Object.entries(parsed);
       if (entries.length === 0) return '';
       const [k, v] = entries[0];
       const valStr =
         typeof v === 'string' ? v : JSON.stringify(v);
-      const trimmed = valStr.length > 40 ? `${valStr.slice(0, 40)}…` : valStr;
-      return entries.length === 1 ? `${k}: ${trimmed}` : `${k}: ${trimmed}, …`;
+      const trimmed = valStr.length > 40 ? `${valStr.slice(0, 40)}Ã¢â‚¬Â¦` : valStr;
+      return entries.length === 1 ? `${k}: ${trimmed}` : `${k}: ${trimmed}, Ã¢â‚¬Â¦`;
     }
   } catch {
     /* fall through */
   }
-  return raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
+  return rawStr.length > 60 ? `${rawStr.slice(0, 60)}Ã¢â‚¬Â¦` : raw;
 }
 
 export function ToolCallCard({ toolCall }: Props) {
@@ -159,9 +159,8 @@ export function ToolCallCard({ toolCall }: Props) {
   );
 }
 
-function formatJson(raw: string): string {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
+function formatJson(raw: string | object): string {
+  const str = typeof raw === "object" ? JSON.stringify(raw) : raw; try { return JSON.stringify(JSON.parse(str), null, 2);
   } catch {
     return raw;
   }

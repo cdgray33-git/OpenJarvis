@@ -143,7 +143,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         # bridge runs agent.run() synchronously and word-splits the result,
         # so it can't stream tokens in real-time).  For plain chat, stream
         # directly from the engine for true token-by-token output.
-        if agent is not None and bus is not None and request_body.tools:
+        if agent is not None and bus is not None and (request_body.tools or request_body.agent):
             return await _handle_agent_stream(agent, bus, model, request_body)
         return await _handle_stream(engine, model, request_body, complexity_info)
 
