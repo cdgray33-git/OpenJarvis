@@ -679,7 +679,7 @@ export async function sendAgentMessage(
               const parsed = JSON.parse(data);
               callbacks?.onToolCallStart?.({
                 tool: parsed.tool,
-                arguments: parsed.arguments ?? '',
+                arguments: typeof parsed.arguments === 'object' && parsed.arguments !== null ? JSON.stringify(parsed.arguments) : (parsed.arguments ?? ''),
               });
             } catch {
               /* skip */

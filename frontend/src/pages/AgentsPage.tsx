@@ -1592,7 +1592,7 @@ function AgentResponseFooter({
   if (toolCallDetails.length > 0) {
     toolCallDetails.forEach((tc, i) => {
       const prefix = toolCallDetails.length > 1 ? `Tool ${i + 1}` : 'Tool';
-      const args = tc.arguments ? ` ${tc.arguments}` : '';
+      const args = tc.arguments ? ` ${typeof tc.arguments === "object" ? JSON.stringify(tc.arguments) : tc.arguments}` : '';
       rows.push({ label: prefix, value: `${tc.tool}(${args.trim()})` });
     });
   } else if (toolCalls > 0) {
@@ -1651,7 +1651,7 @@ function AgentResponseFooter({
                   {row.label}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
-                  {row.value}
+                  {typeof row.value === "object" && row.value !== null ? JSON.stringify(row.value) : row.value}
                 </span>
               </div>
             ))}
@@ -1707,8 +1707,8 @@ function InteractTab({ agentId, agentStatus }: { agentId: string; agentStatus: s
         if (!base._toolCallDetails && m.tool_calls && m.tool_calls.length > 0) {
           base._toolCallDetails = m.tool_calls.map((tc, i) => ({
             id: `${m.id}-tc-${i}`,
-            tool: tc.tool,
-            arguments: tc.arguments || '',
+            tool: typeof tc.tool === 'object' && tc.tool !== null ? JSON.stringify(tc.tool) : tc.tool,
+            arguments: typeof tc.arguments === 'object' && tc.arguments !== null ? JSON.stringify(tc.arguments) : (tc.arguments || ''),
             status: tc.success === false ? 'error' : 'success',
             result: tc.result,
             latency: tc.latency,

@@ -65,7 +65,7 @@ export function ToolCallCard({ toolCall }: Props) {
         <span
           style={{ color: 'var(--color-text)', fontWeight: 500, flexShrink: 0 }}
         >
-          {toolCall.tool}
+          {typeof toolCall.tool === 'object' && toolCall.tool !== null ? JSON.stringify(toolCall.tool) : toolCall.tool}
         </span>
         {preview && !expanded && (
           <span
