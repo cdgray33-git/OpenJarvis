@@ -434,6 +434,20 @@ def serve(
                     db_path=config.memory.db_path,
                 )
                 console.print("  Memory:    [cyan]active[/cyan]")
+                # Backfill: the chat agent's tools were built above (before
+                # memory_backend existed), so retrieval/memory_* tools have
+                # _backend=None. Inject the live backend into them now.
+                try:
+                    _agent_tools = getattr(agent, "_tools", None) or []
+                    _wired = 0
+                    for _t in _agent_tools:
+                        _tname = getattr(getattr(_t, "spec", None), "name", "")
+                        if (_tname == "retrieval" or _tname.startswith("memory_")) and hasattr(_t, "_backend"):
+                            _t._backend = memory_backend
+                            _wired += 1
+                    print(f"[DEBUG] wired memory_backend into {_wired} agent tool(s)", flush=True)
+                except Exception as _exc:
+                    logger.debug("Agent tool backend injection failed: %s", _exc)
         except Exception as exc:
             logger.debug("Memory backend init failed: %s", exc)
 

@@ -1,4 +1,4 @@
-﻿"""FastAPI routes for the Agent Manager."""
+"""FastAPI routes for the Agent Manager."""
 
 from __future__ import annotations
 
@@ -76,17 +76,18 @@ class _LightweightSystem:
     """Minimal system facade for the executor â€” avoids rebuilding the
     full JarvisSystem (which picks a random model from Ollama)."""
 
-    def __init__(self, engine: Any, model: str, config: Any = None):
+    def __init__(self, engine: Any, model: str, config: Any = None, memory_backend: Any = None):
         self.engine = engine
         self.model = model
         self.config = config
-        self.memory_backend = None
+        self.memory_backend = memory_backend
 
 
 def _make_lightweight_system(
     engine: Any,
     model: str,
     config: Any = None,
+    memory_backend: Any = None,
 ) -> _LightweightSystem:
     """Build a minimal system with a plain OllamaEngine.
 
@@ -120,10 +121,10 @@ def _make_lightweight_system(
             )
         except Exception:
             pass  # telemetry is optional
-        return _LightweightSystem(plain_engine, model, cfg)
+        return _LightweightSystem(plain_engine, model, cfg, memory_backend)
     except Exception:
         pass
-    return _LightweightSystem(engine, model, config)
+    return _LightweightSystem(engine, model, config, memory_backend)
 
 
 def _parse_param_count(model_name: str) -> float:
@@ -1429,10 +1430,12 @@ def create_agent_manager_router(
                     event_bus=get_event_bus(),
                     trace_store=_ts,
                 )
+                _srv_mem = getattr(request.app.state, "memory_backend", None)
                 system = _make_lightweight_system(
                     server_engine,
                     server_model,
                     server_config,
+                    _srv_mem,
                 )
                 executor.set_system(system)
                 # The route handler above already called start_tick() to
@@ -1784,10 +1787,12 @@ def create_agent_manager_router(
                         event_bus=get_event_bus(),
                         trace_store=_ts2,
                     )
+                    _srv_mem = getattr(request.app.state, "memory_backend", None)
                     system = _make_lightweight_system(
                         _srv_engine,
                         _srv_model,
                         _srv_config,
+                        _srv_mem,
                     )
                     executor.set_system(system)
                     logger.info(
