@@ -28,7 +28,7 @@ function previewArgs(raw: string | object): string {
   } catch {
     /* fall through */
   }
-  return rawStr.length > 60 ? `${rawStr.slice(0, 60)}Ã¢â‚¬Â¦` : raw;
+  return rawStr.length > 60 ? `${rawStr.slice(0, 60)}...` : rawStr;
 }
 
 export function ToolCallCard({ toolCall }: Props) {
@@ -149,7 +149,7 @@ export function ToolCallCard({ toolCall }: Props) {
                   wordBreak: 'break-word',
                 }}
               >
-                {toolCall.result}
+                {typeof toolCall.result === "object" ? formatJson(toolCall.result) : toolCall.result}
               </pre>
             </div>
           )}
@@ -162,6 +162,6 @@ export function ToolCallCard({ toolCall }: Props) {
 function formatJson(raw: string | object): string {
   const str = typeof raw === "object" ? JSON.stringify(raw) : raw; try { return JSON.stringify(JSON.parse(str), null, 2);
   } catch {
-    return raw;
+    return str;
   }
 }
