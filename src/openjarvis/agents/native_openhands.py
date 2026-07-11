@@ -213,6 +213,77 @@ class NativeOpenHandsAgent(ToolUsingAgent):
                 return (tool_name, _json.dumps(params))
             return (tool_name, "{}")
 
+        # Format 3: bare JSON tool call {"name": "...", "arguments": {...}}
+        # Some Ollama models (notably qwen2.5-coder) emit tool calls as JSON
+        # in content instead of the structured tool_calls field. Catch it here
+        # so the call executes instead of leaking raw JSON into the chat.
+        json_call = self._extract_json_tool_call(text)
+        if json_call is not None:
+            return json_call
+
+        return None
+
+    def _extract_json_tool_call(self, text):
+        """Extract a bare JSON tool call: {"name": "...", "arguments": {...}}.
+
+        Fires only on a real tool-call shape (a string ``name``/``tool`` plus an
+        ``arguments``/``parameters``/``input`` key), so ordinary JSON in a normal
+        answer is left untouched. Scans for the first balanced, string-aware
+        JSON object in the text.
+        """
+        known = set()
+        for _t in (self._tools or []):
+            _n = getattr(_t, "name", None) or getattr(_t, "tool_id", None)
+            if _n:
+                known.add(str(_n))
+        start = text.find("{")
+        while start != -1:
+            depth = 0
+            in_str = False
+            esc = False
+            for j in range(start, len(text)):
+                ch = text[j]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == chr(92):  # backslash
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start:j + 1]
+                        try:
+                            obj = _json.loads(candidate)
+                        except Exception:
+                            obj = None
+                        if isinstance(obj, dict):
+                            name = obj.get("name") or obj.get("tool")
+                            has_args = (
+                                "arguments" in obj
+                                or "parameters" in obj
+                                or "input" in obj
+                            )
+                            if isinstance(name, str) and name and (has_args or name in known):
+                                if "arguments" in obj:
+                                    args = obj.get("arguments")
+                                elif "parameters" in obj:
+                                    args = obj.get("parameters")
+                                else:
+                                    args = obj.get("input", {})
+                                if isinstance(args, str):
+                                    args_json = args
+                                else:
+                                    args_json = _json.dumps(args or {})
+                                return (name, args_json)
+                        break
+            start = text.find("{", start + 1)
         return None
 
     def run(
