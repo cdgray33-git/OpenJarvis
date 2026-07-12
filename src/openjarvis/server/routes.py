@@ -143,6 +143,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         # bridge runs agent.run() synchronously and word-splits the result,
         # so it can't stream tokens in real-time).  For plain chat, stream
         # directly from the engine for true token-by-token output.
+        # CLOUD_BYPASS_AGENT: the agent path builds a plain OllamaEngine and has
+        # no provider awareness, so a cloud model string (e.g. "openrouter/...")
+        # gets POSTed to Ollama and 404s. Send cloud models down _handle_stream,
+        # which does check is_cloud_model() and dispatches to cloud_router.
+        from openjarvis.server.cloud_router import is_cloud_model as _is_cloud
+        if _is_cloud(model):
+            logging.getLogger("openjarvis.server").info(
+                "Cloud model %s - bypassing agent path (no tools)", model
+            )
+            return await _handle_stream(engine, model, request_body, complexity_info)
         if agent is not None and bus is not None and (request_body.tools or request_body.agent):
             return await _handle_agent_stream(agent, bus, model, request_body)
         return await _handle_stream(engine, model, request_body, complexity_info)
