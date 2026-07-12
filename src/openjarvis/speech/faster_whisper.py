@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 from typing import List, Optional
 
@@ -58,16 +59,30 @@ class FasterWhisperBackend(SpeechBackend):
 
         # Write audio to a temp file (faster-whisper needs a file path)
         suffix = f".{format}" if not format.startswith(".") else format
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
+        # WINDOWS FIX: NamedTemporaryFile holds an exclusive lock on Windows,
+        # so WhisperModel cannot re-open tmp.name. Close first, delete in finally.
+        tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        tmp_path = tmp.name
+        try:
             tmp.write(audio)
             tmp.flush()
+            tmp.close()
 
             kwargs = {}
             if language:
                 kwargs["language"] = language
 
-            segments_iter, info = model.transcribe(tmp.name, **kwargs)
+            segments_iter, info = model.transcribe(tmp_path, **kwargs)
             segments_list = list(segments_iter)
+        finally:
+            try:
+                tmp.close()
+            except Exception:
+                pass
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
         # Build result
         text = "".join(seg.text for seg in segments_list).strip()
