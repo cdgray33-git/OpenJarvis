@@ -1,4 +1,4 @@
-﻿"""Speech router Ã¢â‚¬â€ STT and TTS endpoints for OpenJarvis."""
+"""Speech router ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â STT and TTS endpoints for OpenJarvis."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import Response
 from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,30 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
 
     audio_bytes = await file.read()
     filename = file.filename or "audio.wav"
+
+    # TEMP DIAGNOSTIC: dump every uploaded clip so we can inspect it
+    try:
+        import os as _os, time as _time
+        _dbg = _os.path.join(_os.environ.get("LOCALAPPDATA", "."), "OpenJarvis", "audio_debug")
+        _os.makedirs(_dbg, exist_ok=True)
+        _p = _os.path.join(_dbg, "mic_%d_%s" % (int(_time.time()), filename))
+        with open(_p, "wb") as _fh:
+            _fh.write(audio_bytes)
+        logger.warning("MIC CAPTURE: %d bytes -> %s", len(audio_bytes), _p)
+    except Exception as _e:
+        logger.warning("mic capture dump failed: %s", _e)
+
+    # TEMP DIAGNOSTIC: dump every uploaded clip so we can inspect it
+    try:
+        import os as _os, time as _time
+        _dbg = _os.path.join(_os.environ.get("LOCALAPPDATA", "."), "OpenJarvis", "audio_debug")
+        _os.makedirs(_dbg, exist_ok=True)
+        _p = _os.path.join(_dbg, "mic_%d_%s" % (int(_time.time()), filename))
+        with open(_p, "wb") as _fh:
+            _fh.write(audio_bytes)
+        logger.warning("MIC CAPTURE: %d bytes -> %s", len(audio_bytes), _p)
+    except Exception as _e:
+        logger.warning("mic capture dump failed: %s", _e)
     fmt = filename.rsplit(".", 1)[-1].lower() if "." in filename else "wav"
 
     try:
@@ -39,28 +64,61 @@ async def transcribe(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# --- Remote TTS Backend (Kokoro on R730xd) ---
+# --- Remote TTS Backend (Kokoro on R630 / Tesla P4) ---
 KOKORO_SERVER = "http://172.16.33.201:8880"
 
 @speech_router.post("/synthesize")
 async def synthesize(request: Request, body: SynthesizeRequest):
+    """Forward Kokoro audio to the client as it arrives."""
     import httpx, time
+
     t0 = time.time()
     char_count = len(body.text)
     logger.warning("TTS START: %d chars, voice=%s", char_count, body.voice_id)
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                KOKORO_SERVER + "/synthesize-stream",
-                json={"text": body.text, "voice": body.voice_id, "speed": body.speed},
+
+    async def _pump():
+        first = True
+        total = 0
+        try:
+            timeout = httpx.Timeout(60.0, connect=5.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST",
+                    KOKORO_SERVER + "/synthesize-stream",
+                    json={
+                        "text": body.text,
+                        "voice": body.voice_id,
+                        "speed": body.speed,
+                    },
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes():
+                        if not chunk:
+                            continue
+                        if first:
+                            logger.warning(
+                                "TTS TTFB: %.3fs (%d chars)",
+                                time.time() - t0,
+                                char_count,
+                            )
+                            first = False
+                        total += len(chunk)
+                        yield chunk
+            logger.warning(
+                "TTS DONE: %.3fs, %d bytes, %d chars",
+                time.time() - t0,
+                total,
+                char_count,
             )
-            resp.raise_for_status()
-        elapsed = time.time() - t0
-        logger.warning("TTS DONE: %.2fs for %d chars", elapsed, char_count)
-        return Response(content=resp.content, media_type="audio/wav")
-    except Exception as exc:
-        logger.error("Synthesis failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.error("Synthesis failed: %s", exc)
+            raise
+
+    return StreamingResponse(
+        _pump(),
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 @speech_router.get("/health")
 async def speech_health(request: Request):
@@ -68,7 +126,7 @@ async def speech_health(request: Request):
     backend = getattr(request.app.state, "speech_backend", None)
     stt_ok = backend is not None and backend.health()
 
-    tts_ok = True  # Remote Kokoro service on R730xd
+    tts_ok = True  # Remote Kokoro service on R630 (P4)
 
     return {
         "available": stt_ok and tts_ok,
@@ -78,4 +136,3 @@ async def speech_health(request: Request):
         "tts_backend": "kokoro",
         "voice": "am_adam",
     }
-
