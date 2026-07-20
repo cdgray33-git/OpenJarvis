@@ -12,6 +12,11 @@ from openjarvis.core.registry import MemoryRegistry
 from openjarvis.tools.storage._stubs import MemoryBackend, RetrievalResult
 
 
+def _fts_sanitize(query: str) -> str:
+    """Replace FTS5 syntax chars with spaces (unicode61 splits on them anyway)."""
+    return "".join(c if (c.isalnum() or c == "_") else " " for c in query).strip()
+
+
 def _check_fts5(conn: sqlite3.Connection) -> bool:
     """Return True if the SQLite build includes FTS5."""
     try:
@@ -94,10 +99,14 @@ class SQLiteMemory(MemoryBackend):
         if not query.strip():
             return []
 
+        _fts_q = _fts_sanitize(query)
+        if not _fts_q:
+            return []
+
         from openjarvis._rust_bridge import retrieval_results_from_json
 
         results = retrieval_results_from_json(
-            self._rust_impl.retrieve(query, top_k),
+            self._rust_impl.retrieve(_fts_q, top_k),
         )
         bus = get_event_bus()
         bus.publish(
