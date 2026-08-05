@@ -15,7 +15,7 @@ frontend/dist/
 frontend/src-tauri/target/
 
 # session diagnostics + scratch
-tools/
+/tools/
 *.bak
 *.bak-*
 *.bak2_*
@@ -62,5 +62,5 @@ memdb_*.json
 frontend/tsconfig.tsbuildinfo
 frontend/src-tauri/gen/
 frontend/src-tauri/tauri.conf.json.backup1
-src/openjarvis/traces/
+src/openjarvis/traces/Engineering_Wiki/
 src/openjarvis/server/static/
