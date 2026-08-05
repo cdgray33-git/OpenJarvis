@@ -594,73 +594,77 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             return;
         }
 
-        let target_path = std::path::PathBuf::from(home_dir()).join("OpenJarvis");
-        let clone_target = target_path.display().to_string();
+    let target_path = std::path::PathBuf::from(home_dir()).join("OpenJarvis");
+    let clone_target = target_path.display().to_string();
 
-        // If the directory exists but is not a valid project, don't overwrite
-        if target_path.exists() && !target_path.join("pyproject.toml").exists() {
-            let mut s = status.lock().await;
-            s.error = Some(format!(
-                "{} exists but is not a valid OpenJarvis project. \
-                 Remove it and relaunch, or set OPENJARVIS_ROOT to the correct path.",
-                clone_target,
-            ));
-            return;
-        }
+    /* 
+    // ONE-CLICK CONSUMER DEPLOY PATCH - DISABLED LOCAL DOWNLOAD LOOP
+    if target_path.exists() && !target_path.join("pyproject.toml").exists() {
+        let mut s = status.lock().await;
+        s.error = Some(format!(
+            "{} exists but is not a valid OpenJarvis project. \
+            Remove it and relaunch, or set OPENJARVIS_ROOT to the correct path.",
+            clone_target,
+        ));
+        return;
+    }
+    {
+        let mut s = status.lock().await;
+        s.detail = "Downloading OpenJarvis (first launch)...".into();
+    }
+    let clone_result = tokio::process::Command::new(&git_bin)
+        .args([
+            "clone",
+            "--depth",
+            "1",
+            "https://github.com/open-jarvis/OpenJarvis.git",
+            &clone_target,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
 
-        {
-            let mut s = status.lock().await;
-            s.detail = "Downloading OpenJarvis (first launch)...".into();
-        }
-
-        let clone_result = tokio::process::Command::new(&git_bin)
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                "https://github.com/open-jarvis/OpenJarvis.git",
-                &clone_target,
-            ])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-
-        match clone_result {
-            Ok(child) => match child.wait_with_output().await {
-                Ok(output) if output.status.success() => {
-                    project_root = Some(target_path);
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let mut s = status.lock().await;
-                    s.error = Some(format!(
-                        "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
-                        stderr.trim(),
-                        clone_target,
-                    ));
-                    return;
-                }
-                Err(e) => {
-                    let mut s = status.lock().await;
-                    s.error = Some(format!(
-                        "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
-                        e, clone_target,
-                    ));
-                    return;
-                }
-            },
-            Err(e) => {
+    match clone_result {
+        Ok(child) => match child.wait_with_output().await {
+            Ok(output) if output.status.success() => {
+                project_root = Some(target_path);
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
                 let mut s = status.lock().await;
                 s.error = Some(format!(
-                    "Could not run git: {}. \
-                     Install git from https://git-scm.com then relaunch.",
-                    e,
+                    "Failed to download OpenJarvis: {}. \
+                    Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                    stderr.trim(),
+                    clone_target,
                 ));
                 return;
             }
+            Err(e) => {
+                let mut s = status.lock().await;
+                s.error = Some(format!(
+                    "Failed to download OpenJarvis: {}. \
+                    Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                    e,
+                    clone_target,
+                ));
+                return;
+            }
+        },
+        Err(e) => {
+            let mut s = status.lock().await;
+            s.error = Some(format!(
+                "Could not run git: {}. \
+                Install git from https://git-scm.com then relaunch.",
+                e,
+            ));
+            return;
         }
+    }
+    */
+
+    // Manually route project root to your populated directory space
+    project_root = Some(target_path);
     }
 
     // Kill any leftover server on our port from a previous run
@@ -675,7 +679,6 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             .await
             .is_ok()
         {
-            // Something is already listening - try to kill it
             #[cfg(unix)]
             {
                 let _ = tokio::process::Command::new("fuser")
@@ -686,7 +689,6 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             }
             #[cfg(target_os = "windows")]
             {
-                // Find the PID holding the port via netstat, then kill it
                 if let Ok(output) = tokio::process::Command::new("cmd")
                     .args(["/C", &format!(
                         "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{port} ^| findstr LISTENING') do taskkill /PID %a /F",
@@ -695,13 +697,12 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     .output()
                     .await
                 {
-                    let _ = output; // best-effort
+                    let _ = output;
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         }
     }
-
     // Use configured model in remote mode, otherwise auto-detect
     let startup_model = if is_remote_ollama() {
         STARTUP_MODEL

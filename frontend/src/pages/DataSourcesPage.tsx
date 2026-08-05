@@ -102,7 +102,7 @@ function InlineConnectForm({
 // Upload / Paste form
 // ---------------------------------------------------------------------------
 
-const ACCEPTED_EXTENSIONS = '.txt,.md,.pdf,.docx,.csv';
+const ACCEPTED_EXTENSIONS = '.txt,.md,.pdf,.docx,.csv,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.mp4,.webm,.mov,.mkv,.avi';
 
 function UploadForm({ onDone }: { onDone?: () => void }) {
   const [tab, setTab] = useState<'paste' | 'upload'>('paste');

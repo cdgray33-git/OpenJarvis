@@ -1,521 +1,425 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Square, Paperclip } from 'lucide-react';
-import { useRef as useFileRef } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAppStore, generateId } from '../../lib/store';
-import { streamChat } from '../../lib/sse';
-import { fetchSavings, getBase } from '../../lib/api';
-import { MicButton } from './MicButton';
-import { useSpeech } from '../../hooks/useSpeech';
-import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
+// frontend/src/components/Chat/InputArea.tsx
+// Updated to use useSpeechStream hook for WebSocket streaming STT
 
-export function InputArea() {
-  const [input, setInput] = useState('');
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useSpeechStream, TranscriptCallback } from "@/hooks/useSpeechStream";
+import { useAppStore } from "@/lib/store";
+import { uploadChatFiles, getBase } from "@/lib/api";
+import { Mic, MicOff, Send, X, Loader2, Paperclip, ChevronUp, ChevronDown } from "lucide-react";
+
+interface InputAreaProps {
+  onSendMessage: (text: string, attachments?: { name: string; size: number; type: string }[]) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}
+
+const CHAT_ACCEPTED_EXTENSIONS = '.txt,.md,.pdf,.docx,.csv,.zip,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.mp4,.webm,.mov,.mkv,.avi';
+
+interface AttachedFile {
+  name: string;
+  size: number;
+  type: string;
+  preview?: string;
+  file?: File;
+}
+
+export function InputArea({ onSendMessage, disabled = false, placeholder = "Type a message..." }: InputAreaProps) {
+  const [text, setText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [transcriptPreview, setTranscriptPreview] = useState("");
+  const [status, setStatus] = useState<"idle" | "connecting" | "streaming" | "open" | "closed" | "error">("idle");
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [showAttachments, setShowAttachments] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const activeId = useAppStore((s) => s.activeId);
-  const selectedModel = useAppStore((s) => s.selectedModel);
-  const streamState = useAppStore((s) => s.streamState);
-  const messages = useAppStore((s) => s.messages);
-  const speechEnabled = useAppStore((s) => s.settings.speechEnabled);
-  const maxTokens = useAppStore((s) => s.settings.maxTokens);
-  const temperature = useAppStore((s) => s.settings.temperature);
-  const createConversation = useAppStore((s) => s.createConversation);
-  const addMessage = useAppStore((s) => s.addMessage);
-  const updateLastAssistant = useAppStore((s) => s.updateLastAssistant);
-  const setStreamState = useAppStore((s) => s.setStreamState);
-  const resetStream = useAppStore((s) => s.resetStream);
-  const managedAgents = useAppStore((s) => s.managedAgents);
-  const setManagedAgents = useAppStore((s) => s.setManagedAgents);
+  const attachmentsRef = useRef<HTMLDivElement>(null);
+  const [agents, setAgents] = useState<{ key: string; class: string; accepts_tools: boolean }[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string>('');
   const setSelectedAgentId = useAppStore((s) => s.setSelectedAgentId);
 
-  const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+  const { addMessage } = useAppStore();
 
-  // Fetch agents on mount
-  useEffect(() => {
-    fetch(`${getBase()}/v1/agents`)
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setManagedAgents(data.registered || []))
-      .catch(() => {});
-  }, [setManagedAgents]);
-
-  // Sync local selectedAgent with store
-  useEffect(() => {
-    setSelectedAgentId(selectedAgent);
-  }, [selectedAgent, setSelectedAgentId]);
-
-  // Abort in-flight stream when the user switches models mid-generation.
-  // This prevents errors from trying to continue a stream with a stale model.
-  const prevModelRef = useRef(selectedModel);
-  useEffect(() => {
-    if (prevModelRef.current !== selectedModel && streamState.isStreaming) {
-      abortRef.current?.abort();
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      resetStream();
-      abortRef.current = null;
+  const handleTranscript: TranscriptCallback = useCallback((text, ttfb, total) => {
+    if (text.trim()) {
+      setTranscriptPreview(text);
+      previewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-    prevModelRef.current = selectedModel;
-  }, [selectedModel, streamState.isStreaming, resetStream]);
+  }, []);
 
-  const micDisabled = !speechEnabled || !speechAvailable || streamState.isStreaming;
-  const micReason: 'not-enabled' | 'no-backend' | 'streaming' | undefined =
-    !speechEnabled ? 'not-enabled'
-    : !speechAvailable ? 'no-backend'
-    : streamState.isStreaming ? 'streaming'
-    : undefined;
-
-  const handleMicClick = useCallback(async () => {
-    if (speechState === 'recording') {
-      try {
-        const text = await stopRecording();
-        if (text) {
-          setInput((prev) => (prev ? prev + ' ' + text : text));
-        }
-      } catch {
-        // Error is captured in useSpeech
+  const handleStatusChange = useCallback((s: "connecting" | "open" | "streaming" | "closed" | "error") => {
+    setStatus(s);
+    setIsStreaming(s === "open" || s === "streaming");
+    if (s === "closed" || s === "error") {
+      if (transcriptPreview.trim()) {
+        onSendMessage(transcriptPreview.trim());
+        setTranscriptPreview("");
       }
+    }
+  }, [onSendMessage, transcriptPreview]);
+
+  const handleError = useCallback((err: Error) => {
+    console.error("[InputArea] Speech stream error:", err);
+    setStatus("error");
+    setTimeout(() => setStatus("idle"), 3000);
+  }, []);
+
+  const { connect, disconnect, bargeIn } = useSpeechStream({
+    onTranscript: handleTranscript,
+    onStatusChange: handleStatusChange,
+    onError: handleError,
+  });
+
+  const handleMicClick = useCallback(() => {
+    if (isStreaming || status === "connecting") {
+      disconnect();
     } else {
-      await startRecording();
+      connect();
     }
-  }, [speechState, startRecording, stopRecording]);
+  }, [isStreaming, status, connect, disconnect]);
 
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-  }, [input]);
-
-  const stopStreaming = useCallback(() => {
-    abortRef.current?.abort();
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  const handleFiles = useCallback(async (files: FileList) => {
+    const newFiles: AttachedFile[] = []
+    for (const file of Array.from(files)) {
+      if (file.size > 50 * 1024 * 1024) {
+        alert(`File ${file.name} is too large (max 50MB)`)
+        continue
+      }
+      let preview: string | undefined
+      if (file.type.startsWith('image/')) {
+        preview = await new Promise((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file)
+        })
+      }
+      newFiles.push({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        preview,
+        file,
+      })
     }
-    resetStream();
-  }, [resetStream]);
+    setAttachedFiles((prev) => [...prev, ...newFiles])
+    setShowAttachments(true)
+  }, [])
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
-    if (!content || streamState.isStreaming) return;
+  const removeFile = useCallback((index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index))
+  }, [])
 
-    setInput('');
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(true)
+  }, [])
 
-    let convId = activeId;
-    if (!convId) {
-      convId = createConversation(selectedModel);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+    if (e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files)
     }
+  }, [handleFiles])
 
-    const userMsg: ChatMessage = {
-      id: generateId(),
-      role: 'user',
-      content,
-      timestamp: Date.now(),
-    };
-    addMessage(convId, userMsg);
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFiles(e.target.files)
+      e.target.value = ''
+    }
+  }, [handleFiles])
 
-    // Build API messages before adding assistant placeholder
-    const currentMessages = useAppStore.getState().messages;
-    const apiMessages = currentMessages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const assistantMsg: ChatMessage = {
-      id: generateId(),
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-    addMessage(convId, assistantMsg);
-
-    // Start streaming
-    const startTime = Date.now();
-    const timer = setInterval(() => {
-      setStreamState({ elapsedMs: Date.now() - startTime });
-    }, 100);
-    timerRef.current = timer;
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    let accumulatedContent = '';
-    let usage: TokenUsage | undefined;
-    let complexity: { score: number; tier: string; suggested_max_tokens: number } | undefined;
-    const toolCalls: ToolCallInfo[] = [];
-    let lastFlush = 0;
-    let ttftMs: number | undefined;
-
-    setStreamState({
-      isStreaming: true,
-      phase: 'Generating...',
-      elapsedMs: 0,
-      activeToolCalls: [],
-      content: '',
-    });
-    useAppStore.getState().addLogEntry({
-      timestamp: Date.now(),
-      level: 'info',
-      category: 'chat',
-      message: `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`,
-    });
-
-    try {
-      for await (const sseEvent of streamChat(
-        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens, agent: selectedAgent || undefined },
-        controller.signal,
-      )) {
-        const eventName = sseEvent.event;
-
-        if (eventName === 'agent_turn_start') {
-          setStreamState({ phase: 'Agent thinking...' });
-        } else if (eventName === 'inference_start') {
-          setStreamState({ phase: 'Generating...' });
-          useAppStore.getState().addLogEntry({
-            timestamp: Date.now(), level: 'info', category: 'chat',
-            message: `Generating with ${selectedModel}...`,
-          });
-        } else if (eventName === 'tool_call_start') {
-          try {
-            const data = JSON.parse(sseEvent.data);
-            const tc: ToolCallInfo = {
-              id: generateId(),
-              tool: data.tool,
-              arguments: data.arguments || '',
-              status: 'running',
-            };
-            toolCalls.push(tc);
-            setStreamState({
-              phase: `Calling ${data.tool}...`,
-              activeToolCalls: [...toolCalls],
-            });
-            updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
-            useAppStore.getState().addLogEntry({
-              timestamp: Date.now(), level: 'info', category: 'tool',
-              message: `Calling ${data.tool}(${data.arguments || ''})`,
-            });
-          } catch {}
-        } else if (eventName === 'tool_call_end') {
-          try {
-            const data = JSON.parse(sseEvent.data);
-            const tc = toolCalls.find(
-              (t) => t.tool === data.tool && t.status === 'running',
-            );
-            if (tc) {
-              tc.status = data.success ? 'success' : 'error';
-              tc.latency = data.latency;
-              tc.result = data.result;
-            }
-            setStreamState({
-              phase: 'Generating...',
-              activeToolCalls: [...toolCalls],
-            });
-            updateLastAssistant(convId, accumulatedContent, [...toolCalls]);
-          } catch {}
-        } else {
-          try {
-            const data = JSON.parse(sseEvent.data);
-            const delta = data.choices?.[0]?.delta;
-            if (data.usage) usage = data.usage;
-            if (data.complexity) complexity = data.complexity;
-            if (delta?.content) {
-              if (!ttftMs) ttftMs = Date.now() - startTime;
-              accumulatedContent += delta.content;
-              setStreamState({ content: accumulatedContent, phase: '' });
-
-              const now = Date.now();
-              if (now - lastFlush >= 80) {
-                updateLastAssistant(
-                  convId,
-                  accumulatedContent,
-                  toolCalls.length > 0 ? [...toolCalls] : undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  false,
-                );
-                lastFlush = now;
-              }
-            }
-            if (data.choices?.[0]?.finish_reason === 'stop') break;
-          } catch {}
+  const sendWithAttachments = useCallback(async () => {
+    const msg = text.trim() || transcriptPreview.trim()
+    if (!msg && attachedFiles.length === 0) return
+    
+    if (attachedFiles.length > 0) {
+      const filesToUpload = attachedFiles.map(f => f.file).filter((f): f is File => !!f)
+      if (filesToUpload.length > 0) {
+        try {
+          await uploadChatFiles(filesToUpload)
+        } catch (e) {
+          console.error('File upload error:', e)
         }
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // User cancelled or model switch
-        if (!accumulatedContent) accumulatedContent = '(Generation stopped)';
-      } else {
-        const errMsg = err?.message || String(err);
-        accumulatedContent =
-          accumulatedContent || `Error: ${errMsg}`;
-        useAppStore.getState().addLogEntry({
-          timestamp: Date.now(), level: 'error', category: 'chat',
-          message: `Stream error: ${errMsg}`,
-        });
-      }
-    } finally {
-      if (!accumulatedContent) {
-        accumulatedContent = 'No response was generated. Please try again.';
-      }
-      const totalMs = Date.now() - startTime;
-      const telemetry: MessageTelemetry = {
-        engine: 'mcp',
-        model_id: selectedModel,
-        total_ms: totalMs,
-        ttft_ms: ttftMs,
-        tokens_per_sec: usage?.completion_tokens
-          ? usage.completion_tokens / (totalMs / 1000)
-          : undefined,
-        complexity_score: complexity?.score,
-        complexity_tier: complexity?.tier,
-        suggested_max_tokens: complexity?.suggested_max_tokens,
-      };
-      // Check if the response has digest audio available
-      let audioMeta: { url: string } | undefined;
-      try {
-        const digestRes = await fetch(`${getBase()}/api/digest`);
-        if (digestRes.ok) {
-          const digest = await digestRes.json();
-          if (digest.audio_available) {
-            audioMeta = { url: `${getBase()}/api/digest/audio` };
-          }
-        }
-      } catch {
-        // Not a digest response or server unavailable
-      }
-
-      updateLastAssistant(
-        convId,
-        accumulatedContent,
-        toolCalls.length > 0 ? toolCalls : undefined,
-        usage,
-        telemetry,
-        audioMeta,
-      );
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      resetStream();
-      useAppStore.getState().addLogEntry({
-        timestamp: Date.now(), level: 'info', category: 'chat',
-        message: `Response: ${accumulatedContent.length} chars`,
-      });
-      abortRef.current = null;
-
-      fetchSavings()
-        .then((data) => useAppStore.getState().setSavings(data))
-        .catch(() => {});
     }
-  }, [
-    input,
-    activeId,
-    selectedModel,
-    streamState.isStreaming,
-    createConversation,
-    addMessage,
-    updateLastAssistant,
-    setStreamState,
-    resetStream,
-  ]);
+    
+    const attachmentMeta = attachedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+    onSendMessage(msg, attachmentMeta.length > 0 ? attachmentMeta : undefined)
+    setText('')
+    setTranscriptPreview('')
+    setAttachedFiles([])
+    setShowAttachments(false)
+    if (isStreaming) {
+      bargeIn()
+      disconnect()
+    }
+  }, [text, transcriptPreview, attachedFiles, onSendMessage, isStreaming, bargeIn, disconnect])
 
-  // Listen for option-button selections from numbered question UI
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const text = (e as CustomEvent<string>).detail;
-      if (!text || streamState.isStreaming) return;
-      setInput(text);
-      // Defer so React state flushes before sendMessage reads it
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('jarvis-send-now'));
-      }, 50);
-    };
-    window.addEventListener('jarvis-submit-text', handler);
-    return () => window.removeEventListener('jarvis-submit-text', handler);
-  }, [streamState.isStreaming]);
+  const handleSendClick = sendWithAttachments
 
-  // Fire sendMessage when jarvis-send-now arrives (after state flush)
-  useEffect(() => {
-    const handler = () => sendMessage();
-    window.addEventListener('jarvis-send-now', handler);
-    return () => window.removeEventListener('jarvis-send-now', handler);
-  }, [sendMessage]);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendClick();
+    }
+  }, [handleSendClick]);
 
-  // Auto-focus textarea on mount and after streaming completes
+  const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    if (isStreaming && e.target.value.trim()) {
+      bargeIn();
+      disconnect();
+    }
+  }, [isStreaming, bargeIn, disconnect]);
+
   useEffect(() => {
-    const t = setTimeout(() => textareaRef.current?.focus(), 1000);
-    return () => clearTimeout(t);
+    textareaRef.current?.focus();
   }, []);
 
   useEffect(() => {
-    if (!streamState.isStreaming) {
-      textareaRef.current?.focus();
+    const handleClickOutside = (e: MouseEvent) => {
+      if (attachmentsRef.current && !attachmentsRef.current.contains(e.target as Node)) {
+        setShowAttachments(false)
+      }
     }
-  }, [streamState.isStreaming]);
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+  useEffect(() => {
+    fetch(getBase() + '/v1/agents')
+      .then((r) => (r.ok ? r.json() : { registered: [] }))
+      .then((d) => setAgents(d.registered || []))
+      .catch(() => {});
+  }, [])
+
+  const micIcon = isStreaming ? (
+    <MicOff className="w-5 h-5 text-red-500" />
+  ) : (
+    <Mic className="w-5 h-5 text-gray-600 hover:text-blue-600" />
+  );
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  const getFileIcon = (type: string, preview?: string) => {
+    if (preview) return <img src={preview} alt="" className="w-5 h-5 rounded object-cover" />
+    if (type.startsWith('image/')) return <span className="text-xs text-gray-500">🖼</span>
+    if (type.startsWith('video/')) return <span className="text-xs text-gray-500">🎬</span>
+    if (type === 'application/zip' || type === 'application/x-zip-compressed') return <span className="text-xs text-gray-500">📦</span>
+    if (type === 'application/pdf') return <span className="text-xs text-gray-500">📄</span>
+    return <span className="text-xs text-gray-500">📎</span>
+  }
 
   return (
-    <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
-      <div
-        className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
-        style={{
-          background: 'var(--color-input-bg)',
-          border: '1px solid var(--color-input-border)',
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          accept=".pdf,.txt,.md,.csv,.docx"
-          onChange={async (e) => {
-            try {
-              const probeRes = await fetch("http://localhost:8010/health", { method: "POST" });
-              setInput((prev) => prev + " | DBG: POST/health status=" + probeRes.status);
-            } catch (probeErr) {
-              setInput((prev) => prev + " | DBG: POST/health FAILED " + (probeErr instanceof Error ? probeErr.message : String(probeErr)));
-            }
-            try {
-              const probeFormData = new FormData();
-              probeFormData.append("test", "value");
-              const probeRes2 = await fetch("http://localhost:8010/health", { method: "POST", body: probeFormData });
-              setInput((prev) => prev + " | DBG: POST-FormData/health status=" + probeRes2.status);
-            } catch (probeErr2) {
-              setInput((prev) => prev + " | DBG: POST-FormData/health FAILED " + (probeErr2 instanceof Error ? probeErr2.message : String(probeErr2)));
-            }
-            try {
-              const fdB = new FormData();
-              fdB.append("files", "just a text string, not a file");
-              const resB = await fetch("http://localhost:8010/v1/connectors/upload/ingest/files", { method: "POST", body: fdB });
-              setInput((prev) => prev + " | DBG: textFormData/realRoute status=" + resB.status);
-            } catch (errB) {
-              setInput((prev) => prev + " | DBG: textFormData/realRoute FAILED " + (errB instanceof Error ? errB.message : String(errB)));
-            }
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (!file) { setInput((prev) => prev + " | DBG: NO FILE SELECTED"); return; }
-            setInput((prev) => prev + " | DBG: isFile=" + (file instanceof File) + " isBlob=" + (file instanceof Blob) + " name=" + file.name + " size=" + file.size + " type=" + file.type);
-            try {
-              const fdA = new FormData();
-              fdA.append("test", file);
-              const resA = await fetch("http://localhost:8010/health", { method: "POST", body: fdA });
-              setInput((prev) => prev + " | DBG: FormData+File/health status=" + resA.status);
-            } catch (errA) {
-              setInput((prev) => prev + " | DBG: FormData+File/health FAILED " + (errA instanceof Error ? errA.message : String(errA)));
-            }
-            const formData = new FormData();
-            formData.append("files", file);
-            setInput((prev) => prev + " | DBG: formData built, entries=" + Array.from(formData.keys()).join(","));
-            try {
-              setInput((prev) => prev + " | DBG: calling fetch now");
-              setInput((prev) => prev + (prev ? " " : "") + `[Uploading: ${file.name}...]`);
-              const res = await fetch("http://localhost:8010/v1/connectors/upload/ingest/files", {
-                method: "POST",
-                body: formData,
-              });
-                            setInput((prev) => prev + " | DBG: fetch returned status=" + res.status);
-              if (!res.ok) {
-                const errText = await res.text();
-                throw new Error(errText || `Upload failed (${res.status})`);
-              }
-              const result = await res.json();
-              setInput((prev) => prev + " | DBG: success chunks=" + result.chunks_added);
-              setInput((prev) =>
-                prev.replace(`[Uploading: ${file.name}...]`, `[Attached: ${file.name} - ${result.chunks_added} chunks ingested]`)
-              );
-            } catch (err) {
-              setInput((prev) => prev + " | DBG: CAUGHT name=" + (err instanceof Error ? err.name : "?") + " msg=" + (err instanceof Error ? err.message : String(err)));
-              console.error("File upload failed:", err);
-              setInput((prev) =>
-                prev.replace(`[Uploading: ${file.name}...]`, `[Attach failed: ${file.name} - ${err instanceof Error ? err.message : "unknown error"}]`)
-              );
-            }
-          }}
-        />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={streamState.isStreaming}
-          className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30"
-          style={{ color: "var(--color-text-tertiary)" }}
-          title="Attach file"
+    <div className="flex flex-col gap-2 p-4 border-t border-gray-200 bg-white">
+      {(isStreaming || transcriptPreview) && (
+        <div
+          ref={previewRef}
+          className={`px-3 py-2 rounded-lg border transition-all ${
+            isStreaming
+              ? "bg-blue-50 border-blue-200 text-blue-900"
+              : "bg-green-50 border-green-200 text-green-900"
+          }`}
         >
-          <Paperclip size={16} />
-        </button>
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Message OpenJarvis..."
-          rows={1}
-          className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
-          style={{ color: 'var(--color-text)', maxHeight: '200px' }}
-          disabled={streamState.isStreaming}
-        />
-        <Select value={selectedAgent || ''} onValueChange={setSelectedAgent} className="w-40 shrink-0" disabled={streamState.isStreaming}>
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="Agent" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">None (Chat)</SelectItem>
-            {managedAgents.map((a: { key: string; class: string }) => (
-              <SelectItem key={a.key} value={a.key}>{a.key}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {streamState.isStreaming ? (
-          <button
-            onClick={stopStreaming}
-            className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer"
-            style={{ background: 'var(--color-error)', color: 'var(--color-on-accent)' }}
-            title="Stop generating"
-          >
-            <Square size={16} />
-          </button>
-        ) : (
-          <div className="flex items-center gap-1">
-            <MicButton
-              state={speechState}
-              onClick={handleMicClick}
-              disabled={micDisabled}
-              reason={micReason}
-            />
+          <div className="flex items-center gap-2 text-sm">
+            <Loader2 className={`w-4 h-4 animate-spin ${isStreaming ? "text-blue-500" : "hidden"}`} />
+            <span className="font-medium">{isStreaming ? "Listening..." : "Ready to send"}</span>
+            {isStreaming && (
+              <span className="text-xs text-blue-600">(click mic to stop)</span>
+            )}
+          </div>
+          {transcriptPreview && (
+            <p className="mt-1 text-sm whitespace-pre-wrap">{transcriptPreview}</p>
+          )}
+        </div>
+      )}
+
+      {attachedFiles.length > 0 && showAttachments && (
+        <div
+          ref={attachmentsRef}
+          className="absolute bottom-full left-0 right-0 mb-2 p-2 rounded-lg border bg-white shadow-lg z-10 max-h-60 overflow-y-auto"
+          style={{ borderColor: 'var(--color-border)' }}
+        >
+          <div className="flex items-center justify-between mb-2 pb-2 border-b text-sm font-medium">
+            <span>Attachments ({attachedFiles.length})</span>
             <button
-              onClick={sendMessage}
-              disabled={!input.trim()}
-              className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
-              style={{
-                background: input.trim() ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                color: input.trim() ? 'white' : 'var(--color-text-tertiary)',
-              }}
-              title="Send message"
+              onClick={() => setShowAttachments(false)}
+              className="p-1 text-gray-400 hover:text-gray-600"
+              aria-label="Close attachments"
             >
-              <Send size={16} />
+              <X className="w-4 h-4" />
             </button>
           </div>
+          {attachedFiles.map((file, idx) => (
+            <div key={idx} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
+              {getFileIcon(file.type, file.preview)}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm truncate">{file.name}</p>
+                <p className="text-xs text-gray-400">{formatSize(file.size)}</p>
+              </div>
+              <button
+                onClick={() => removeFile(idx)}
+                className="p-1 text-gray-400 hover:text-red-500"
+                aria-label={`Remove ${file.name}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full mt-2 px-2 py-1.5 text-xs text-center text-blue-600 hover:bg-blue-50 rounded"
+          >
+            + Add more files
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2 relative">
+        <textarea
+          ref={textareaRef}
+          value={text}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled || isStreaming}
+          rows={1}
+          className={`
+            flex-1 px-4 py-2.5 rounded-lg border resize-none
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+            transition-colors
+            ${disabled || isStreaming ? "bg-gray-50 text-gray-500 cursor-not-allowed" : "bg-white"}
+            ${isStreaming ? "border-blue-200" : "border-gray-300"}
+            pr-12
+          `}
+          style={{ minHeight: "44px" }}
+        />
+
+        <div className="relative" ref={attachmentsRef}>
+          <button
+            onClick={() => {
+              if (attachedFiles.length > 0) {
+                setShowAttachments(!showAttachments)
+              } else {
+                fileInputRef.current?.click()
+              }
+            }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            disabled={disabled}
+            className={`
+              p-2.5 rounded-lg transition-colors flex-shrink-0
+              ${attachedFiles.length > 0
+                ? "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"}
+              ${disabled ? "opacity-50 cursor-not-allowed" : ""}
+              ${isDragOver ? "bg-blue-100 border-blue-400" : ""}
+            `}
+            title={attachedFiles.length > 0 ? `${attachedFiles.length} file(s) attached - click to manage` : "Attach files"}
+            aria-label={attachedFiles.length > 0 ? `${attachedFiles.length} file(s) attached` : "Attach files"}
+          >
+            <Paperclip className="w-5 h-5" />
+            {attachedFiles.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 text-xs font-medium bg-red-500 text-white rounded-full flex items-center justify-center">
+                {attachedFiles.length > 9 ? '9+' : attachedFiles.length}
+              </span>
+            )}
+            {showAttachments && <ChevronUp className="w-4 h-4 ml-1" />}
+            {!showAttachments && attachedFiles.length === 0 && <ChevronDown className="w-4 h-4 ml-1 opacity-50" />}
+          </button>
+          
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={CHAT_ACCEPTED_EXTENSIONS}
+            onChange={handleFileInputChange}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            aria-hidden="true"
+          />
+        </div>
+
+        <select
+          value={selectedAgent}
+          onChange={(e) => { setSelectedAgent(e.target.value); setSelectedAgentId(e.target.value || null); }}
+          disabled={disabled}
+          className='h-[44px] px-2 rounded-lg border border-gray-300 bg-white text-xs text-gray-700 flex-shrink-0 max-w-[150px]'
+          title='Agent'
+          aria-label='Select agent'
+        >
+          <option value=''>No agent (chat)</option>
+          {agents.map((a) => (
+            <option key={a.key} value={a.key}>{a.key}</option>
+          ))}
+        </select>
+
+        <button
+          onClick={handleMicClick}
+          disabled={disabled || status === "connecting"}
+          className={`
+            p-2.5 rounded-lg transition-colors flex-shrink-0
+            ${isStreaming
+              ? "bg-red-50 text-red-600 hover:bg-red-100"
+              : "bg-gray-100 text-gray-600 hover:bg-gray-200"}
+            ${disabled || status === "connecting" ? "opacity-50 cursor-not-allowed" : ""}
+          `}
+          title={isStreaming ? "Stop listening" : "Start voice input"}
+          aria-label={isStreaming ? "Stop voice input" : "Start voice input"}
+        >
+          {status === "connecting" ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            micIcon
+          )}
+        </button>
+
+        <button
+          onClick={handleSendClick}
+          disabled={disabled || (!text.trim() && !transcriptPreview.trim() && attachedFiles.length === 0)}
+          className={`
+            p-2.5 rounded-lg transition-colors flex-shrink-0
+            ${text.trim() || transcriptPreview.trim() || attachedFiles.length > 0
+              ? "bg-blue-600 text-white hover:bg-blue-700"
+              : "bg-gray-100 text-gray-400 cursor-not-allowed"}
+          `}
+          title="Send message"
+          aria-label="Send message"
+        >
+          <Send className="w-5 h-5" />
+        </button>
+
+        {(text.trim() || attachedFiles.length > 0) && (
+          <button
+            onClick={() => { setText(""); setAttachedFiles([]); setShowAttachments(false); }}
+            className="p-2.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+            title="Clear input"
+            aria-label="Clear input"
+          >
+            <X className="w-5 h-5" />
+          </button>
         )}
       </div>
-      <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
-        <span>
-          <kbd className="font-mono">Enter</kbd> to send &middot;{' '}
-          <kbd className="font-mono">Shift+Enter</kbd> for new line
-        </span>
-      </div>
+
+      {status === "error" && (
+        <div className="text-xs text-red-600 flex items-center gap-1">
+          <span>Speech recognition error — click mic to retry</span>
+        </div>
+      )}
     </div>
   );
 }

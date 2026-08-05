@@ -119,6 +119,7 @@ interface AppState {
   // Conversations
   conversations: Conversation[];
   activeId: string | null;
+  setActiveId: (id: string | null) => void;
   messages: ChatMessage[];
   streamState: StreamState;
 
@@ -131,15 +132,21 @@ interface AppState {
 
   // Settings
   settings: Settings;
+  updateSettings: (partial: Partial<Settings>) => void;
 
   // Command palette
   commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
 
   // Sidebar
   sidebarOpen: boolean;
+  toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
 
   // System panel
   systemPanelOpen: boolean;
+  toggleSystemPanel: () => void;
+  setSystemPanelOpen: (open: boolean) => void;
 
   // Opt-in sharing
   optInEnabled: boolean;
@@ -403,6 +410,13 @@ export const useAppStore = create<AppState>((set, get) => {
 
     resetStream: () => {
       set({ streamState: INITIAL_STREAM });
+    },
+    setActiveId: (id: string | null) => {
+      const store = loadConversations();
+      store.activeId = id;
+      saveConversations(store);
+      const conv = id ? store.conversations[id] : null;
+      set({ activeId: id, messages: conv ? conv.messages : [] });
     },
 
     // ──────────────────────────────────────────────────────────────────────

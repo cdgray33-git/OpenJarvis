@@ -70,6 +70,7 @@ export interface ChatMessage {
   usage?: TokenUsage;
   telemetry?: MessageTelemetry;
   audio?: { url: string };
+  attachments?: { name: string; size: number; type: string }[];
 }
 
 export interface Conversation {

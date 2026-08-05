@@ -1352,8 +1352,8 @@ class SpeechConfig:
     backend: str = "auto"  # "auto", "faster-whisper", "openai", "deepgram"
     model: str = "base"  # Whisper model size: tiny, base, small, medium, large-v3
     language: str = ""  # Empty = auto-detect
-    device: str = "auto"  # "auto", "cpu", "cuda"
-    compute_type: str = "float16"  # "float16", "int8", "float32"
+    device: str = "auto"  # "auto", "cpu", "cuda" - CTranslate2 resolves
+    compute_type: str = "auto"  # "auto" = fastest type the HARDWARE supports
 
 
 @dataclass(slots=True)

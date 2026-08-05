@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import logging
 import uuid
+import zipfile
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -20,7 +22,12 @@ router = APIRouter(prefix="/v1/connectors/upload", tags=["upload"])
 # Helpers
 # ---------------------------------------------------------------------------
 
-_ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx"}
+_ALLOWED_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".pdf", ".docx",
+    ".zip",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff",
+    ".mp4", ".webm", ".mov", ".mkv", ".avi",
+}
 
 
 def _chunk_text(text: str, max_chars: int = 1000) -> List[str]:
@@ -52,6 +59,67 @@ def _chunk_text(text: str, max_chars: int = 1000) -> List[str]:
         if chunk:
             final.append(chunk)
     return final
+
+
+def _extract_text_from_zip(data: bytes) -> list[tuple[str, bytes, str]]:
+    """Extract files from a zip archive. Returns list of (filename, content, extension)."""
+    results = []
+    with zipfile.ZipFile(io.BytesIO(data), 'r') as zf:
+        # Zip bomb protection
+        total_uncompressed = sum(info.file_size for info in zf.infolist())
+        if total_uncompressed > 100 * 1024 * 1024:  # 100 MB limit
+            raise HTTPException(status_code=400, detail='Zip archive too large (uncompressed > 100MB)')
+        if len(zf.infolist()) > 500:  # max 500 files
+            raise HTTPException(status_code=400, detail='Too many files in archive (max 500)')
+        
+        for info in zf.infolist():
+            # Path traversal protection
+            if info.is_dir():
+                continue
+            name = info.filename
+            if name.startswith('/') or '..' in name:
+                continue
+            ext = ''
+            if '.' in name:
+                ext = '.' + name.rsplit('.', 1)[-1].lower()
+            try:
+                file_data = zf.read(info)
+                results.append((name, file_data, ext))
+            except Exception as e:
+                logger.warning('Failed to extract %s from zip: %s', name, e)
+    return results
+
+
+def _process_image(data: bytes, filename: str, ext: str) -> dict:
+    """Process image file - return metadata for vision models."""
+    b64 = base64.b64encode(data).decode('ascii')
+    mime = {
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+        '.tiff': 'image/tiff'
+    }.get(ext, 'application/octet-stream')
+    return {
+        'type': 'image',
+        'filename': filename,
+        'mime_type': mime,
+        'base64': b64,
+        'size': len(data),
+    }
+
+
+def _process_video(data: bytes, filename: str, ext: str) -> dict:
+    """Process video file - store metadata for now."""
+    mime = {
+        '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+        '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo'
+    }.get(ext, 'application/octet-stream')
+    return {
+        'type': 'video',
+        'filename': filename,
+        'mime_type': mime,
+        'size': len(data),
+        'note': 'Video stored as metadata; transcription not yet implemented',
+    }
 
 
 def _extract_text_from_pdf(data: bytes) -> str:
@@ -143,8 +211,6 @@ async def ingest_paste(request: Request, body: PasteRequest) -> IngestResponse:
     chunks = _chunk_text(text)
 
     for idx, chunk in enumerate(chunks):
-        # Use the memory backend's store/add method (assumes compatible API)
-        # The memory backend (SQLiteMemory or similar) should accept these kwargs
         memory_backend.store(
             chunk,
             source="upload",
@@ -185,27 +251,41 @@ async def ingest_files(
 
         data = await upload.read()
 
-        # Parse content based on extension
-        if ext in (".txt", ".md", ".csv"):
-            try:
-                text = data.decode("utf-8")
-            except UnicodeDecodeError:
-                text = data.decode("latin-1")
-        elif ext == ".pdf":
-            text = _extract_text_from_pdf(data)
-        elif ext == ".docx":
-            text = _extract_text_from_docx(data)
-        else:
+        # Handle zip archives - extract and process each member
+        if ext == ".zip":
+            members = _extract_text_from_zip(data)
+            for member_name, member_data, member_ext in members:
+                if member_ext not in _ALLOWED_EXTENSIONS:
+                    logger.info("Skipping unsupported file in zip: %s (%s)", member_name, member_ext)
+                    continue
+                # Recursively process each member (but not nested zips to avoid loops)
+                if member_ext == ".zip":
+                    continue
+                await _process_single_file(memory_backend, member_name, member_data, member_ext, title)
+                total_chunks += 1  # approximate
             continue
 
+        # Process single file
+        await _process_single_file(memory_backend, filename, data, ext, title)
+        total_chunks += 1  # approximate count
+
+    return IngestResponse(chunks_added=total_chunks)
+
+
+async def _process_single_file(memory_backend, filename: str, data: bytes, ext: str, title: Optional[str]):
+    """Process a single file based on its extension."""
+    doc_id = str(uuid.uuid4())
+    doc_title = title or filename
+
+    if ext in (".txt", ".md", ".csv"):
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = data.decode("latin-1")
         text = text.strip()
         if not text:
-            continue
-
-        doc_id = str(uuid.uuid4())
-        doc_title = title or filename
+            return
         chunks = _chunk_text(text)
-
         for idx, chunk in enumerate(chunks):
             memory_backend.store(
                 chunk,
@@ -217,13 +297,70 @@ async def ingest_files(
                     "chunk_index": idx,
                 },
             )
+        logger.info("Ingested %d chunks from text file %s (doc_id=%s)", len(chunks), filename, doc_id)
 
-        total_chunks += len(chunks)
-        logger.info(
-            "Ingested %d chunks from file %s (doc_id=%s)",
-            len(chunks),
-            filename,
-            doc_id,
+    elif ext == ".pdf":
+        text = _extract_text_from_pdf(data)
+        text = text.strip()
+        if text:
+            chunks = _chunk_text(text)
+            for idx, chunk in enumerate(chunks):
+                memory_backend.store(
+                    chunk,
+                    source="upload",
+                    metadata={
+                        "doc_type": "pdf",
+                        "doc_id": doc_id,
+                        "title": doc_title,
+                        "chunk_index": idx,
+                    },
+                )
+            logger.info("Ingested %d chunks from PDF %s (doc_id=%s)", len(chunks), filename, doc_id)
+
+    elif ext == ".docx":
+        text = _extract_text_from_docx(data)
+        text = text.strip()
+        if text:
+            chunks = _chunk_text(text)
+            for idx, chunk in enumerate(chunks):
+                memory_backend.store(
+                    chunk,
+                    source="upload",
+                    metadata={
+                        "doc_type": "docx",
+                        "doc_id": doc_id,
+                        "title": doc_title,
+                        "chunk_index": idx,
+                    },
+                )
+            logger.info("Ingested %d chunks from DOCX %s (doc_id=%s)", len(chunks), filename, doc_id)
+
+    elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"):
+        # Store image as base64 for vision models
+        img_meta = _process_image(data, filename, ext)
+        memory_backend.store(
+            f"[Image: {filename}]",
+            source="upload",
+            metadata={
+                "doc_type": "image",
+                "doc_id": doc_id,
+                "title": doc_title,
+                "image_meta": img_meta,
+            },
         )
+        logger.info("Stored image %s (doc_id=%s, %d bytes)", filename, doc_id, len(data))
 
-    return IngestResponse(chunks_added=total_chunks)
+    elif ext in (".mp4", ".webm", ".mov", ".mkv", ".avi"):
+        # Store video metadata for now
+        vid_meta = _process_video(data, filename, ext)
+        memory_backend.store(
+            f"[Video: {filename}]",
+            source="upload",
+            metadata={
+                "doc_type": "video",
+                "doc_id": doc_id,
+                "title": doc_title,
+                "video_meta": vid_meta,
+            },
+        )
+        logger.info("Stored video metadata %s (doc_id=%s, %d bytes)", filename, doc_id, len(data))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Optional
+from fastapi import Request
 
 logger = logging.getLogger(__name__)
 

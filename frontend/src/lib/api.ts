@@ -393,6 +393,22 @@ export interface AgentMessage {
   tool_calls?: PersistedToolCall[] | null;
 }
 
+
+
+export async function uploadChatFiles(files: File[]): Promise<void> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
+  }
+  const res = await apiFetch(getBase() + '/v1/connectors/upload/ingest/files', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.statusText);
+    throw new Error('Upload failed: ' + err);
+  }
+}
 export async function fetchManagedAgents(): Promise<ManagedAgent[]> {
   const res = await apiFetch(`${getBase()}/v1/managed-agents`);
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
