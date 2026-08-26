@@ -2033,6 +2033,97 @@ def create_agent_manager_router(
 
         return get_credential_status(tool_name)
 
+    # -- Defect 6 confirmation gate ------------------------------------
+    # openjarvis-confirm-route-v1
+    #
+    # Inbound half of the interactive tool-confirmation round trip.
+    # The prompt goes OUT on the /v1/agents/events WS; the human answer
+    # comes back HERE. Registry contract is write-once: a recorded
+    # decision is never flipped, so a second POST reports 409 with the
+    # decision already held. TIMEOUT is set only inside the registry and
+    # is NOT accepted from a client - a timeout is not a refusal.
+
+    @tools_router.post("/confirm")
+    async def confirm_tool(request: Request):
+        from fastapi.responses import JSONResponse
+
+        from openjarvis.core import confirm_registry as _cr
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+
+        confirm_id = str(body.get("confirm_id") or "").strip()
+        decision_in = str(body.get("decision") or "").strip().lower()
+
+        accepted = {
+            "approve": _cr.APPROVED,
+            "approved": _cr.APPROVED,
+            "deny": _cr.DENIED,
+            "denied": _cr.DENIED,
+        }
+
+        if not confirm_id:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "confirm_id is required"},
+            )
+        if decision_in not in accepted:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "decision must be 'approve' or 'deny'",
+                    "decision": decision_in,
+                },
+            )
+
+        decision = accepted[decision_in]
+
+        entry = _cr.get(confirm_id)
+        if entry is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "unknown or expired confirm_id",
+                    "confirm_id": confirm_id,
+                },
+            )
+
+        if _cr.resolve(confirm_id, decision):
+            entry = _cr.get(confirm_id) or entry
+            return {
+                "confirm_id": confirm_id,
+                "tool": entry.get("tool", ""),
+                "turn_id": entry.get("turn_id", ""),
+                "state": "resolved",
+                "decision": decision,
+            }
+
+        # resolve() returned False - unknown, expired, or already set.
+        entry = _cr.get(confirm_id)
+        if entry is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "unknown or expired confirm_id",
+                    "confirm_id": confirm_id,
+                },
+            )
+        return JSONResponse(
+            status_code=409,
+            content={
+                "error": "already resolved",
+                "confirm_id": confirm_id,
+                "tool": entry.get("tool", ""),
+                "turn_id": entry.get("turn_id", ""),
+                "state": entry.get("state", "resolved"),
+                "decision": entry.get("decision", ""),
+            },
+        )
+
     # â”€â”€ SendBlue auto-setup helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     sendblue_router = APIRouter(prefix="/v1/channels/sendblue", tags=["sendblue"])

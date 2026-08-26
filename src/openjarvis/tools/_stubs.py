@@ -8,7 +8,12 @@ Each tool is registered via ``@ToolRegistry.register("name")`` and implements
 from __future__ import annotations
 
 import concurrent.futures
+import contextvars
 import json
+import logging
+import logging.handlers
+import os
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -85,6 +90,55 @@ class BaseTool(ABC):
 # ---------------------------------------------------------------------------
 
 
+
+# --- openjarvis-dispatch-log-v1 ---------------------------------------------------
+# Tool-boundary dispatch record in its own rotating file, so a turn that
+# dispatched NOTHING is distinguishable from one never instrumented.
+CURRENT_TURN_ID: contextvars.ContextVar = contextvars.ContextVar(
+    "openjarvis_turn_id", default="-"
+)
+
+# openjarvis-confirm-emit-v1 - lets a Callable[[str], bool] confirm callback learn
+# which confirm_id it is being asked about, without widening its signature.
+CURRENT_CONFIRM_ID = contextvars.ContextVar("openjarvis_confirm_id", default="")
+_dispatch_logger = None
+
+
+def _get_dispatch_logger():
+    global _dispatch_logger
+    if _dispatch_logger is not None:
+        return _dispatch_logger
+    lg = logging.getLogger("openjarvis.dispatch")
+    if not lg.handlers:
+        log_dir = os.path.join(
+            os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+            "OpenJarvis", "logs",
+        )
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            h = logging.handlers.RotatingFileHandler(
+                os.path.join(log_dir, "dispatch.log"),
+                maxBytes=2 * 1024 * 1024, backupCount=4, encoding="utf-8",
+            )
+            h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            lg.addHandler(h)
+        except Exception:
+            lg.addHandler(logging.NullHandler())
+    lg.setLevel(logging.INFO)
+    lg.propagate = False
+    _dispatch_logger = lg
+    return lg
+
+
+def _args_digest(rawargs, limit: int = 400) -> str:
+    try:
+        s = rawargs if isinstance(rawargs, str) else json.dumps(rawargs, default=str)
+    except Exception:
+        s = str(rawargs)
+    s = " ".join(s.split())
+    return s[:limit] + ("...TRUNC" if len(s) > limit else "")
+
+
 class ToolExecutor:
     """Dispatch tool calls to registered tools with event bus integration.
 
@@ -119,6 +173,12 @@ class ToolExecutor:
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
         """Parse arguments, dispatch to tool, measure latency, emit events."""
+        _get_dispatch_logger().info(
+            "ATTEMPT turn=%s tool=%s args=%s thread=%s",
+            CURRENT_TURN_ID.get(), tool_call.name,
+            _args_digest(tool_call.arguments),
+            threading.current_thread().name,
+        )
         tool = self._tools.get(tool_call.name)
         if tool is None:
             return ToolResult(
@@ -217,11 +277,82 @@ class ToolExecutor:
                     ),
                     success=False,
                 )
-            prompt = f"Allow execution of tool '{tool_call.name}' with args {params}?"
-            if not self._confirm_callback(prompt):
+            # openjarvis-confirm-emit-v1 - Defect 6 / 6c step 3
+            from openjarvis.core import confirm_registry as _cr
+
+            _digest = _args_digest(tool_call.arguments)
+            prompt = (
+                f"Allow execution of tool '{tool_call.name}' "
+                f"with args {_digest}?"
+            )
+            _cid = _cr.register(
+                tool=tool_call.name,
+                agent_id=self._agent_id,
+                turn_id=CURRENT_TURN_ID.get(),
+            )
+            _entry = _cr.get(_cid) or {}
+            if self._bus:
+                self._bus.publish(
+                    EventType.TOOL_CONFIRM_REQUEST,
+                    {
+                        "confirm_id": _cid,
+                        "agent_id": self._agent_id,
+                        "turn_id": CURRENT_TURN_ID.get(),
+                        "tool": tool_call.name,
+                        "args_digest": _digest,
+                        "prompt": prompt,
+                        "expires_at": _entry.get("expires_at"),
+                    },
+                )
+            _token = CURRENT_CONFIRM_ID.set(_cid)
+            try:
+                _approved = self._confirm_callback(prompt)
+            finally:
+                CURRENT_CONFIRM_ID.reset(_token)
+            # openjarvis-confirm-resolved-v1
+            _resolved = _cr.get(_cid) or {}
+            _decision = _resolved.get("decision") or (
+                _cr.APPROVED if _approved else _cr.TIMEOUT
+            )
+            if self._bus:
+                self._bus.publish(
+                    EventType.TOOL_CONFIRM_RESOLVED,
+                    {
+                        "confirm_id": _cid,
+                        "agent_id": self._agent_id,
+                        "turn_id": CURRENT_TURN_ID.get(),
+                        "tool": tool_call.name,
+                        "decision": _decision,
+                        "state": _resolved.get("state"),
+                        "created_at": _resolved.get("created_at"),
+                        "expires_at": _resolved.get("expires_at"),
+                        "reaped": not _resolved,
+                    },
+                )
+            if not _approved:
+                _final = (_cr.get(_cid) or {}).get("decision")
+                if _final == _cr.DENIED:
+                    _content = (
+                        f"Tool '{tool_call.name}' execution denied by user."
+                    )
+                elif _final == _cr.APPROVED:
+                    _content = (
+                        f"Tool '{tool_call.name}' was approved but the "
+                        "confirmation callback returned False. The tool did "
+                        "NOT run. Report this as an internal error, not as a "
+                        "refusal."
+                    )
+                else:
+                    _content = (
+                        f"Tool '{tool_call.name}' was NOT executed because no "
+                        "confirmation answer arrived before the request "
+                        "expired. This is a TIMEOUT, not a refusal - the user "
+                        "did not deny it. Ask the user again rather than "
+                        "reporting that permission was refused."
+                    )
                 return ToolResult(
                     tool_name=tool_call.name,
-                    content=f"Tool '{tool_call.name}' execution denied by user.",
+                    content=_content,
                     success=False,
                 )
 
@@ -245,11 +376,20 @@ class ToolExecutor:
                     EventType.TOOL_TIMEOUT,
                     {"tool": tool_call.name, "timeout": timeout},
                 )
+            # openjarvis-tool-timeout-v1
             result = ToolResult(
                 tool_name=tool_call.name,
-                content=(f"Tool '{tool_call.name}' timed out after {timeout:.0f}s."),
+                content=(
+                    f"Tool '{tool_call.name}' exceeded its {timeout:.0f}s wait. "
+                    "OUTCOME UNKNOWN: the operation was NOT cancelled and may have "
+                    "completed successfully. Do NOT retry it and do NOT report it "
+                    "as failed. Verify the current state with a read-only check "
+                    "first, then report what the verification found."
+                ),
                 success=False,
             )
+            result.metadata["timed_out"] = True
+            result.metadata["outcome_verified"] = False
         except Exception as exc:
             result = ToolResult(
                 tool_name=tool_call.name,
@@ -292,6 +432,11 @@ class ToolExecutor:
                 },
             )
 
+        _get_dispatch_logger().info(
+            "OUTCOME turn=%s tool=%s success=%s latency=%.3f timed_out=%s",
+            CURRENT_TURN_ID.get(), tool_call.name, result.success,
+            latency, bool(result.metadata.get("timed_out")),
+        )
         return result
 
     @staticmethod

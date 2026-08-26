@@ -941,7 +941,7 @@ def include_all_routes(app) -> None:
         from openjarvis.core.events import get_event_bus
         from openjarvis.server.ws_bridge import create_ws_router
 
-        ws_router = create_ws_router(get_event_bus())
+        ws_router = create_ws_router(getattr(app.state, "bus", None) or get_event_bus())  # openjarvis-ws-bus-v1
         app.include_router(ws_router)
     except Exception:
         logger.debug("WebSocket bridge not available", exc_info=True)

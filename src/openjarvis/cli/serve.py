@@ -25,6 +25,26 @@ from openjarvis.intelligence import (
 logger = logging.getLogger(__name__)
 
 
+class _TelemetryNoiseFilter(logging.Filter):
+    """Drop uvicorn.access records for the telemetry polling endpoints.
+
+    openjarvis-log-budget-v1: these two paths are polled roughly every 3
+    seconds and accounted for 98 percent of backend.log volume, crowding
+    every record worth keeping out of the rotation budget.
+    """
+
+    _NOISE = ("/v1/telemetry/energy", "/v1/telemetry/stats")
+
+    def filter(self, record):
+        if record.name != "uvicorn.access":
+            return True
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        return not any(p in msg for p in self._NOISE)
+
+
 def _configure_file_logging() -> str:
     """Route all server logs to a rotating file instead of the console.
 
@@ -38,11 +58,13 @@ def _configure_file_logging() -> str:
     log_path = os.path.join(log_dir, "backend.log")
 
     file_handler = RotatingFileHandler(
-        log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        log_path, maxBytes=4 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
     file_handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
+
+    file_handler.addFilter(_TelemetryNoiseFilter())  # openjarvis-log-budget-v1
 
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
@@ -262,6 +284,37 @@ def serve(
 
                 if getattr(agent_cls, "accepts_tools", False):
                     agent_kwargs["max_turns"] = config.agent.max_turns
+
+                # openjarvis-confirm-live-v1
+                # Defect 6 / 6d: make the confirmation gate live on the chat
+                # path. The agent forwards these straight to its ToolExecutor
+                # (agents\_stubs.py:325-332). Opt-in per server run so that
+                # unattended entry points never inherit a blocking gate.
+                if getattr(agent_cls, "accepts_tools", False):
+                    import os as _os
+
+                    _confirm_flag = _os.getenv(
+                        "OPENJARVIS_CONFIRM_INTERACTIVE", "1"
+                    )
+                    if _confirm_flag.strip().lower() not in (
+                        "0",
+                        "false",
+                        "no",
+                        "off",
+                    ):
+                        from openjarvis.core import confirm_registry as _cr
+                        from openjarvis.tools import _stubs as _confirm_stubs
+
+                        def _server_confirm_callback(_prompt: str) -> bool:
+                            _cid = _confirm_stubs.CURRENT_CONFIRM_ID.get()
+                            if not _cid:
+                                return False
+                            return _cr.wait(_cid) == _cr.APPROVED
+
+                        agent_kwargs["interactive"] = True
+                        agent_kwargs["confirm_callback"] = (
+                            _server_confirm_callback
+                        )
 
                 agent = agent_cls(engine, model_name, **agent_kwargs)
         except Exception as exc:
