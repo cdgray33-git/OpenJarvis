@@ -47,22 +47,26 @@ def create_ws_router(event_bus: EventBus) -> Any:
             "timestamp": event.timestamp,
             "data": event.data or {},
         }
-        # openjarvis-ws-cid-redact-v1
-        _is_confirm_request = event.event_type is EventType.TOOL_CONFIRM_REQUEST
+        # openjarvis-ws-cid-redact-v2
+        _is_confirm_event = event.event_type in (
+            EventType.TOOL_CONFIRM_REQUEST,
+            EventType.TOOL_CONFIRM_RESOLVED,
+        )
         for ws, (queue, loop) in list(clients.items()):
             agent_filter = getattr(ws, "_agent_filter", None)
             event_agent = (event.data or {}).get("agent_id")
             if agent_filter and event_agent != agent_filter:
                 continue
             client_payload = payload
-            if _is_confirm_request and not getattr(ws, "_ws_authed", False):
+            if _is_confirm_event and not getattr(ws, "_ws_authed", False):
                 _data = dict(payload["data"])
                 _had_cid = _data.pop("confirm_id", None) is not None
                 client_payload = dict(payload, data=_data)
                 if _had_cid:
                     logger.warning(
-                        "ws-cid-redact: stripped confirm_id from "
-                        "TOOL_CONFIRM_REQUEST for unauthenticated subscriber %s",
+                        "ws-cid-redact: stripped confirm_id from %s "
+                        "for unauthenticated subscriber %s",
+                        event.event_type.value,
                         getattr(ws, "_ws_peer", "unknown"),
                     )
             try:
