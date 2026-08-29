@@ -30,6 +30,13 @@ export function useAgentEvents(
   agentId: string | undefined,
   onEvent: (event: AgentEvent) => void,
   eventTypes?: readonly string[],
+  // openjarvis-agent-events-subscribeall-v1
+  // Opt in to the unfiltered stream. When true, the socket connects with NO
+  // agent_id query parameter, leaving _agent_filter falsy on the server so the
+  // filter at ws_bridge.py:56-59 short-circuits. Required for the chat path,
+  // where confirmation events carry a CLASS identity (native_openhands) that
+  // can never match a managed-agent INSTANCE id.
+  subscribeAll = false,
 ): void {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
@@ -37,7 +44,7 @@ export function useAgentEvents(
   typesRef.current = eventTypes;
 
   useEffect(() => {
-    if (!agentId) return;
+    if (!agentId && !subscribeAll) return;
     let ws: WebSocket | null = null;
     let closed = false;
     let retry = 0;
@@ -86,5 +93,5 @@ export function useAgentEvents(
       if (reconnectTimer) clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [agentId]);
+  }, [agentId, subscribeAll]);
 }
