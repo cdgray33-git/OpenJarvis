@@ -58,14 +58,16 @@ def create_ws_router(event_bus: EventBus) -> Any:
             if agent_filter and event_agent != agent_filter:
                 continue
             client_payload = payload
-            if _is_confirm_event and not getattr(ws, "_ws_authed", False):
+            # openjarvis-ws-cid-redact-v3
+            if _is_confirm_event and not getattr(ws, "_ws_bind_loopback", False):
                 _data = dict(payload["data"])
                 _had_cid = _data.pop("confirm_id", None) is not None
                 client_payload = dict(payload, data=_data)
                 if _had_cid:
                     logger.warning(
-                        "ws-cid-redact: stripped confirm_id from %s "
-                        "for unauthenticated subscriber %s",
+                        "ws-cid-redact: stripped confirm_id from %s for "
+                        "subscriber %s - server bind is not loopback, or the "
+                        "bind posture was never published to app.state",
                         event.event_type.value,
                         getattr(ws, "_ws_peer", "unknown"),
                     )
@@ -92,10 +94,17 @@ def create_ws_router(event_bus: EventBus) -> Any:
         _peer = f"{getattr(_client, 'host', '?')}:{getattr(_client, 'port', '?')}"
         websocket._ws_authed = _authed  # type: ignore[attr-defined]
         websocket._ws_peer = _peer  # type: ignore[attr-defined]
+        # openjarvis-ws-cid-redact-v3
+        # Redaction posture comes from the server bind, not from a token.
+        # Absent attribute means fail closed: strip confirm_id.
+        _app_state = getattr(getattr(websocket, "app", None), "state", None)
+        _bind_loop = bool(getattr(_app_state, "bind_is_loopback", False))
+        websocket._ws_bind_loopback = _bind_loop  # type: ignore[attr-defined]
         logger.warning(
-            "ws-accept: peer=%s authed=%s agent_filter=%s ua=%r",
+            "ws-accept: peer=%s authed=%s bind_loopback=%s agent_filter=%s ua=%r",
             _peer,
             _authed,
+            _bind_loop,
             agent_id,
             websocket.headers.get("user-agent"),
         )

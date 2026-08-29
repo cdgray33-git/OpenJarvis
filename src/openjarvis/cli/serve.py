@@ -614,6 +614,11 @@ def serve(
     except ValueError:
         _is_loop = bind_host in ("localhost", "")
 
+    # openjarvis-ws-cid-redact-v3
+    # The confirm-channel redaction in server/ws_bridge.py keys on this
+    # value. Published, never re-derived there. See W18 s6.B.
+    app.state.bind_is_loopback = _is_loop
+
     # openjarvis-bind-assert-v1
     # Runtime bind assertion. The confirm-channel redaction posture is
     # conditional on this bind, so the bind must be recoverable from the log.
