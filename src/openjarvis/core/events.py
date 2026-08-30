@@ -77,6 +77,9 @@ class EventType(str, Enum):
     OPTIMIZE_TRIAL_END = "optimize_trial_end"
     OPTIMIZE_RUN_END = "optimize_run_end"
     FEEDBACK_RECEIVED = "feedback_received"
+    # Defect 6 - interactive tool confirmation
+    TOOL_CONFIRM_REQUEST = "tool_confirm_request"
+    TOOL_CONFIRM_RESOLVED = "tool_confirm_resolved"
 
 
 @dataclass(slots=True)
