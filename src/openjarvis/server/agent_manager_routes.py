@@ -2124,6 +2124,152 @@ def create_agent_manager_router(
             },
         )
 
+    # openjarvis-test-exec-v1
+    #
+    # Deterministic trigger for the interactive confirmation gate.
+    # Uses the LIVE chat agent's executor - constructs nothing - so what is
+    # measured is the instance 6d wired, on serve.py's bus, with the real
+    # confirm callback and the real agent_id.
+    #
+    # It is structurally incapable of running a tool that does not declare
+    # requires_confirmation=True, so it is a trigger, not a bypass: every
+    # accepted call parks on the gate and waits for POST /v1/tools/confirm.
+    #
+    # Disabled unless OPENJARVIS_TEST_EXEC is set AND the bind is loopback.
+    # Both refusals are 403 with a distinct body so a probe can tell
+    # "present but disabled" from "never mounted" (404).
+
+    @tools_router.post("/test-execute")
+    async def test_execute_tool(request: Request):
+        import asyncio as _asyncio
+        import json as _json
+        import logging as _logging
+        import os as _os
+        import uuid as _uuid
+
+        from fastapi.responses import JSONResponse
+
+        from openjarvis.core.types import ToolCall as _ToolCall
+
+        _log = _logging.getLogger(__name__)
+
+        _flag = str(_os.environ.get("OPENJARVIS_TEST_EXEC", "")).strip().lower()
+        if _flag in ("", "0", "false", "no", "off"):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "test-execute disabled",
+                    "reason": "OPENJARVIS_TEST_EXEC not set",
+                    "marker": "openjarvis-test-exec-v1",
+                },
+            )
+
+        if not bool(getattr(request.app.state, "bind_is_loopback", False)):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "test-execute disabled",
+                    "reason": "bind is not loopback",
+                    "marker": "openjarvis-test-exec-v1",
+                },
+            )
+
+        _agent = getattr(request.app.state, "agent", None)
+        _executor = getattr(_agent, "_executor", None) if _agent is not None else None
+        if _executor is None:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "no live agent executor",
+                    "agent": repr(_agent)[:120],
+                },
+            )
+
+        try:
+            _body = await request.json()
+        except Exception:
+            _body = {}
+        if not isinstance(_body, dict):
+            _body = {}
+
+        _tool_name = str(_body.get("tool") or "").strip()
+        _args = _body.get("arguments")
+        if not isinstance(_args, dict):
+            _args = {}
+
+        if not _tool_name:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "tool is required"},
+            )
+
+        _specs = list(_executor.available_tools())
+        _spec = None
+        for _s in _specs:
+            if getattr(_s, "name", "") == _tool_name:
+                _spec = _s
+                break
+
+        if _spec is None:
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "tool not on the live agent",
+                    "tool": _tool_name,
+                    "available": [getattr(x, "name", "") for x in _specs],
+                },
+            )
+
+        if not bool(getattr(_spec, "requires_confirmation", False)):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "tool does not require confirmation - refused",
+                    "tool": _tool_name,
+                },
+            )
+
+        _run_id = _uuid.uuid4().hex[:8]
+        _turn_id = "test-" + _run_id
+        _call = _ToolCall(
+            id="testexec-" + _run_id,
+            name=_tool_name,
+            arguments=_json.dumps(_args),
+        )
+
+        def _run() -> None:
+            from openjarvis.tools import _stubs as _ts
+
+            _token = _ts.CURRENT_TURN_ID.set(_turn_id)
+            try:
+                _executor.execute(_call)
+            except Exception:
+                _log.warning("test-execute run failed", exc_info=True)
+            finally:
+                try:
+                    _ts.CURRENT_TURN_ID.reset(_token)
+                except Exception:
+                    pass
+
+        _tasks = getattr(request.app.state, "_testexec_tasks", None)
+        if _tasks is None:
+            _tasks = set()
+            request.app.state._testexec_tasks = _tasks
+        _task = _asyncio.create_task(_asyncio.to_thread(_run))
+        _tasks.add(_task)
+        _task.add_done_callback(_tasks.discard)
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "accepted": True,
+                "run_id": _run_id,
+                "turn_id": _turn_id,
+                "tool": _tool_name,
+                "marker": "openjarvis-test-exec-v1",
+            },
+        )
+
     # â”€â”€ SendBlue auto-setup helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     sendblue_router = APIRouter(prefix="/v1/channels/sendblue", tags=["sendblue"])
