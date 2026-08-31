@@ -213,6 +213,32 @@ class NativeOpenHandsAgent(ToolUsingAgent):
                 return (tool_name, _json.dumps(params))
             return (tool_name, "{}")
 
+        # Format 4: OpenHands XML tool call
+        # <function=NAME><parameter=KEY>value</parameter></function>
+        # Emitted as content by qwen3-coder when native tool_calls do not fire.
+        # \s*=\s* and the \Z fallbacks tolerate the malformed spacing and
+        # missing closing tags observed in the wild, so the call executes
+        # instead of leaking backend syntax into the chat.
+        fn_match = re.search(
+            r"<function\s*=\s*[\"\']?([\w.\-]+)[\"\']?\s*>(.*?)(?:</function>|\Z)",
+            text,
+            re.DOTALL,
+        )
+        if fn_match:
+            fn_name = fn_match.group(1).strip()
+            fn_params: dict[str, Any] = {}
+            for _pm in re.finditer(
+                r"<parameter\s*=\s*[\"\']?([\w.\-]+)[\"\']?\s*>(.*?)(?:</parameter>|\Z)",
+                fn_match.group(2),
+                re.DOTALL,
+            ):
+                _val = _pm.group(2).strip()
+                try:
+                    fn_params[_pm.group(1)] = int(_val)
+                except ValueError:
+                    fn_params[_pm.group(1)] = _val
+            return (fn_name, _json.dumps(fn_params))
+
         # Format 3: bare JSON tool call {"name": "...", "arguments": {...}}
         # Some Ollama models (notably qwen2.5-coder) emit tool calls as JSON
         # in content instead of the structured tool_calls field. Catch it here
@@ -293,6 +319,7 @@ class NativeOpenHandsAgent(ToolUsingAgent):
         **kwargs: Any,
     ) -> AgentResult:
         self._emit_turn_start(input)
+        _oj_run_id = _oj_run_start(self, context, input)
 
         tool_descriptions = build_tool_descriptions(self._tools)
         prompt_template = (
@@ -331,6 +358,7 @@ class NativeOpenHandsAgent(ToolUsingAgent):
                 raise
             content = self._strip_think_tags(result.get("content", ""))
             usage = result.get("usage", {})
+            _oj_run_end(_oj_run_id, "urldirect", 1, [], content)
             self._emit_turn_end(turns=1)
             return AgentResult(
                 content=content,
@@ -365,6 +393,7 @@ class NativeOpenHandsAgent(ToolUsingAgent):
 
         for _turn in range(self._max_turns):
             turns += 1
+            _oj_turn_id = _oj_set_turn(_oj_run_id, turns)
             # Truncate before every generate call -- tool results may have
             # expanded the context beyond what the model supports.
             messages = self._truncate_if_needed(messages)
@@ -387,12 +416,14 @@ class NativeOpenHandsAgent(ToolUsingAgent):
                 total_usage[k] += usage.get(k, 0)
 
             content = result.get("content", "")
+            _oj_raw = content
             # Strip think tags so they don't interfere with parsing
             content = self._strip_think_tags(content)
             last_content = content
 
             # --- Native function-calling path (OpenAI, Anthropic, etc.) ---
             raw_tool_calls = result.get("tool_calls", [])
+            _oj_raw_gen(_oj_run_id, _oj_turn_id, _oj_raw, content, len(raw_tool_calls))
             if raw_tool_calls:
                 native_calls = []
                 for i, tc in enumerate(raw_tool_calls):
@@ -474,6 +505,7 @@ class NativeOpenHandsAgent(ToolUsingAgent):
             # No code or tool call -- this is the final answer
             content = self._strip_think_tags(content)
             content = self._strip_tool_call_text(content)
+            _oj_run_end(_oj_run_id, "final", turns, all_tool_results, content)
             self._emit_turn_end(turns=turns)
             return AgentResult(
                 content=content,
@@ -485,9 +517,144 @@ class NativeOpenHandsAgent(ToolUsingAgent):
         # Max turns
         final = self._strip_think_tags(last_content) or "Maximum turns reached."
         final = self._strip_tool_call_text(final)
+        _oj_run_end(_oj_run_id, "maxturns", turns, all_tool_results, final)
         result = self._max_turns_result(all_tool_results, turns, content=final)
         result.metadata.update(total_usage)
         return result
 
 
+
+# --- openjarvis-agent-log-v1 -------------------------------------------------
+# Turn-boundary record in its own rotating file, so an agent turn that
+# dispatched NOTHING is distinguishable from one that was never instrumented.
+# Also sets tools._stubs.CURRENT_TURN_ID (a ContextVar) so dispatch.log lines
+# carry a real turn id.  Every call site is exception-swallowing on purpose:
+# instrumentation must never be able to break a run.
+_oj_agent_logger = None
+
+
+def _oj_get_agent_logger():
+    global _oj_agent_logger
+    if _oj_agent_logger is not None:
+        return _oj_agent_logger
+    import logging as _lgm
+    import logging.handlers as _lgh
+    import os as _os
+
+    lg = _lgm.getLogger("openjarvis.agent")
+    if not lg.handlers:
+        log_dir = _os.path.join(
+            _os.environ.get("LOCALAPPDATA", _os.path.expanduser("~")),
+            "OpenJarvis", "logs",
+        )
+        try:
+            _os.makedirs(log_dir, exist_ok=True)
+            h = _lgh.RotatingFileHandler(
+                _os.path.join(log_dir, "agent.log"),
+                maxBytes=2621440, backupCount=4, encoding="utf-8",
+            )
+            h.setFormatter(_lgm.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            lg.addHandler(h)
+        except Exception:
+            lg.addHandler(_lgm.NullHandler())
+    lg.setLevel(_lgm.INFO)
+    lg.propagate = False
+    _oj_agent_logger = lg
+    return lg
+
+
+def _oj_conv_id(context):
+    for attr in ("conversation_id", "session_id", "thread_id", "id"):
+        v = getattr(context, attr, None)
+        if v:
+            return str(v)
+    meta = getattr(context, "metadata", None)
+    if isinstance(meta, dict):
+        for k in ("conversation_id", "session_id", "thread_id"):
+            if meta.get(k):
+                return str(meta[k])
+    return "-"
+
+
+def _oj_model_name(agent):
+    for attr in ("_model", "model", "_model_name"):
+        v = getattr(agent, attr, None)
+        if isinstance(v, str) and v:
+            return v
+    llm = getattr(agent, "_llm", None) or getattr(agent, "llm", None)
+    for attr in ("model", "model_name", "_model"):
+        v = getattr(llm, attr, None)
+        if isinstance(v, str) and v:
+            return v
+    return "-"
+
+
+def _oj_run_start(agent, context, input_text):
+    import uuid as _uuid
+
+    run_id = _uuid.uuid4().hex[:8]
+    try:
+        _oj_get_agent_logger().info(
+            "RUNSTART run=%s agent=%s model=%s conv=%s tools=%d maxturns=%s chars=%d",
+            run_id,
+            type(agent).__name__,
+            _oj_model_name(agent),
+            _oj_conv_id(context),
+            len(getattr(agent, "_tools", []) or []),
+            getattr(agent, "_max_turns", "-"),
+            len(input_text or ""),
+        )
+    except Exception:
+        pass
+    return run_id
+
+
+def _oj_set_turn(run_id, turns):
+    turn_id = "%s-t%d" % (run_id, turns)
+    try:
+        from openjarvis.tools._stubs import CURRENT_TURN_ID as _cti
+
+        _cti.set(turn_id)
+    except Exception:
+        pass
+    try:
+        _oj_get_agent_logger().info(
+            "TURN run=%s turn=%s n=%d", run_id, turn_id, turns
+        )
+    except Exception:
+        pass
+    return turn_id
+
+
+def _oj_run_end(run_id, kind, turns, tool_results, content):
+    try:
+        head = (content or "")[:160].replace("\n", " ").replace("\r", " ")
+        _oj_get_agent_logger().info(
+            "RUNEND run=%s exit=%s turns=%s dispatched=%d chars=%d head=%s",
+            run_id, kind, turns,
+            len(tool_results or []),
+            len(content or ""),
+            head,
+        )
+    except Exception:
+        pass
+
+
+# --- end openjarvis-agent-log-v1 ---------------------------------------------
+
+
+
+
+def _oj_raw_gen(run_id, turn_id, raw, stripped, n_tool_calls):
+    """openjarvis-raw-gen-v1 - log the pre-strip generation for one turn."""
+    try:
+        raw = raw or ""
+        stripped = stripped or ""
+        _oj_get_agent_logger().info(
+            "RAWGEN run=%s turn=%s rawlen=%d striplen=%d changed=%s ntc=%d raw=%s",
+            run_id, turn_id, len(raw), len(stripped),
+            (raw != stripped), n_tool_calls, repr(raw[:1500]),
+        )
+    except Exception:
+        pass
 __all__ = ["NativeOpenHandsAgent"]
