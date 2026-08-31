@@ -543,7 +543,7 @@ class MailboxMoveToTrashTool(BaseTool):
                     success=False,
                 )
             try:
-                _hits = conn.find_messages(from_addr=_from_addr, limit=5000)
+                _hits = conn.find_messages(folder=folder, from_addr=_from_addr, limit=5000)  # openjarvis-h2-folder-scope-v1
             except Exception as exc:
                 logger.exception("mailbox_move_to_trash from_addr lookup failed")
                 return ToolResult(
