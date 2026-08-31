@@ -101,8 +101,10 @@ class OllamaEngine(InferenceEngine):
             resp = self._client.post("/api/chat", json=payload)
             if resp.status_code == 400 and tools:
                 # Model may not support function calling -- retry without tools
+                _oj_log_retry400(resp, payload, tools)  # openjarvis-retry400-v1
                 payload.pop("tools", None)
                 resp = self._client.post("/api/chat", json=payload)
+                _oj_log_retry400_result(resp)  # openjarvis-retry400-v1
             resp.raise_for_status()
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
             raise EngineConnectionError(
@@ -406,3 +408,59 @@ class OllamaEngine(InferenceEngine):
 
 
 __all__ = ["OllamaEngine"]
+
+
+# --- openjarvis-retry400-v1 : temporary diagnostic, remove when Defect 1 is fixed ---
+def _oj_r400_logger():
+    import logging, logging.handlers, os as _os
+    lg = logging.getLogger("openjarvis.retry400")
+    if getattr(lg, "_oj_ready", False):
+        return lg
+    try:
+        d = _os.path.join(_os.environ.get("LOCALAPPDATA", "."), "OpenJarvis", "logs")
+        _os.makedirs(d, exist_ok=True)
+        h = logging.handlers.RotatingFileHandler(
+            _os.path.join(d, "engine.log"),
+            maxBytes=2 * 1024 * 1024,
+            backupCount=2,
+            encoding="utf-8",
+        )
+        h.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+        lg.addHandler(h)
+    except Exception:
+        lg.addHandler(logging.NullHandler())
+    lg.setLevel(logging.INFO)
+    lg.propagate = False
+    lg._oj_ready = True
+    return lg
+
+
+def _oj_log_retry400(resp, payload, tools):
+    try:
+        import json as _json
+        try:
+            body = resp.text[:600]
+        except Exception:
+            body = "<unreadable>"
+        try:
+            psize = len(_json.dumps(payload))
+        except Exception:
+            psize = -1
+        _oj_r400_logger().info(
+            "RETRY400 dropping tools ntools=%s payloadbytes=%s nmsgs=%s body=%r",
+            len(tools) if tools else 0,
+            psize,
+            len(payload.get("messages", []) or []),
+            body,
+        )
+    except Exception:
+        pass
+
+
+def _oj_log_retry400_result(resp):
+    try:
+        _oj_r400_logger().info(
+            "RETRY400 retry_status=%s", getattr(resp, "status_code", "?")
+        )
+    except Exception:
+        pass
