@@ -176,6 +176,22 @@ function splitIntoUnits(text: string, firstMax: number, max: number): string[] {
   for (const piece of breakText(text)) {
     if (piece.length > cap) {
       flush();
+      /*
+       * First unit only: bound time-to-first-audio by cutting an oversized
+       * piece at a word boundary instead of emitting it whole. `cap < max`
+       * is true only while the first unit is still being built -- on every
+       * later enqueue firstMax === max, so this branch cannot fire.
+       */
+      if (cap < max) {
+        const head = piece.slice(0, cap);
+        const cut = head.lastIndexOf(' ');
+        if (cut > 0) {
+          units.push(piece.slice(0, cut).trim());
+          cap = max;
+          current = piece.slice(cut + 1);
+          continue;
+        }
+      }
       units.push(piece);
       cap = max;
       continue;
@@ -228,16 +244,25 @@ async function pump(): Promise<void> {
 
       const unit = pending.shift() as string;
       let buffer: AudioBuffer;
+      const t0 = Date.now();
+      console.log('[PUMPDBG] take', t0, 'chars=' + unit.length, 'pending=' + pending.length);
 
       try {
         const blob = await synthesizeSpeech(unit);
+        const t1 = Date.now();
+        console.log('[PUMPDBG] fetched', t1, '+' + (t1 - t0) + 'ms', 'bytes=' + blob.size);
         if (myGeneration !== generation) return;
 
         const bytes = await blob.arrayBuffer();
+        const t2 = Date.now();
+        console.log('[PUMPDBG] buffered', t2, '+' + (t2 - t1) + 'ms');
         const context = ensureContext();
         if (!context) return;
+        console.log('[PUMPDBG] ctx', Date.now(), 'state=' + context.state, 'currentTime=' + context.currentTime.toFixed(3));
 
         buffer = await context.decodeAudioData(bytes.slice(0));
+        const t3 = Date.now();
+        console.log('[PUMPDBG] decoded', t3, '+' + (t3 - t2) + 'ms', 'dur=' + buffer.duration.toFixed(2) + 's');
       } catch (err) {
         /*
          * Loud on purpose. The old play().catch() discarded a failed chunk with
@@ -249,6 +274,7 @@ async function pump(): Promise<void> {
 
       if (myGeneration !== generation) return;
       schedule(buffer);
+      console.log('[PUMPDBG] scheduled', Date.now(), 'state=' + (ctx ? ctx.state : 'null'), 'now=' + (ctx ? ctx.currentTime.toFixed(3) : '-'), 'next=' + nextStartTime.toFixed(3));
     }
   } finally {
     pumping = false;
