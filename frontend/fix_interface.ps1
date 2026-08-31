@@ -1,4 +1,4 @@
-$path = "C:\Windows\System32\openjarvis\frontend\src\lib\store.ts"
+$path = "C:\Users\Admin\OpenJarvis\frontend\src\lib\store.ts"
 $old = @"
   updateLastAssistant: (
     conversationId: string,
