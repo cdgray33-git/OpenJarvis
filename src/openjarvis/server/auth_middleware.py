@@ -73,3 +73,34 @@ def check_bind_safety(host: str, *, api_key: str) -> None:
             host,
         )
         sys.exit(1)
+
+_BIND_IS_LOOPBACK: bool | None = None
+
+
+def bind_is_loopback() -> bool | None:
+    """Return the loopback verdict recorded by :func:`check_bind_safety`.
+
+    ``None`` means the check has not run, which callers must treat as unsafe.
+    """
+    return _BIND_IS_LOOPBACK
+
+
+def record_bind(host: str, port: int, *, api_key: str) -> bool:
+    """Record and log the runtime bind posture. Returns the loopback verdict."""
+    global _BIND_IS_LOOPBACK
+    import ipaddress
+
+    try:
+        is_loop = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loop = host in ("localhost", "")
+
+    _BIND_IS_LOOPBACK = is_loop
+    logger.info(
+        "BIND-ASSERT host=%s port=%s loopback=%s api_key_set=%s",
+        host,
+        port,
+        is_loop,
+        bool(api_key),
+    )
+    return is_loop
