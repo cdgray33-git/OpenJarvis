@@ -46,6 +46,7 @@ from openjarvis.connectors.oauth import delete_tokens, load_tokens, save_tokens
 from openjarvis.core.config import DEFAULT_CONFIG_DIR
 from openjarvis.core.registry import ConnectorRegistry
 from openjarvis.tools._stubs import ToolSpec
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -539,6 +540,9 @@ class ImapMailConnector(BaseConnector):
         uids: Sequence[str],
         *,
         dry_run: bool = True,
+        chunk_size: int = 10,
+        pause_s: float = 1.0,
+        max_retries: int = 4,
     ) -> Dict[str, Any]:
         """Move messages to the provider's trash folder.
 
@@ -546,7 +550,13 @@ class ImapMailConnector(BaseConnector):
         bare ``\\Deleted`` flag only removes a label; the message has to
         reach ``[Gmail]/Trash``. Trash still counts against quota until
         it is emptied - see ``empty_folder``.
+
+        Yahoo rate-limits bulk UID COPY and reports it inconsistently
+        (``[LIMIT]`` on large sets, ``[SERVERBUG]`` on small ones). Both
+        are transient, so copies are chunked, paced and retried. Messages
+        are only flagged ``\\Deleted`` after their COPY returned OK.
         """
+        uids = [str(u) for u in uids]
         plan = {
             "action": "move_to_trash",
             "account": self._account_id,
@@ -563,7 +573,6 @@ class ImapMailConnector(BaseConnector):
         if dry_run:
             plan["note"] = "DRY RUN. Re-run with dry_run=False to apply."
             return plan
-
         imap = self._connect()
         if imap is None:
             plan["error"] = self._last_error
@@ -573,24 +582,91 @@ class ImapMailConnector(BaseConnector):
             if typ != "OK":
                 plan["error"] = "cannot select folder %r for writing" % folder
                 return plan
-            uid_set = ",".join(str(u) for u in uids)
 
-            if folder != self._trash_folder:
-                typ, _ = imap.uid("COPY", uid_set, _quote_folder(self._trash_folder))
-                if typ != "OK":
-                    plan["error"] = "COPY to %r failed" % self._trash_folder
-                    return plan
+            trash = self._trash_folder
+            copied = []
+            failed = []
+            errors = []
 
-            typ, _ = imap.uid("STORE", uid_set, "+FLAGS", "(\\Deleted)")
-            if typ != "OK":
-                plan["error"] = "STORE +FLAGS \\Deleted failed"
+            if folder == trash:
+                copied = list(uids)
+            else:
+                qtrash = _quote_folder(trash)
+                chunks = [uids[i:i + chunk_size]
+                          for i in range(0, len(uids), chunk_size)]
+                for idx, chunk in enumerate(chunks):
+                    uid_set = ",".join(chunk)
+                    ok = False
+                    delay = pause_s
+                    for _attempt in range(max_retries):
+                        typ, data = imap.uid("COPY", uid_set, qtrash)
+                        if typ == "OK":
+                            ok = True
+                            break
+                        errors.append(self._imap_text(data))
+                        time.sleep(delay)
+                        delay *= 2
+                    if ok:
+                        copied.extend(chunk)
+                    else:
+                        # Chunk is still failing. Degrade to one UID at a
+                        # time so a single poisoned message cannot strand
+                        # the other nine.
+                        for u in chunk:
+                            t2, d2 = imap.uid("COPY", u, qtrash)
+                            if t2 == "OK":
+                                copied.append(u)
+                            else:
+                                failed.append(u)
+                                errors.append(self._imap_text(d2))
+                            time.sleep(pause_s)
+                    if idx + 1 < len(chunks):
+                        time.sleep(pause_s)
+
+            plan["copied_count"] = len(copied)
+            plan["failed_uids"] = failed
+            if errors:
+                plan["copy_errors"] = errors[:10]
+
+            if not copied:
+                plan["error"] = "COPY to %r failed for all uids" % trash
                 return plan
 
+            deleted = 0
+            for i in range(0, len(copied), chunk_size):
+                sub = copied[i:i + chunk_size]
+                typ, _ = imap.uid("STORE", ",".join(sub), "+FLAGS", "(\\Deleted)")
+                if typ == "OK":
+                    deleted += len(sub)
+                else:
+                    plan.setdefault("store_failed", []).extend(sub)
+                time.sleep(pause_s)
+
             imap.expunge()
-            plan["applied"] = True
+            plan["deleted_count"] = deleted
+            plan["applied"] = deleted > 0
+            if failed:
+                plan["note"] = (
+                    "%d uid(s) could not be copied and were left in place"
+                    % len(failed)
+                )
             return plan
         finally:
             self._close(imap)
+
+    @staticmethod
+    def _imap_text(data) -> str:
+        """Flatten an imaplib response payload into a readable string."""
+        try:
+            parts = []
+            for item in (data or []):
+                if isinstance(item, bytes):
+                    parts.append(item.decode("utf-8", "replace"))
+                elif item is not None:
+                    parts.append(str(item))
+            return " ".join(parts)
+        except Exception:
+            return repr(data)
 
     def empty_folder(self, folder: str, *, dry_run: bool = True) -> Dict[str, Any]:
         """Permanently remove every message in a folder.
