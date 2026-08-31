@@ -1,6 +1,7 @@
 """Route handlers for the OpenAI-compatible API server."""
 
 from __future__ import annotations
+import asyncio
 
 import logging
 import uuid
@@ -159,15 +160,26 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
 
     # Non-streaming: use agent if available, otherwise direct engine call
     if agent is not None:
-        return _handle_agent(agent, model, request_body, complexity_info)
+        # openjarvis-offload-sync-handlers-v1
+        # _handle_agent is a synchronous def. Calling it directly from this
+        # coroutine pinned the event loop for the entire turn - measured at
+        # 253 s with 23 consecutive /health timeouts. Same idiom as
+        # stream_bridge.py:155, which is why the streaming path is unaffected.
+        return await asyncio.to_thread(
+            _handle_agent, agent, model, request_body, complexity_info
+        )
 
     bus = getattr(request.app.state, "bus", None)
-    return _handle_direct(
+    # openjarvis-offload-sync-handlers-v1
+    # Same defect shape as the _handle_agent branch above: synchronous def,
+    # called without await from a coroutine. Shape-confirmed, not measured.
+    return await asyncio.to_thread(
+        _handle_direct,
         engine,
         model,
         request_body,
-        bus=bus,
-        complexity_info=complexity_info,
+        bus,
+        complexity_info,
     )
 
 
