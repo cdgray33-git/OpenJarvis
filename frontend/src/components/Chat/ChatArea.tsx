@@ -117,6 +117,7 @@ export function ChatArea() {
 
     const fullText = lastMsg.content || '';
     let take = fullText.length;
+    console.log('[TTSDBG] run', Date.now(), 'stream=' + streamState.isStreaming, 'len=' + fullText.length, 'spoken=' + spokenCharsRef.current);
 
     if (streamState.isStreaming) {
       const unspoken = fullText.slice(spokenCharsRef.current);
@@ -141,7 +142,7 @@ export function ChatArea() {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .trim();
 
-    if (plainText) enqueue(plainText);
+    if (plainText) { console.log('[TTSDBG] enqueue', Date.now(), 'stream=' + streamState.isStreaming, 'seg=' + plainText.length, 'spoken=' + spokenCharsRef.current); enqueue(plainText); }
   }, [streamState.isStreaming, streamState.content, messages, muted]);
 
   // Relay numbered-option button clicks into InputArea's submit flow

@@ -263,6 +263,9 @@ export async function synthesizeSpeech(text: string, voiceId = 'am_adam', speed 
   return res.blob();
 }
 const TTS_MAX_CHUNK_CHARS = 350;
+// First TTS unit is one sentence: time-to-first-audio is ~0.65s fixed + 2.45us/byte,
+// so a 350-char opening pack costs ~3.1s vs ~1.1s for a single sentence (measured 2026-08-07).
+const TTS_FIRST_CHUNK_CHARS = 90;
 
 export function splitIntoTTSChunks(text: string): string[] {
   const sentences = text.split(/(?<=[.!?])\s+/);
@@ -289,7 +292,8 @@ export function splitIntoTTSChunks(text: string): string[] {
       continue;
     }
 
-    if ((current + ' ' + sentence).trim().length > TTS_MAX_CHUNK_CHARS) {
+    const limit = chunks.length === 0 ? TTS_FIRST_CHUNK_CHARS : TTS_MAX_CHUNK_CHARS;
+    if ((current + ' ' + sentence).trim().length > limit) {
       if (current) chunks.push(current.trim());
       current = sentence;
     } else {
