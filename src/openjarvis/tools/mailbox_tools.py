@@ -86,11 +86,22 @@ def list_accounts() -> List[Dict[str, str]]:
 
 def _resolve_account(account: str) -> str:
     """Pick an account name, defaulting to the only one if unambiguous."""
+    # openjarvis-account-resolve-v1: validate the id against configured
+    # accounts. Never pass an unknown id through as if it resolved, and
+    # accept the account email as an alias for the id (Defect 6).
+    configured = [a for a in list_accounts() if a["configured"]]
     if account:
-        return account
-    accounts = [a["account"] for a in list_accounts() if a["configured"]]
-    if len(accounts) == 1:
-        return accounts[0]
+        needle = account.strip().lower()
+        for a in configured:
+            if a["account"].lower() == needle:
+                return a["account"]
+        for a in configured:
+            email = (a.get("email") or "").lower()
+            if email and email == needle:
+                return a["account"]
+        return ""
+    if len(configured) == 1:
+        return configured[0]["account"]
     return ""
 
 
@@ -187,7 +198,13 @@ class MailboxUsageReportTool(BaseTool):
                 "size per folder, the senders responsible for the most bytes, "
                 "and the largest individual messages. Reads message headers "
                 "and sizes only, never message bodies. Use this to answer "
-                "questions about a mailbox being full or over quota."
+                "questions about a mailbox being full or over quota. ALSO use "
+                "this whenever the user asks WHO is sending them mail, which "
+                "senders or domains are cluttering the mailbox, or asks for a "
+                "list of senders to review, classify, or approve - it is the "
+                "correct first call for any such question. Raise top_senders "
+                "to 40 or more when the user wants a list to review. "
+                "openjarvis-sender-discovery-v1"
             ),
             parameters={
                 "type": "object",
@@ -230,6 +247,7 @@ class MailboxUsageReportTool(BaseTool):
         )
 
 
+# openjarvis-find-summary-v1 openjarvis-find-spec-v1
 @ToolRegistry.register("mailbox_find_messages")
 class MailboxFindMessagesTool(BaseTool):
     """Find messages by sender, subject, size, or age."""
@@ -243,9 +261,20 @@ class MailboxFindMessagesTool(BaseTool):
             name="mailbox_find_messages",
             description=(
                 "Find messages in a mailbox by sender address, subject text, "
-                "minimum size in bytes, or age in days. Each result includes "
-                "the folder and uid needed to act on that message. Use this "
-                "to build a deletion candidate list before removing anything."
+                "minimum size in bytes, or age in days. Defaults to "
+                "detail=summary, which returns counts grouped by sender and "
+                "folder. Summary is a complete and authoritative answer to "
+                "how many, from whom, and which folder. Do NOT call this "
+                "tool a second time with detail=full to confirm or expand a "
+                "count you already have. Use detail=full only when you are "
+                "about to move or delete specific messages and need their "
+                "uids to do it. from_addr is OPTIONAL: OMIT it entirely to "
+                "enumerate senders rather than confirm one. An unfiltered "
+                "summary call returns by_address rows for every sender in the "
+                "search window, which answers who is sending mail and how "
+                "much. NEVER guess a sender name to search for - if the user "
+                "has not named one, omit from_addr or call "
+                "mailbox_usage_report instead."
             ),
             parameters={
                 "type": "object",
@@ -269,7 +298,19 @@ class MailboxFindMessagesTool(BaseTool):
                         "default": 0,
                         "description": "Only messages older than this many days",
                     },
-                    "limit": {"type": "integer", "default": 200},
+                    "limit": {"type": "integer", "default": 5000},
+                    "detail": {
+                        "type": "string",
+                        "enum": ["summary", "full"],
+                        "default": "summary",
+                        "description": (
+                            "summary returns counts grouped by sender and "
+                            "folder and is sufficient for every counting or "
+                            "location question; full returns every message "
+                            "object including uids and is only for when you "
+                            "need uids to act on messages"
+                        ),
+                    },
                 },
             },
             category="communication",
@@ -286,6 +327,15 @@ class MailboxFindMessagesTool(BaseTool):
 
         before: Optional[datetime] = None
         try:
+            limit = int(params.get("limit", 5000) or 5000)
+        except (TypeError, ValueError):
+            limit = 5000
+        if limit <= 0:
+            limit = 5000
+        detail = str(params.get("detail", "summary") or "summary").lower()
+        if detail not in ("summary", "full"):
+            detail = "summary"
+        try:
             days = int(params.get("older_than_days", 0) or 0)
         except (TypeError, ValueError):
             days = 0
@@ -299,7 +349,7 @@ class MailboxFindMessagesTool(BaseTool):
                 subject=str(params.get("subject", "") or ""),
                 larger_than_bytes=int(params.get("larger_than_bytes", 0) or 0),
                 before=before,
-                limit=int(params.get("limit", 200) or 200),
+                limit=limit,
             )
         except Exception as exc:
             logger.exception("mailbox_find_messages failed")
@@ -310,15 +360,53 @@ class MailboxFindMessagesTool(BaseTool):
             )
 
         total = sum(h["bytes"] for h in hits)
+        truncated = len(hits) >= limit
+        by_address: Dict[str, Dict[str, Any]] = {}
+        by_folder: Dict[str, Dict[str, Any]] = {}
+        for h in hits:
+            addr = str(h.get("from_addr", "") or "")
+            fold = str(h.get("folder", "") or "")
+            size = int(h.get("bytes", 0) or 0)
+            row_a = by_address.setdefault(
+                addr, {"from_addr": addr, "count": 0, "bytes": 0}
+            )
+            row_a["count"] += 1
+            row_a["bytes"] += size
+            row_f = by_folder.setdefault(
+                fold, {"folder": fold, "count": 0, "bytes": 0}
+            )
+            row_f["count"] += 1
+            row_f["bytes"] += size
+        payload: Dict[str, Any] = {
+            "match_count": len(hits),
+            "total_matched": len(hits),
+            "total_bytes": total,
+            "limit": limit,
+            "truncated": truncated,
+            "detail": detail,
+            "by_address": sorted(by_address.values(), key=lambda r: -r["count"]),
+            "by_folder": sorted(by_folder.values(), key=lambda r: -r["count"]),
+            "coverage": "newest ~10000 per folder (IMAP server window)",  # openjarvis-find-window-v1
+        }
+        notes = [
+            "COUNTS ARE WINDOWED. The mail server exposes only the newest "
+            "~10,000 messages per folder and does not index past them. "
+            "match_count is therefore a FLOOR within that window and is NEVER "
+            "a mailbox total. When reporting a count, say plainly that it "
+            "covers only the most recent mail the server exposes. Do not claim "
+            "all matching mail was found, moved, or deleted."
+        ]
+        if truncated:
+            notes.append(
+                "RESULT ALSO TRUNCATED AT THE RESULT LIMIT, below even the "
+                "server window. Re-run with a higher limit before acting."
+            )
+        payload["note"] = " ".join(notes)
+        if detail == "full":
+            payload["matches"] = hits
         return ToolResult(
             tool_name=self.tool_id,
-            content=_dump(
-                {
-                    "match_count": len(hits),
-                    "total_bytes": total,
-                    "matches": hits,
-                }
-            ),
+            content=_dump(payload),
             success=True,
         )
 
@@ -393,7 +481,20 @@ class MailboxMoveToTrashTool(BaseTool):
                     "uids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Message uids from mailbox_find_messages",
+                        "description": (
+                            "Message uids from mailbox_find_messages. Omit this "
+                            "and pass from_addr instead for anything larger than "
+                            "a handful of messages."
+                        ),
+                    },
+                    "from_addr": {
+                        "type": "string",
+                        "description": (
+                            "Sender substring, e.g. 'microcenter'. When given, "
+                            "the tool finds the matching messages in the named "
+                            "folder itself and moves them. Preferred over uids. "
+                            "Do not pass both."
+                        ),
                     },
                     "dry_run": {"type": "boolean", "default": True},
                     "confirm": {
@@ -401,11 +502,11 @@ class MailboxMoveToTrashTool(BaseTool):
                         "description": "Must be '" + CONFIRM_TOKEN + "' to apply",
                     },
                 },
-                "required": ["folder", "uids"],
+                "required": ["folder"],
             },
             category="communication",
             latency_estimate=5.0,
-            timeout_seconds=300.0,
+            timeout_seconds=1800.0,  # openjarvis-tool-timeout-v1
             required_capabilities=["mail.write"],
         )
 
@@ -416,10 +517,143 @@ class MailboxMoveToTrashTool(BaseTool):
             return _no_account_result(self.tool_id, account)
 
         folder = str(params.get("folder", "") or "")
-        uids = params.get("uids") or []
-        if isinstance(uids, str):
-            uids = [u.strip() for u in uids.split(",") if u.strip()]
-        uids = [str(u) for u in uids]
+
+        # openjarvis-filter-move-v1
+        # Server-side selection. The model passes a sender substring; the tool
+        # resolves it to uids here so no uid list ever crosses the model.
+        _from_addr = str(params.get("from_addr", "") or "").strip()
+        _resolved = 0
+        _blocked_report = {}
+        if _from_addr:
+            if params.get("uids"):
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=_dump({
+                        "error": (
+                            "Pass either from_addr or uids, not both. Use "
+                            "from_addr and let the tool select the messages."
+                        )
+                    }),
+                    success=False,
+                )
+            if not folder:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=_dump({"error": "folder is required when using from_addr"}),
+                    success=False,
+                )
+            try:
+                _hits = conn.find_messages(from_addr=_from_addr, limit=5000)
+            except Exception as exc:
+                logger.exception("mailbox_move_to_trash from_addr lookup failed")
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=_dump({"error": "sender lookup failed: %s" % exc}),
+                    success=False,
+                )
+            _sel = []
+            for _h in _hits or []:
+                if not isinstance(_h, dict):
+                    continue
+                if str(_h.get("folder", "") or "") != folder:
+                    continue
+                _u = str(_h.get("uid", "") or "").strip()
+                if _u.isdigit():
+                    _sel.append(_u)
+            # openjarvis-protected-senders-v1
+            import json as _json
+            from pathlib import Path as _Path
+            _defaults = ['stackcommerce.com', 'cdgray33@yahoo.com',
+                'notify@r.groupon.com', 'orders@r.groupon.com',
+                'verify@r.groupon.com', 'otp@r.groupon.com',
+                'orders@sidedeal', 'account@', 'ratings@',
+                'noreply@service.wayfair.com']
+            _prot = _defaults
+            try:
+                _pf = _Path.cwd() / 'protected_senders.json'
+                if _pf.is_file():
+                    _ld = _json.loads(_pf.read_text(encoding='utf-8'))
+                    if isinstance(_ld, list) and _ld:
+                        _prot = [str(x).lower() for x in _ld if str(x).strip()]
+            except Exception:
+                logger.exception('protected_senders.json unreadable; using built-in list')
+            _keep = []
+            for _h in _hits or []:
+                if not isinstance(_h, dict):
+                    continue
+                if str(_h.get('folder', '') or '') != folder:
+                    continue
+                _u2 = str(_h.get('uid', '') or '').strip()
+                if not _u2.isdigit():
+                    continue
+                _a = str(_h.get('from_addr', '') or '').lower()
+                _m = ''
+                for _p in _prot:
+                    if _p and _p in _a:
+                        _m = _p
+                        break
+                if _m:
+                    _blocked_report[_a] = _blocked_report.get(_a, 0) + 1
+                else:
+                    _keep.append(_u2)
+            _sel = _keep
+            if _blocked_report:
+                logger.warning('protected senders blocked from move: %s', _blocked_report)
+            if _blocked_report and not _sel:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=_dump({
+                        'error': 'all matched messages are from protected senders; nothing moved',
+                        'protected_blocked': _blocked_report,
+                        'from_addr': _from_addr,
+                        'folder': folder,
+                    }),
+                    success=False,
+                )
+            if not _sel:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=_dump({
+                        "error": "no messages matched",
+                        "from_addr": _from_addr,
+                        "folder": folder,
+                        "searched": len(_hits or []),
+                    }),
+                    success=False,
+                )
+            params["uids"] = _sel
+            _resolved = len(_sel)
+
+        # openjarvis-uid-typeguard-v1
+        uids = params.get("uids")
+        if isinstance(uids, (str, bytes)) or not isinstance(uids, (list, tuple)):
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=_dump({
+                    "error": (
+                        "uids must be a JSON array of numeric uid strings taken "
+                        "from a prior mailbox_find_messages result. A string was "
+                        "rejected. Do not construct uids yourself."
+                    ),
+                    "received_type": type(uids).__name__,
+                }),
+                success=False,
+            )
+        uids = [str(u).strip() for u in uids]
+        _bad = [u for u in uids if not u.isdigit()]
+        if _bad:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=_dump({
+                    "error": (
+                        "uids must be numeric strings from mailbox_find_messages. "
+                        "Non-numeric values were rejected and nothing was moved."
+                    ),
+                    "invalid_sample": _bad[:5],
+                    "invalid_count": len(_bad),
+                }),
+                success=False,
+            )
 
         if not folder or not uids:
             return ToolResult(
@@ -440,6 +674,14 @@ class MailboxMoveToTrashTool(BaseTool):
                 content=_dump({"error": str(exc)}),
                 success=False,
             )
+
+        if _resolved and isinstance(result, dict):
+            result = dict(result)
+            result["selected_by"] = "from_addr"
+            if _blocked_report:
+                result["protected_blocked"] = _blocked_report
+            result["from_addr"] = _from_addr
+            result["resolved_uid_count"] = _resolved
 
         return ToolResult(
             tool_name=self.tool_id,
