@@ -6,7 +6,7 @@ import logging
 import pathlib
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -348,6 +348,10 @@ def create_app(
         @app.get("/{full_path:path}")
         async def spa_catch_all(full_path: str):
             """Serve static files directly, fall back to index.html for SPA routes."""
+            # W2: never mask the API surface with the SPA index. Unmatched
+            # /v1/* and /api/* paths must 404, not return 200 text/html.
+            if full_path.startswith(("v1/", "api/")):
+                raise HTTPException(status_code=404, detail="Not Found")
             if full_path:
                 candidate = (static_dir / full_path).resolve()
                 # Path traversal prevention
