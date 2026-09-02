@@ -683,10 +683,55 @@ class MailboxMoveToTrashTool(BaseTool):
             result["from_addr"] = _from_addr
             result["resolved_uid_count"] = _resolved
 
+        # openjarvis-h1-result-contract-v1
+        # move_to_trash has FOUR outcomes. Projecting them onto bool(applied)
+        # reports B as success and reports C as failure while messages are
+        # already sitting in trash, which invites a duplicating retry.
+        _requested = len(uids)
+        if isinstance(result, dict):
+            _copied = int(result.get("copied_count") or 0)
+            _deleted = int(result.get("deleted_count") or 0)
+            _failed = list(result.get("failed_uids") or [])
+            _store_failed = list(result.get("store_failed") or [])
+        else:
+            _copied = _deleted = 0
+            _failed = _store_failed = []
+
+        if _copied == 0:
+            _outcome = "no_op"
+        elif _deleted == 0:
+            _outcome = "copied_not_removed"
+        elif _failed or _store_failed or _deleted != _requested:
+            _outcome = "partial"
+        else:
+            _outcome = "complete"
+
+        if isinstance(result, dict):
+            result = dict(result)
+            result["outcome"] = _outcome
+            result["requested_count"] = _requested
+            if _outcome == "copied_not_removed":
+                result["retry_unsafe"] = True
+                result["warning"] = (
+                    "%d message(s) were COPIED into the trash folder but NOT "
+                    "removed from %r. They now exist in BOTH places. Do NOT "
+                    "retry this call - a retry copies them into trash a second "
+                    "time. Report this to the user and stop."
+                    % (_copied, folder)
+                )
+            elif _outcome == "partial":
+                result["retry_unsafe"] = False
+                result["warning"] = (
+                    "Partial move: %d of %d message(s) were removed from %r. "
+                    "The remainder are still in place. This operation did NOT "
+                    "fully succeed - report the shortfall to the user."
+                    % (_deleted, _requested, folder)
+                )
+
         return ToolResult(
             tool_name=self.tool_id,
             content=_dump(result),
-            success=bool(result.get("applied")),
+            success=(_outcome == "complete"),
         )
 
 
