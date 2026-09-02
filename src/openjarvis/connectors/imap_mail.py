@@ -711,7 +711,19 @@ class ImapMailConnector(BaseConnector):
             if typ != "OK":
                 plan["error"] = "STORE +FLAGS \\Deleted failed"
                 return plan
-            imap.expunge()
+            # openjarvis-h1-emptyfolder-expunge-v1
+            _xtyp, _ = imap.expunge()
+            if _xtyp != "OK":
+                plan["expunge_failed"] = True
+                plan["error"] = (
+                    "EXPUNGE was refused by the server. %d message(s) in "
+                    "%r are flagged for deletion but were NOT removed. "
+                    "The folder is NOT empty and no space has been "
+                    "reclaimed. Report this to the user - do not report "
+                    "success." % (len(rows), folder)
+                )
+                return plan
+            plan["expunge_failed"] = False
             plan["applied"] = True
             return plan
         finally:
