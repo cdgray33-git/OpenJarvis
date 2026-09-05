@@ -1,0 +1,191 @@
+MARKER openjarvis-ctx-ceiling-v3
+RUN   20260905-123036
+HOST  http://172.16.33.200:11434
+MODEL qwen3-coder:30b
+SAMPLING temperature=0.7 num_predict=1024 NO SEED (production shape)
+DESIGN paired, fixed prompt ~12000 tok across 16 pairs; arms 8192 vs 16384
+Read-only. No mailbox, no OpenJarvis process, no config write.
+
+=== CONTROLS ===
+CONTROL num_ctx=8192   peval=1876   ntc=1 TOOLCALL       14.6s
+CONTROL num_ctx=16384  peval=1876   ntc=1 TOOLCALL       14.6s
+G1 passed - both controls emitted a tool call.
+
+=== ARM A : num_ctx=8192, 20 repeats ===
+  arm=A rep=0   peval=6818   ntc=1 evc=49    TOOLCALL       24.3s
+      FULL CONTENT rep=0 >>>
+
+      <<< END rep=0
+  arm=A rep=1   peval=6818   ntc=1 evc=49    TOOLCALL       13.0s
+      FULL CONTENT rep=1 >>>
+
+      <<< END rep=1
+  arm=A rep=2   peval=6818   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=2 >>>
+
+      <<< END rep=2
+  arm=A rep=3   peval=6818   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=3 >>>
+
+      <<< END rep=3
+  arm=A rep=4   peval=6816   ntc=1 evc=49    TOOLCALL       13.1s
+      FULL CONTENT rep=4 >>>
+
+      <<< END rep=4
+  arm=A rep=5   peval=6818   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=5 >>>
+
+      <<< END rep=5
+  arm=A rep=6   peval=6816   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=6 >>>
+
+      <<< END rep=6
+  arm=A rep=7   peval=6818   ntc=1 evc=49    TOOLCALL       13.1s
+      FULL CONTENT rep=7 >>>
+
+      <<< END rep=7
+  arm=A rep=8   peval=6816   ntc=1 evc=49    TOOLCALL       13.1s
+      FULL CONTENT rep=8 >>>
+
+      <<< END rep=8
+  arm=A rep=9   peval=6818   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=9 >>>
+
+      <<< END rep=9
+  arm=A rep=10  peval=6818   ntc=1 evc=49    TOOLCALL       13.0s
+      FULL CONTENT rep=10 >>>
+
+      <<< END rep=10
+  arm=A rep=11  peval=6818   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=11 >>>
+
+      <<< END rep=11
+  arm=A rep=12  peval=6818   ntc=1 evc=49    TOOLCALL       13.3s
+      FULL CONTENT rep=12 >>>
+
+      <<< END rep=12
+  arm=A rep=13  peval=6816   ntc=1 evc=49    TOOLCALL       13.2s
+      FULL CONTENT rep=13 >>>
+
+      <<< END rep=13
+  arm=A rep=14  peval=6818   ntc=1 evc=49    TOOLCALL       13.4s
+      FULL CONTENT rep=14 >>>
+
+      <<< END rep=14
+  arm=A rep=15  peval=6816   ntc=1 evc=49    TOOLCALL       13.8s
+      FULL CONTENT rep=15 >>>
+
+      <<< END rep=15
+  arm=A rep=16  peval=6818   ntc=1 evc=49    TOOLCALL       13.7s
+      FULL CONTENT rep=16 >>>
+
+      <<< END rep=16
+  arm=A rep=17  peval=6816   ntc=1 evc=49    TOOLCALL       13.8s
+      FULL CONTENT rep=17 >>>
+
+      <<< END rep=17
+  arm=A rep=18  peval=6818   ntc=1 evc=49    TOOLCALL       14.0s
+      FULL CONTENT rep=18 >>>
+
+      <<< END rep=18
+  arm=A rep=19  peval=6818   ntc=1 evc=49    TOOLCALL       13.7s
+      FULL CONTENT rep=19 >>>
+
+      <<< END rep=19
+
+=== ARM B : num_ctx=16384, 20 repeats ===
+  arm=B rep=0   peval=14824  ntc=1 evc=49    TOOLCALL       49.5s
+      FULL CONTENT rep=0 >>>
+
+      <<< END rep=0
+  arm=B rep=1   peval=14822  ntc=1 evc=49    TOOLCALL       37.2s
+      FULL CONTENT rep=1 >>>
+
+      <<< END rep=1
+  arm=B rep=2   peval=14824  ntc=1 evc=49    TOOLCALL       37.7s
+      FULL CONTENT rep=2 >>>
+
+      <<< END rep=2
+  arm=B rep=3   peval=14822  ntc=1 evc=49    TOOLCALL       37.8s
+      FULL CONTENT rep=3 >>>
+
+      <<< END rep=3
+  arm=B rep=4   peval=14822  ntc=1 evc=49    TOOLCALL       37.8s
+      FULL CONTENT rep=4 >>>
+
+      <<< END rep=4
+  arm=B rep=5   peval=14822  ntc=1 evc=49    TOOLCALL       37.6s
+      FULL CONTENT rep=5 >>>
+
+      <<< END rep=5
+  arm=B rep=6   peval=14820  ntc=1 evc=49    TOOLCALL       37.8s
+      FULL CONTENT rep=6 >>>
+
+      <<< END rep=6
+  arm=B rep=7   peval=14822  ntc=1 evc=49    TOOLCALL       33.4s
+      FULL CONTENT rep=7 >>>
+
+      <<< END rep=7
+  arm=B rep=8   peval=14820  ntc=1 evc=49    TOOLCALL       33.5s
+      FULL CONTENT rep=8 >>>
+
+      <<< END rep=8
+  arm=B rep=9   peval=14824  ntc=1 evc=49    TOOLCALL       33.2s
+      FULL CONTENT rep=9 >>>
+
+      <<< END rep=9
+  arm=B rep=10  peval=14822  ntc=1 evc=49    TOOLCALL       33.8s
+      FULL CONTENT rep=10 >>>
+
+      <<< END rep=10
+  arm=B rep=11  peval=14824  ntc=1 evc=49    TOOLCALL       36.3s
+      FULL CONTENT rep=11 >>>
+
+      <<< END rep=11
+  arm=B rep=12  peval=14822  ntc=1 evc=49    TOOLCALL       36.9s
+      FULL CONTENT rep=12 >>>
+
+      <<< END rep=12
+  arm=B rep=13  peval=14822  ntc=1 evc=49    TOOLCALL       37.3s
+      FULL CONTENT rep=13 >>>
+
+      <<< END rep=13
+  arm=B rep=14  peval=14822  ntc=1 evc=49    TOOLCALL       37.6s
+      FULL CONTENT rep=14 >>>
+
+      <<< END rep=14
+  arm=B rep=15  peval=14820  ntc=1 evc=49    TOOLCALL       37.8s
+      FULL CONTENT rep=15 >>>
+
+      <<< END rep=15
+  arm=B rep=16  peval=14822  ntc=1 evc=49    TOOLCALL       37.7s
+      FULL CONTENT rep=16 >>>
+
+      <<< END rep=16
+  arm=B rep=17  peval=14820  ntc=1 evc=49    TOOLCALL       38.0s
+      FULL CONTENT rep=17 >>>
+
+      <<< END rep=17
+  arm=B rep=18  peval=14824  ntc=1 evc=49    TOOLCALL       37.9s
+      FULL CONTENT rep=18 >>>
+
+      <<< END rep=18
+  arm=B rep=19  peval=14822  ntc=1 evc=49    TOOLCALL       37.9s
+      FULL CONTENT rep=19 >>>
+
+      <<< END rep=19
+
+=== MATRIX ===
+ arm  num_ctx   runs   unin  fails  pev_med  breakdown
+   A     8192     20      0      0     6818  TOOLCALL=20
+   B    16384     20      0      0    14822  TOOLCALL=20
+
+=== VALIDITY GATES ===
+G2 passed - arm A peval 6818, arm B peval 14822. Arms differ; arm A is
+  truncated and arm B is not.
+G3 passed - uninformative counts are within tolerance (A=0, B=0).
+G4 FAILED - arm A produced ZERO failures in 20 informative runs.
+  The probe shape does not reach the defect at 8192. Arm B being
+  clean proves NOTHING - it is clean from a clean baseline.
+  This is W33's third read shape: move the search back to the
+  LIVE AGENT PATH. Do not conclude the context fix worked.
