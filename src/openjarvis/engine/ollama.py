@@ -73,7 +73,7 @@ class OllamaEngine(InferenceEngine):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": kwargs.get("num_ctx", 8192),
+                "num_ctx": kwargs.get("num_ctx", _oj_default_num_ctx()),
             },
         }
         # Disable extended thinking by default (Qwen3.5 etc.).
@@ -191,7 +191,7 @@ class OllamaEngine(InferenceEngine):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": kwargs.get("num_ctx", 8192),
+                "num_ctx": kwargs.get("num_ctx", _oj_default_num_ctx()),
             },
         }
         # Mirror generate()'s default: disable extended thinking unless the
@@ -270,7 +270,7 @@ class OllamaEngine(InferenceEngine):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
-                "num_ctx": kwargs.get("num_ctx", 8192),
+                "num_ctx": kwargs.get("num_ctx", _oj_default_num_ctx()),
             },
         }
         if "think" not in kwargs:
@@ -464,3 +464,75 @@ def _oj_log_retry400_result(resp):
         )
     except Exception:
         pass
+
+# --- openjarvis-num-ctx-config-v1 -------------------------------------------
+# Resolves the DEFAULT num_ctx for this engine from configuration instead of a
+# hardcoded literal. Callers that pass num_ctx explicitly are unaffected.
+#
+# Resolution order:
+#   1. env OPENJARVIS_NUM_CTX
+#   2. [engine] num_ctx in config.toml
+#   3. 8192  (unchanged legacy behavior)
+#
+# Resolved once per process and cached. Every failure path falls back to 8192.
+
+_OJ_NUM_CTX_CACHE = None
+
+
+def _oj_config_path():
+    import os as _os
+    home = _os.environ.get("OPENJARVIS_HOME", "").strip()
+    if not home:
+        home = _os.path.join(_os.path.expanduser("~"), ".openjarvis")
+    return _os.path.join(home, "config.toml")
+
+
+def _oj_num_ctx_from_config():
+    import re as _re
+    try:
+        with open(_oj_config_path(), "rb") as _fh:
+            raw = _fh.read()
+    except Exception:
+        return None
+    text = raw.decode("utf-8", "replace").lstrip(chr(65279))
+    try:
+        import tomllib as _tomllib
+        data = _tomllib.loads(text)
+        val = data.get("engine", {}).get("num_ctx")
+        if val is not None:
+            return int(val)
+        return None
+    except Exception:
+        pass
+    try:
+        for chunk in _re.split(r"(?m)^\s*\[", text):
+            if chunk.startswith("engine]"):
+                m = _re.search(r"(?m)^\s*num_ctx\s*=\s*(\d+)", chunk)
+                if m:
+                    return int(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def _oj_default_num_ctx():
+    global _OJ_NUM_CTX_CACHE
+    if _OJ_NUM_CTX_CACHE is not None:
+        return _OJ_NUM_CTX_CACHE
+    value = 8192
+    try:
+        import os as _os
+        env = _os.environ.get("OPENJARVIS_NUM_CTX", "").strip()
+        if env:
+            value = int(env)
+        else:
+            cfg = _oj_num_ctx_from_config()
+            if cfg:
+                value = int(cfg)
+    except Exception:
+        value = 8192
+    if value < 512:
+        value = 8192
+    _OJ_NUM_CTX_CACHE = value
+    return _OJ_NUM_CTX_CACHE
+# --- end openjarvis-num-ctx-config-v1 ---------------------------------------
