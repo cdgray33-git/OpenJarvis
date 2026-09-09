@@ -58,10 +58,12 @@ def _configure_file_logging() -> str:
     log_path = os.path.join(log_dir, "backend.log")
 
     file_handler = RotatingFileHandler(
-        log_path, maxBytes=4 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        log_path, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
+    from openjarvis.cli.log_config import SanitizingFormatter
+
     file_handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        SanitizingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
 
     file_handler.addFilter(_TelemetryNoiseFilter())  # openjarvis-log-budget-v1
@@ -265,7 +267,7 @@ def serve(
                     else:
                         allowed = _DEFAULT_TOOLS
 
-                    print(f'[DEBUG] allowed={allowed}', flush=True)
+                    logger.info(f'[DEBUG] allowed={allowed}')  # openjarvis-debug-readable-v1
                     tools = []
                     for name in ToolRegistry.keys():
                         if name not in allowed:
@@ -277,8 +279,8 @@ def serve(
                             tools.append(tool_cls())
                         elif isinstance(tool_cls, BaseTool):
                             tools.append(tool_cls)
-                    print(f'[DEBUG] registry_keys={list(ToolRegistry.keys())}', flush=True)
-                    print(f'[DEBUG] tools_loaded={[t.__class__.__name__ for t in tools]}', flush=True)
+                    logger.info(f'[DEBUG] registry_keys={list(ToolRegistry.keys())}')  # openjarvis-debug-readable-v1
+                    logger.info(f'[DEBUG] tools_loaded={[t.__class__.__name__ for t in tools]}')  # openjarvis-debug-readable-v1
                     if tools:
                         agent_kwargs["tools"] = tools
 
@@ -510,7 +512,7 @@ def serve(
                         if (_tname == "retrieval" or _tname.startswith("memory_")) and hasattr(_t, "_backend"):
                             _t._backend = memory_backend
                             _wired += 1
-                    print(f"[DEBUG] wired memory_backend into {_wired} agent tool(s)", flush=True)
+                    logger.info(f"[DEBUG] wired memory_backend into {_wired} agent tool(s)")  # openjarvis-debug-readable-v1
                 except Exception as _exc:
                     logger.debug("Agent tool backend injection failed: %s", _exc)
         except Exception as exc:

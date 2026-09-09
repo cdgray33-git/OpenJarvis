@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional, Union
@@ -47,12 +48,18 @@ def setup_logging(
     # Clear existing handlers to avoid duplication across calls
     logger.handlers.clear()
 
+    _env_level = logging.getLevelName(
+        os.environ.get("OPENJARVIS_LOG_LEVEL", "WARNING").strip().upper()
+    )
+    if not isinstance(_env_level, int):
+        _env_level = logging.WARNING
+
     if quiet:
         level = logging.ERROR
     elif verbose:
         level = logging.DEBUG
     else:
-        level = logging.WARNING
+        level = _env_level
 
     logger.setLevel(level)
 

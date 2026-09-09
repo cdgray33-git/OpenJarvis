@@ -27,5 +27,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "All dependencies ready" -ForegroundColor Green
 
 # Start server
+# Route the openjarvis logger tree at INFO (see log_config.setup_logging)
+$env:OPENJARVIS_LOG_LEVEL = "INFO"
 Write-Host "Starting server on port 8010..." -ForegroundColor Cyan
 & "C:\Users\Admin\OpenJarvis\.venv\Scripts\python.exe" -m openjarvis.cli serve --port 8010
