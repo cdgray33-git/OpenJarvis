@@ -23,7 +23,7 @@ from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.types import ToolCall, ToolResult
 
 # ---------------------------------------------------------------------------
-# ToolSpec — metadata describing a tool's interface
+# ToolSpec - metadata describing a tool's interface
 # ---------------------------------------------------------------------------
 
 
@@ -86,7 +86,7 @@ class BaseTool(ABC):
 
 
 # ---------------------------------------------------------------------------
-# ToolExecutor — dispatch engine for tool calls
+# ToolExecutor - dispatch engine for tool calls
 # ---------------------------------------------------------------------------
 
 
@@ -139,6 +139,43 @@ def _args_digest(rawargs, limit: int = 400) -> str:
     return s[:limit] + ("...TRUNC" if len(s) > limit else "")
 
 
+# openjarvis-dispatch-outcome-v1
+def _outcome_reason(result: Any) -> str:
+    """Classify why a dispatch ended, for the dispatch log.
+
+    Read-only: inspects the ToolResult that is already being returned and
+    never alters it. Reason strings are stable tokens meant to be grepped
+    out of dispatch.log; GATE_* values are the Defect 6 confirmation gate.
+    """
+    if getattr(result, "success", False):
+        return "OK"
+    _md = getattr(result, "metadata", None) or {}
+    if _md.get("timed_out"):
+        return "TIMEOUT_TOOL"
+    _t = str(getattr(result, "content", "") or "")
+    if _t.startswith("Unknown tool:"):
+        return "UNKNOWN_TOOL"
+    if _t.startswith("Invalid arguments JSON:"):
+        return "BAD_ARGS"
+    if _t.startswith("Security block:"):
+        return "BOUNDARY_BLOCK"
+    if _t.startswith("Capability "):
+        return "CAPABILITY_DENIED"
+    if _t.startswith("Taint violation:"):
+        return "TAINT_VIOLATION"
+    if "callback is available" in _t:
+        return "GATE_NO_CALLBACK"
+    if "denied by user" in _t:
+        return "GATE_DENIED"
+    if "confirmation answer arrived" in _t:
+        return "GATE_TIMEOUT"
+    if "callback returned False" in _t:
+        return "GATE_INTERNAL_ERROR"
+    if _t.startswith("Tool execution error:"):
+        return "TOOL_ERROR"
+    return "FAIL_OTHER"
+
+
 class ToolExecutor:
     """Dispatch tool calls to registered tools with event bus integration.
 
@@ -172,13 +209,44 @@ class ToolExecutor:
         self._boundary_guard = boundary_guard
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
-        """Parse arguments, dispatch to tool, measure latency, emit events."""
-        _get_dispatch_logger().info(
+        """Log ATTEMPT, dispatch, then log exactly ONE OUTCOME on every path.
+
+        openjarvis-dispatch-outcome-v1. The dispatch body has seven early
+        returns (unknown tool, bad args, boundary block, capability denied,
+        taint violation, gate-no-callback, gate-denied/timeout). Before this
+        wrapper only the success path logged OUTCOME, so an orphaned ATTEMPT
+        was ambiguous across eight causes. Every path now pairs.
+        """
+        _lg = _get_dispatch_logger()
+        _lg.info(
             "ATTEMPT turn=%s tool=%s args=%s thread=%s",
             CURRENT_TURN_ID.get(), tool_call.name,
             _args_digest(tool_call.arguments),
             threading.current_thread().name,
         )
+        _t0 = time.time()
+        try:
+            result = self._execute_inner(tool_call)
+        except BaseException as exc:
+            _lg.info(
+                "OUTCOME turn=%s tool=%s success=False latency=%.3f"
+                " timed_out=False reason=EXCEPTION detail=%s",
+                CURRENT_TURN_ID.get(), tool_call.name,
+                time.time() - _t0, type(exc).__name__,
+            )
+            raise
+        _lg.info(
+            "OUTCOME turn=%s tool=%s success=%s latency=%.3f"
+            " timed_out=%s reason=%s",
+            CURRENT_TURN_ID.get(), tool_call.name, result.success,
+            time.time() - _t0,
+            bool((getattr(result, "metadata", None) or {}).get("timed_out")),
+            _outcome_reason(result),
+        )
+        return result
+
+    def _execute_inner(self, tool_call: ToolCall) -> ToolResult:
+        """Parse arguments, dispatch to tool, measure latency, emit events."""
         tool = self._tools.get(tool_call.name)
         if tool is None:
             return ToolResult(
@@ -415,9 +483,9 @@ class ToolExecutor:
         if self._bus:
             result_text = str(result.content)[:10240] if result.content else ""
             # Pass through ToolResult.metadata so downstream consumers
-            # (TraceCollector → TraceStep.metadata → SkillOptimizer) can
+            # (TraceCollector -> TraceStep.metadata -> SkillOptimizer) can
             # see skill-tagged invocations.  Filter to JSON-serializable
-            # values only — internal objects like TaintSet (added by the
+            # values only - internal objects like TaintSet (added by the
             # taint auto-detect above) must not leak to event subscribers
             # since the trace store will JSON-serialize them later.
             event_metadata = self._json_safe_metadata(result.metadata)
@@ -432,11 +500,6 @@ class ToolExecutor:
                 },
             )
 
-        _get_dispatch_logger().info(
-            "OUTCOME turn=%s tool=%s success=%s latency=%.3f timed_out=%s",
-            CURRENT_TURN_ID.get(), tool_call.name, result.success,
-            latency, bool(result.metadata.get("timed_out")),
-        )
         return result
 
     @staticmethod
@@ -448,7 +511,7 @@ class ToolExecutor:
         in-process security checks but cannot be serialized when the
         ``TraceCollector`` writes ``TraceStep.metadata`` to JSON in the
         SQLite trace store.  This helper drops any keys whose value is
-        not JSON-safe — silently, since the missing data is not
+        not JSON-safe - silently, since the missing data is not
         load-bearing for downstream consumers.
         """
         if not metadata:
