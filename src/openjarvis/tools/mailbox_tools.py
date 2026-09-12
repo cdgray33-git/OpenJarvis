@@ -9,7 +9,7 @@ Registry constraint: ``MCPServer._auto_discover_tools`` instantiates user
 tools with ``ToolRegistry.create(key)`` - no arguments. Every tool here is
 therefore zero-arg constructible and resolves its account at execute time.
 
-SAFETY NOTE - why ``requires_confirmation`` is deliberately NOT set:
+SAFETY NOTE - the ``requires_confirmation`` flag is NOT set, and why:
 
 ``ToolExecutor.execute`` treats that flag as a hard requirement, not a
 prompt::
@@ -18,17 +18,29 @@ prompt::
         if not self._interactive or self._confirm_callback is None:
             return ToolResult(..., success=False)
 
-The server-side agent path builds its executor without ``interactive=True``
-and without a confirm callback, so a tool carrying that flag does not ask
-for confirmation - it fails every single call. The safety interlock is
-implemented in the tool contract instead:
+STATUS 2026-09-11 (W49): the ORIGINAL reason recorded here was that the
+server-side agent path built its executor without ``interactive=True`` and
+without a confirm callback. THAT IS NO LONGER TRUE. ``cli/serve.py:316-317``
+sets both on the live chat agent, gated by ``OPENJARVIS_CONFIRM_INTERACTIVE``
+(defaults ON), with ``_server_confirm_callback`` defined at ``cli/serve.py:310``.
+
+The flag still stays off, for a DIFFERENT reason: that callback blocks in
+``confirm_registry.wait()`` and was observed returning False only after the
+full 120 s TTL, because no consumer of ``POST /v1/tools/confirm`` has been
+proven to resolve the id. Setting the flag today would park every call for
+120 s and then fail it - the same outcome the original note feared, by a
+different road. Turn it on only after that consumer is verified end to end.
+
+The interlock actually in force is in the tool contract:
 
   * ``dry_run`` defaults to True and returns a plan with exact counts
   * applying requires BOTH ``dry_run=False`` AND ``confirm`` set to the
     exact string ``CONFIRM DELETE``
 
-That keeps the destructive path reachable by the agent while making it
-impossible to trip by accident or by a single malformed argument.
+NAMING: ``CONFIRM DELETE`` is historical. These tools MOVE messages to the
+Trash folder; only a human deletes. The interlock exists because one call
+can move a very large number of messages, so the value of the dry-run plan
+is the COUNT and the SCOPE, not permanence.
 
 Account setup: credentials live in
 ``~/.openjarvis/connectors/imap_mail_<account>.json`` as
