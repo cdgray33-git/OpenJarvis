@@ -2193,9 +2193,33 @@ def create_agent_manager_router(
             _body = {}
 
         _tool_name = str(_body.get("tool") or "").strip()
-        _args = _body.get("arguments")
-        if not isinstance(_args, dict):
+
+        # openjarvis-test-exec-argguard-v1 (W51)
+        # A malformed args key used to coerce silently to {}, so the human
+        # was shown "with args {}" and asked to approve a command never
+        # displayed. Reject it loudly instead.
+        _known = {"tool", "arguments"}
+        _unknown = [k for k in _body.keys() if k not in _known]
+        if _unknown:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "unknown field(s) in body",
+                    "unknown": _unknown,
+                    "expected": sorted(_known),
+                },
+            )
+        _args = _body.get("arguments", {})
+        if _args is None:
             _args = {}
+        if not isinstance(_args, dict):
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "arguments must be an object",
+                    "got": type(_args).__name__,
+                },
+            )
 
         if not _tool_name:
             return JSONResponse(
