@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+﻿import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
@@ -10,6 +10,7 @@ import { listConnectors } from '../../lib/connectors-api';
 import { fetchSavings } from '../../lib/api';
 import { enqueue, stopAll } from '../../audio/ttsPlayer';
 import { streamChat } from '../../lib/sse';
+import { ConfirmPrompt } from './ConfirmPrompt';
 import type { ChatMessage, ToolCallInfo, TokenUsage, MessageTelemetry } from '../../types';
 
 function formatBytes(b: number): string {
@@ -310,7 +311,7 @@ export function ChatArea() {
           onClick={toggleSystemPanel}
           className="p-1.5 rounded-md transition-colors cursor-pointer"
           style={{ color: 'var(--color-text-tertiary)' }}
-          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
+          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? 'âŒ˜' : 'Ctrl'}+I)`}
         >
           <PanelIcon size={16} />
         </button>
@@ -363,7 +364,7 @@ export function ChatArea() {
               {getGreeting()}
             </h2>
             <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally — private, fast, and always available.
+              Ask anything. Your AI runs locally â€” private, fast, and always available.
             </p>
 
             <div className="flex gap-3">
@@ -436,6 +437,9 @@ export function ChatArea() {
           variant="cyan"
         />
       </div>
+
+      {/* openjarvis-confirm-ui-v1 */}
+      <ConfirmPrompt />
 
       <div style={{ paddingBottom: '0.75rem' }}>
         <InputArea onSendMessage={handleSendMessage} />

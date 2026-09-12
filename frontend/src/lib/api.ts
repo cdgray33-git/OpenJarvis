@@ -970,3 +970,38 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
 
 
 
+
+// ---------------------------------------------------------------------------
+// openjarvis-confirm-ui-v1 - Defect 6 confirmation gate, inbound half
+//
+// Route read live 2026-09-12 at agent_manager_routes.py:2046-2110.
+// Body is confirm_id + decision ONLY. turn_id is NOT sent - it comes back in
+// the response from the registry entry (:2100). decision must be the lowercase
+// word approve or deny (:2062-2067); anything else is a 400 before the
+// registry is touched. Registry is write-once: a second POST reports 409 with
+// the decision already held. 404 means the id expired (:2085).
+// ---------------------------------------------------------------------------
+
+export interface ConfirmToolResponse {
+  ok: boolean;
+  status: number;
+  body: Record<string, unknown>;
+}
+
+export async function confirmTool(
+  confirmId: string,
+  decision: 'approve' | 'deny',
+): Promise<ConfirmToolResponse> {
+  const res = await apiFetch(`${getBase()}/v1/tools/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm_id: confirmId, decision }),
+  });
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
+  return { ok: res.ok, status: res.status, body };
+}
