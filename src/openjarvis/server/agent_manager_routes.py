@@ -19,6 +19,7 @@ from openjarvis.tools.storage.context import inject_context, ContextConfig
 from openjarvis.connectors.store import KnowledgeStore
 
 logger = logging.getLogger("openjarvis.server.agent_manager")
+from openjarvis.tools._stubs import ConfirmPolicy
 
 
 class CreateAgentRequest(BaseModel):
@@ -718,7 +719,13 @@ async def _stream_managed_agent(
                     max_turns=int(config.get("max_turns", 8)),
                     temperature=float(config.get("temperature", 0.3)),
                     interactive=True,
-                    confirm_callback=lambda _prompt: True,
+                    confirm_callback=ConfirmPolicy(
+                                        site="dr-sse-stream",
+                                        reason=(
+                                            "managed deep_research agent run in a background thread; no confirm channel reaches the SSE client"
+                                        ),
+                                        human_present=False,
+                                    ),
                 )
 
                 # Wrap the executor to capture tool calls
@@ -1246,7 +1253,13 @@ async def _stream_managed_agent(
                                     tools=[tool_instance],
                                     bus=bus,
                                     interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    confirm_callback=ConfirmPolicy(
+                                        site="managed-agent-tool",
+                                        reason=(
+                                            "tool was selected into this agents toolkit in the wizard; selection is the consent, toolkit bind enforced above"
+                                        ),
+                                        human_present=False,
+                                    ),
                                 )
                                 result = executor.execute(
                                     StubToolCall(
@@ -1603,7 +1616,13 @@ def create_agent_manager_router(
                                     model=getattr(engine, "_model", ""),
                                     tools=tools,
                                     interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    confirm_callback=ConfirmPolicy(
+                                        site="imessage-daemon",
+                                        reason=(
+                                            "unattended iMessage daemon; no human is on this path to answer a prompt"
+                                        ),
+                                        human_present=False,
+                                    ),
                                 )
 
                                 def handler(text: str) -> str:
@@ -1680,7 +1699,13 @@ def create_agent_manager_router(
                                     model=model_name,
                                     tools=tools,
                                     interactive=True,
-                                    confirm_callback=lambda _prompt: True,
+                                    confirm_callback=ConfirmPolicy(
+                                        site="sendblue-bridge",
+                                        reason=(
+                                            "unattended SendBlue channel bridge; no human is on this path to answer a prompt"
+                                        ),
+                                        human_present=False,
+                                    ),
                                 )
                         bus = getattr(request.app.state, "bus", None)
                         if bus is None:

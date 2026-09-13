@@ -176,6 +176,59 @@ def _outcome_reason(result: Any) -> str:
     return "FAIL_OTHER"
 
 
+# --- openjarvis-confirm-policy-v1 -------------------------------------------
+# A named, auditable stand-in for `confirm_callback=lambda _prompt: True`.
+#
+# W56. Four call sites passed a bare lambda that approved every prompt and
+# left no trace: dispatch.log recorded reason=OK, byte-identical to a human
+# approval. An auto-approve nobody can see is indistinguishable from consent.
+# This object approves the same calls, but first writes WHICH policy applied
+# and WHY, so the record can tell the two apart.
+#
+# It is NOT a gate. It never denies. Its entire job is attribution.
+
+
+class ConfirmPolicy:
+    """Named auto-approve policy: logs POLICY to dispatch.log, then approves.
+
+    site:
+        Stable token naming the construction site (e.g. "dr-sse-stream").
+    reason:
+        Why unattended auto-approve is the posture chosen here.
+    human_present:
+        Whether anyone is on the other end of this path at all. False means
+        no human could answer a confirmation prompt even if one were raised.
+    """
+
+    __slots__ = ("site", "reason", "human_present")
+
+    def __init__(
+        self,
+        site: str,
+        reason: str,
+        human_present: bool = False,
+    ) -> None:
+        self.site = site
+        self.reason = reason
+        self.human_present = human_present
+
+    def __repr__(self) -> str:
+        return "<ConfirmPolicy site=%s decision=AUTO_APPROVE>" % self.site
+
+    def __call__(self, prompt: str) -> bool:
+        _lg = _get_dispatch_logger()
+        _lg.info(
+            "POLICY site=%s decision=AUTO_APPROVE human_present=%s"
+            " turn=%s confirm_id=%s reason=%s prompt=%s",
+            self.site,
+            self.human_present,
+            CURRENT_TURN_ID.get(),
+            CURRENT_CONFIRM_ID.get() or "-",
+            self.reason,
+            _args_digest(prompt, limit=200),
+        )
+        return True
+
 class ToolExecutor:
     """Dispatch tool calls to registered tools with event bus integration.
 
@@ -607,4 +660,4 @@ def build_tool_descriptions(
     return "\n\n".join(sections)
 
 
-__all__ = ["BaseTool", "ToolExecutor", "ToolSpec", "build_tool_descriptions"]
+__all__ = ["BaseTool", "ConfirmPolicy", "ToolExecutor", "ToolSpec", "build_tool_descriptions"]
