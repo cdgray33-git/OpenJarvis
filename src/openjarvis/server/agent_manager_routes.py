@@ -981,6 +981,35 @@ async def _stream_managed_agent(
                 "Failed to get MCP tools for streaming: %s", exc, exc_info=True
             )
 
+    # openjarvis-toolkit-bind-v1 (W54)
+    #
+    # The tool name arrives from the model's tool_call fragment. It used to go
+    # straight into the GLOBAL ToolRegistry, so an agent configured
+    # tools = ["file_read"] could emit shell_exec and have it executed under an
+    # auto-approve callback. Consent is only consent if the thing consented to
+    # is the thing that executes, so dispatch is bound here to the exact spec
+    # set handed to the model (config tools + discovered MCP tools).
+    #
+    # Empty set means no tools were bound to the model at all; in that case any
+    # tool_call is unsolicited and is refused. Fails CLOSED by design.
+    _allowed_tool_names: set = set()
+    for _t in (stream_kwargs.get("tools") or []):
+        _n = None
+        if isinstance(_t, dict):
+            _fn = _t.get("function")
+            if isinstance(_fn, dict):
+                _n = _fn.get("name")
+            if not _n:
+                _n = _t.get("name")
+        if _n:
+            _allowed_tool_names.add(_n)
+    logger.info(
+        "Managed agent %s toolkit bound (%d tools): %s",
+        agent_id,
+        len(_allowed_tool_names),
+        sorted(_allowed_tool_names),
+    )
+
     # Shared state between the generator and the BackgroundTask that
     # runs after the SSE response completes (or the client disconnects
     # mid-stream). Starlette guarantees the BackgroundTask runs in both
@@ -1169,6 +1198,20 @@ async def _stream_managed_agent(
                     tool_start_ms = _time.monotonic() * 1000
 
                     try:
+                        # openjarvis-toolkit-bind-v1 (W54)
+                        # Enforce the toolkit BEFORE the registry lookup. The
+                        # registry is global; the toolkit is not.
+                        if tool_name not in _allowed_tool_names:
+                            logger.warning(
+                                "TOOLKIT REFUSAL agent=%s tool=%s allowed=%s",
+                                agent_id,
+                                tool_name,
+                                sorted(_allowed_tool_names),
+                            )
+                            raise PermissionError(
+                                "tool '%s' is not in this agent's toolkit - "
+                                "refused before registry lookup" % tool_name
+                            )
                         # Try MCP adapter first (external tools)
                         mcp_adapter = mcp_adapters.get(tool_name)
                         if mcp_adapter is not None:
