@@ -353,7 +353,22 @@ def _run_agent(
         agent_kwargs["tools"] = tools
         agent_kwargs["max_turns"] = config.agent.max_turns
         agent_kwargs["interactive"] = True
-        agent_kwargs["confirm_callback"] = lambda prompt: True
+        # openjarvis-confirm-policy-v1 (W56)
+        # Fifth auto-approve site. Distinct from the four in
+        # agent_manager_routes: a human IS at this terminal. Nothing is
+        # wired to ask them, so the gate self-approves - that is a gap,
+        # not an unattended posture. Recorded as such.
+        from openjarvis.tools._stubs import ConfirmPolicy
+
+        agent_kwargs["confirm_callback"] = ConfirmPolicy(
+            site="cli-ask",
+            reason=(
+                "interactive CLI: a human is at the terminal but no "
+                "stdin confirmation prompt is wired, so the gate "
+                "self-approves; this is a gap, not a chosen posture"
+            ),
+            human_present=True,
+        )
     if capability_policy is not None:
         agent_kwargs["capability_policy"] = capability_policy
 

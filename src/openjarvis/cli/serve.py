@@ -1,4 +1,4 @@
-﻿"""jarvis serve - OpenAI-compatible API server."""
+"""jarvis serve - OpenAI-compatible API server."""
 
 from __future__ import annotations
 
@@ -307,11 +307,45 @@ def serve(
                         from openjarvis.core import confirm_registry as _cr
                         from openjarvis.tools import _stubs as _confirm_stubs
 
+                        # openjarvis-confirm-policy-v1 (W56)
+                        # Sibling of ConfirmPolicy: this one is a REAL gate,
+                        # it waits for the human. But it returned False for
+                        # three unrelated reasons and wrote nothing, so the
+                        # record could not tell a denial from a timeout from
+                        # a missing confirm_id. Name the branch that fired.
                         def _server_confirm_callback(_prompt: str) -> bool:
+                            _plg = _confirm_stubs._get_dispatch_logger()
                             _cid = _confirm_stubs.CURRENT_CONFIRM_ID.get()
+                            _turn = _confirm_stubs.CURRENT_TURN_ID.get()
                             if not _cid:
+                                _plg.info(
+                                    "POLICY site=chat-agent-live"
+                                    " decision=DENY_NO_CONFIRM_ID"
+                                    " human_present=True turn=%s"
+                                    " confirm_id=- reason=gate reached with"
+                                    " no confirm_id in context; failing"
+                                    " closed",
+                                    _turn,
+                                )
                                 return False
-                            return _cr.wait(_cid) == _cr.APPROVED
+                            _plg.info(
+                                "POLICY site=chat-agent-live decision=WAIT"
+                                " human_present=True turn=%s confirm_id=%s"
+                                " reason=blocking on human answer via"
+                                " POST /v1/tools/confirm",
+                                _turn,
+                                _cid,
+                            )
+                            _outcome = _cr.wait(_cid)
+                            _plg.info(
+                                "POLICY site=chat-agent-live decision=%s"
+                                " human_present=True turn=%s confirm_id=%s"
+                                " reason=registry returned this outcome",
+                                str(_outcome).upper(),
+                                _turn,
+                                _cid,
+                            )
+                            return _outcome == _cr.APPROVED
 
                         agent_kwargs["interactive"] = True
                         agent_kwargs["confirm_callback"] = (
