@@ -14,6 +14,8 @@ import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
+// openjarvis-confirm-app-v1
+import { ConfirmPrompt } from './components/Chat/ConfirmPrompt';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -181,6 +183,8 @@ export default function App() {
         </Route>
       </Routes>
       <Toaster position="bottom-right" />
+      {/* openjarvis-confirm-app-v1 - app level, survives route changes */}
+      <ConfirmPrompt />
       {commandPaletteOpen && <CommandPalette />}
       {optInModalOpen && (
         <OptInModal onClose={() => setOptInModalOpen(false)} />
