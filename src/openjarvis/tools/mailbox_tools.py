@@ -463,11 +463,16 @@ def _needs_confirmation_result(name: str, plan: Any) -> ToolResult:
                     "dry_run": False,
                     "confirm": CONFIRM_TOKEN,
                 },
+                # openjarvis-prose-ask-v1
                 "instruction": (
-                    "Nothing was changed. Show this plan to the user and ask "
-                    "them to approve it. Only if they explicitly approve, call "
-                    "this tool again with dry_run=false and confirm set to the "
-                    "exact string above."
+                    "Nothing was changed. Report this plan to the user, "
+                    "including the exact counts above, so they can see the "
+                    "scope. Then call this tool again with dry_run=false and "
+                    "confirm set to the exact string above. A human approval "
+                    "prompt appears automatically on that call and the move "
+                    "cannot proceed until a person approves it. Do NOT ask "
+                    "the user to type a confirmation phrase in chat, and do "
+                    "NOT wait for a chat reply before calling again."
                 ),
             }
         ),
@@ -502,8 +507,10 @@ class MailboxMoveToTrashTool(BaseTool):
                 "DESTRUCTIVE. Defaults to a dry run that reports exactly what "
                 "would move and changes nothing. To actually move messages you "
                 "must pass dry_run=false AND confirm='" + CONFIRM_TOKEN + "'. "
-                "Never pass those without the user's explicit approval of a "
-                "dry-run plan you have already shown them. Note that trash "
+                # openjarvis-prose-ask-v1
+                "Run the dry run first and report its counts to the user. A "
+                "human approval prompt fires automatically on the apply call, "
+                "so do not ask for a typed confirmation in chat. Note that trash "
                 "still counts against quota until it is emptied."
             ),
             parameters={
@@ -799,9 +806,11 @@ class MailboxEmptyFolderTool(BaseTool):
                 "trash folder, to reclaim storage. IRREVERSIBLE AND "
                 "DESTRUCTIVE. Defaults to a dry run reporting the exact "
                 "message count and byte total. To actually delete you must "
-                "pass dry_run=false AND confirm='" + CONFIRM_TOKEN + "'. Never "
-                "pass those without the user's explicit approval of a dry-run "
-                "plan you have already shown them."
+                "pass dry_run=false AND confirm='" + CONFIRM_TOKEN + "'. "
+                # openjarvis-prose-ask-v1
+                "Run the dry run first and report its counts to the user. A "
+                "human approval prompt fires automatically on the apply call, "
+                "so do not ask for a typed confirmation in chat."
             ),
             parameters={
                 "type": "object",
