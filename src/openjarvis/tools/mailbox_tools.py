@@ -9,7 +9,8 @@ Registry constraint: ``MCPServer._auto_discover_tools`` instantiates user
 tools with ``ToolRegistry.create(key)`` - no arguments. Every tool here is
 therefore zero-arg constructible and resolves its account at execute time.
 
-SAFETY NOTE - the ``requires_confirmation`` flag is NOT set, and why:
+SAFETY NOTE - ``requires_confirmation`` HISTORY. The flag IS now set;
+see the W58 status below. This paragraph records why it was once off:
 
 ``ToolExecutor.execute`` treats that flag as a hard requirement, not a
 prompt::
@@ -24,12 +25,24 @@ without a confirm callback. THAT IS NO LONGER TRUE. ``cli/serve.py:316-317``
 sets both on the live chat agent, gated by ``OPENJARVIS_CONFIRM_INTERACTIVE``
 (defaults ON), with ``_server_confirm_callback`` defined at ``cli/serve.py:310``.
 
-The flag still stays off, for a DIFFERENT reason: that callback blocks in
-``confirm_registry.wait()`` and was observed returning False only after the
-full 120 s TTL, because no consumer of ``POST /v1/tools/confirm`` has been
-proven to resolve the id. Setting the flag today would park every call for
-120 s and then fail it - the same outcome the original note feared, by a
-different road. Turn it on only after that consumer is verified end to end.
+STATUS 2026-09-14 (W58): THE FLAG IS NOW SET ON BOTH DESTRUCTIVE TOOLS.
+Everything above this line is history, kept because it records why it was off.
+
+W57 proved the browser half of the gate works - a WS frame reaches
+``ConfirmPrompt`` and Approve/Deny resolves the confirm id. The remaining
+objection was cost, not correctness: a spec-level flag cannot see arguments,
+so it gated the harmless dry run exactly as hard as a real move, which meant
+two approvals and two 120 s TTLs per deletion.
+
+That is what ``BaseTool.needs_confirmation(params)`` fixes
+(openjarvis-argaware-gate-v1, ``tools/_stubs.py``). The gate now requires the
+spec flag AND that predicate. Both destructive tools below override it with
+``_confirmed(params)`` - the same predicate they already use to decide whether
+to apply. So a dry run is never gated, and an apply call always is.
+
+The tool-contract interlock below is UNCHANGED and still in force. It is
+satisfied by the MODEL, not by a human; the gate is the human half. Neither
+replaces the other.
 
 The interlock actually in force is in the tool contract:
 
@@ -469,6 +482,17 @@ class MailboxMoveToTrashTool(BaseTool):
     tool_id = "mailbox_move_to_trash"
     is_local = True
 
+    # openjarvis-argaware-gate-v1
+    def needs_confirmation(self, params: Dict[str, Any]) -> bool:
+        """Gate the apply call, never the dry run.
+
+        ``_confirmed`` is the SAME predicate this tool uses below to decide
+        whether to apply, so the human gate fires on exactly the calls that
+        change the mailbox and on no others. A dry run costs no click and no
+        TTL.
+        """
+        return _confirmed(params)
+
     @property
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -517,6 +541,7 @@ class MailboxMoveToTrashTool(BaseTool):
                 "required": ["folder"],
             },
             category="communication",
+            requires_confirmation=True,  # openjarvis-argaware-gate-v1
             latency_estimate=5.0,
             timeout_seconds=1800.0,  # openjarvis-tool-timeout-v1
             required_capabilities=["mail.write"],
@@ -754,6 +779,17 @@ class MailboxEmptyFolderTool(BaseTool):
     tool_id = "mailbox_empty_folder"
     is_local = True
 
+    # openjarvis-argaware-gate-v1
+    def needs_confirmation(self, params: Dict[str, Any]) -> bool:
+        """Gate the apply call, never the dry run.
+
+        ``_confirmed`` is the SAME predicate this tool uses below to decide
+        whether to apply, so the human gate fires on exactly the calls that
+        change the mailbox and on no others. A dry run costs no click and no
+        TTL.
+        """
+        return _confirmed(params)
+
     @property
     def spec(self) -> ToolSpec:
         return ToolSpec(
@@ -784,6 +820,7 @@ class MailboxEmptyFolderTool(BaseTool):
                 "required": ["folder"],
             },
             category="communication",
+            requires_confirmation=True,  # openjarvis-argaware-gate-v1
             latency_estimate=10.0,
             timeout_seconds=600.0,
             required_capabilities=["mail.write"],

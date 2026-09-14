@@ -67,6 +67,23 @@ class BaseTool(ABC):
     def execute(self, **params: Any) -> ToolResult:
         """Execute the tool with the given parameters."""
 
+    # openjarvis-argaware-gate-v1
+    def needs_confirmation(self, params: Dict[str, Any]) -> bool:
+        """Return True if THIS PARTICULAR CALL needs human confirmation.
+
+        ``ToolSpec.requires_confirmation`` is spec-level and cannot see
+        arguments, so on its own it gates a harmless dry run exactly as hard
+        as a destructive apply. This hook narrows a gate-eligible tool down
+        to the calls that actually change something.
+
+        The spec flag stays the eligibility switch; this is the per-call
+        refinement. Both must be true for the gate to fire.
+
+        Default True, so any tool that does not override this behaves exactly
+        as it did before this hook existed.
+        """
+        return True
+
     def to_openai_function(self) -> Dict[str, Any]:
         """Convert to OpenAI function-calling format."""
         from openjarvis.tools.description_loader import (
@@ -387,7 +404,27 @@ class ToolExecutor:
                 params.pop("_taint", None)
 
         # Confirmation check for sensitive tools
-        if tool.spec.requires_confirmation:
+        # openjarvis-argaware-gate-v1 - spec eligibility AND this call's args.
+        # params is the SAME dict handed to tool.execute(**params) below, so
+        # what is consented to is what executes.
+        _needs_confirm = bool(tool.spec.requires_confirmation)
+        if _needs_confirm:
+            try:
+                _needs_confirm = bool(tool.needs_confirmation(params))
+            except Exception as _pred_exc:
+                _get_dispatch_logger().info(
+                    "GATEPRED turn=%s tool=%s decision=FAIL_CLOSED error=%s",
+                    CURRENT_TURN_ID.get(), tool_call.name,
+                    type(_pred_exc).__name__,
+                )
+                _needs_confirm = True
+            if not _needs_confirm:
+                _get_dispatch_logger().info(
+                    "GATEPRED turn=%s tool=%s decision=NARROWED_NO_GATE args=%s",
+                    CURRENT_TURN_ID.get(), tool_call.name,
+                    _args_digest(tool_call.arguments),
+                )
+        if _needs_confirm:
             if not self._interactive or self._confirm_callback is None:
                 return ToolResult(
                     tool_name=tool_call.name,
