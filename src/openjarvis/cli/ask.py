@@ -310,6 +310,169 @@ def _build_tools(
     return tools
 
 
+# --- openjarvis-cli-confirm-gate-v1 (W61) ------------------------------------
+# A REAL gate for the interactive CLI path. Replaces the W56 ConfirmPolicy at
+# site cli-ask, which only attributed a self-approval. A human is at this
+# terminal, so ask them. Deny is the default. A stdin that is not a TTY
+# denies WITHOUT reading. Every branch logs POLICY site=cli-ask to
+# dispatch.log AND writes the decision into confirm_registry: the executor
+# treats a False with no recorded decision as a TIMEOUT and tells the model
+# the user did not deny it, which would turn a refusal into a re-request.
+
+
+class TerminalConfirmGate:
+    """Ask the person at the terminal. Only "y" or "yes" approves."""
+
+    SITE = "cli-ask"
+    _YES = ("y", "yes")
+    _NO = ("n", "no")
+
+    def __init__(self, stdin=None, stderr=None) -> None:
+        # Injected streams exist for the harness; None means sys.* at call time.
+        self._stdin = stdin
+        self._stderr = stderr
+
+    def __repr__(self) -> str:
+        return "<TerminalConfirmGate site=%s default=DENY>" % self.SITE
+
+    def _log(self, decision, human_present, answer, registry, reason, prompt):
+        from openjarvis.tools import _stubs as _st
+
+        _st._get_dispatch_logger().info(
+            "POLICY site=%s decision=%s human_present=%s turn=%s"
+            " confirm_id=%s answer=%s registry=%s reason=%s prompt=%s",
+            self.SITE,
+            decision,
+            human_present,
+            _st.CURRENT_TURN_ID.get(),
+            _st.CURRENT_CONFIRM_ID.get() or "-",
+            answer,
+            registry,
+            reason,
+            _st._args_digest(prompt, limit=200),
+        )
+
+    def __call__(self, prompt: str) -> bool:
+        from openjarvis.core import confirm_registry as _cr
+        from openjarvis.tools import _stubs as _st
+
+        stdin = self._stdin if self._stdin is not None else sys.stdin
+        stderr = self._stderr if self._stderr is not None else sys.stderr
+        cid = _st.CURRENT_CONFIRM_ID.get()
+
+        def _record(decision):
+            if not cid:
+                return "no-id"
+            try:
+                return "recorded" if _cr.resolve(cid, decision) else "rejected"
+            except Exception as exc:
+                return "error-" + type(exc).__name__
+
+        try:
+            tty = bool(stdin is not None and stdin.isatty())
+        except Exception:
+            tty = False
+
+        if not cid:
+            self._log(
+                "DENY_NO_CONFIRM_ID", tty, "-", "no-id",
+                "gate reached with no confirm_id in context; failing closed",
+                prompt,
+            )
+            return False
+
+        if not tty:
+            reg = _record(_cr.DENIED)
+            self._log(
+                "DENY_NO_TTY", False, "-", reg,
+                "stdin is not a terminal; nobody can answer; denied without"
+                " asking",
+                prompt,
+            )
+            return False
+
+        enc = getattr(stderr, "encoding", None) or "ascii"
+        text = (
+            "\n[CONFIRM] " + str(prompt) + "\n"
+            "  Type y to allow. Anything else denies. [y/N]: "
+        )
+        try:
+            text = text.encode(enc, "replace").decode(enc, "replace")
+            stderr.write(text)
+            stderr.flush()
+        except Exception as exc:
+            reg = _record(_cr.DENIED)
+            self._log(
+                "DENY_PROMPT_UNSHOWABLE", True, "-", reg,
+                "could not display the prompt: " + type(exc).__name__,
+                prompt,
+            )
+            return False
+
+        self._log(
+            "WAIT", True, "-", "pending",
+            "blocking on a y/N answer from the terminal",
+            prompt,
+        )
+        try:
+            raw = stdin.readline()
+        except KeyboardInterrupt:
+            reg = _record(_cr.DENIED)
+            self._log(
+                "DENY_INTERRUPT", True, "^C", reg,
+                "operator interrupted at the prompt",
+                prompt,
+            )
+            raise
+        except Exception as exc:
+            reg = _record(_cr.DENIED)
+            self._log(
+                "DENY_STDIN_ERROR", True, "-", reg,
+                "stdin read failed: " + type(exc).__name__,
+                prompt,
+            )
+            return False
+
+        if raw == "":
+            reg = _record(_cr.DENIED)
+            self._log(
+                "DENY_EOF", True, "<eof>", reg,
+                "end of input at the prompt",
+                prompt,
+            )
+            return False
+
+        answer = raw.strip().lower()
+        shown = ascii(answer[:20])
+        if answer in self._YES:
+            reg = _record(_cr.APPROVED)
+            if reg == "recorded":
+                self._log(
+                    "APPROVE", True, shown, reg,
+                    "operator typed yes",
+                    prompt,
+                )
+                return True
+            self._log(
+                "LATE_ANSWER_REJECTED", True, shown, reg,
+                "operator said yes but the registry refused it (expired or"
+                " already decided); NOT approved",
+                prompt,
+            )
+            return False
+        if answer == "":
+            decision, why = "DENY_DEFAULT", "empty answer; default is deny"
+        elif answer in self._NO:
+            decision, why = "DENY", "operator typed no"
+        else:
+            decision, why = (
+                "DENY_UNRECOGNIZED", "answer was not y/yes; treated as deny"
+            )
+        reg = _record(_cr.DENIED)
+        self._log(decision, True, shown, reg, why, prompt)
+        return False
+
+
 def _run_agent(
     agent_name: str,
     query_text: str,
@@ -353,22 +516,10 @@ def _run_agent(
         agent_kwargs["tools"] = tools
         agent_kwargs["max_turns"] = config.agent.max_turns
         agent_kwargs["interactive"] = True
-        # openjarvis-confirm-policy-v1 (W56)
-        # Fifth auto-approve site. Distinct from the four in
-        # agent_manager_routes: a human IS at this terminal. Nothing is
-        # wired to ask them, so the gate self-approves - that is a gap,
-        # not an unattended posture. Recorded as such.
-        from openjarvis.tools._stubs import ConfirmPolicy
-
-        agent_kwargs["confirm_callback"] = ConfirmPolicy(
-            site="cli-ask",
-            reason=(
-                "interactive CLI: a human is at the terminal but no "
-                "stdin confirmation prompt is wired, so the gate "
-                "self-approves; this is a gap, not a chosen posture"
-            ),
-            human_present=True,
-        )
+        # openjarvis-cli-confirm-gate-v1 (W61)
+        # Was the W56 ConfirmPolicy (attribution only, always approved).
+        # Now a real terminal gate: deny by default, non-TTY denies.
+        agent_kwargs["confirm_callback"] = TerminalConfirmGate()
     if capability_policy is not None:
         agent_kwargs["capability_policy"] = capability_policy
 
