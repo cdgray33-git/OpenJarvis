@@ -82,6 +82,101 @@ _CONNECTOR_DIR = DEFAULT_CONFIG_DIR / "connectors"
 _PREFIX = "imap_mail_"
 
 
+# --- openjarvis-protected-senders-v2 (W61) -----------------------------------
+# The protected list lives in the per-user config dir, next to the connector
+# credentials - NOT in the process working directory. v1 read
+# cwd/protected_senders.json, so the list bound to wherever the launcher was
+# started, and a missing file fell back to the defaults silently. v2: one
+# fixed path, every fallback logged, and a list that filters down to nothing
+# falls back to the defaults instead of to NO protection (v1 failed open on
+# a list of blank strings).
+PROTECTED_SENDERS_PATH = DEFAULT_CONFIG_DIR / "protected_senders.json"
+_PROTECTED_DEFAULTS = ["stackcommerce.com", "cdgray33@yahoo.com", "notify@r.groupon.com", "orders@r.groupon.com", "verify@r.groupon.com", "otp@r.groupon.com", "orders@sidedeal", "account@", "ratings@", "noreply@service.wayfair.com"]
+
+
+def _protected_log(level, fmt, *args):
+    """Write one PROTECTED line to backend.log and to dispatch.log."""
+    logger.log(level, fmt, *args)
+    try:
+        from openjarvis.tools._stubs import CURRENT_TURN_ID, _get_dispatch_logger
+
+        _get_dispatch_logger().log(
+            level, "turn=%s " + fmt, CURRENT_TURN_ID.get(), *args
+        )
+    except Exception:
+        pass
+
+
+def _load_protected_senders() -> List[str]:
+    """Return lowercase sender substrings to protect. NEVER returns []."""
+    path = PROTECTED_SENDERS_PATH
+    defaults = [str(p).strip().lower() for p in _PROTECTED_DEFAULTS]
+    if not path.is_file():
+        _protected_log(
+            logging.WARNING,
+            "PROTECTED source=defaults reason=missing path=%s count=%d",
+            path, len(defaults),
+        )
+        return defaults
+    try:
+        raw = path.read_bytes()
+    except Exception:
+        logger.exception("protected senders file unreadable: %s", path)
+        _protected_log(
+            logging.ERROR,
+            "PROTECTED source=defaults reason=unreadable path=%s count=%d",
+            path, len(defaults),
+        )
+        return defaults
+    if raw.startswith(b"\xef\xbb\xbf"):
+        _protected_log(
+            logging.WARNING,
+            "PROTECTED bom_stripped path=%s (write this file as ASCII)",
+            path,
+        )
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except Exception:
+        logger.exception("protected senders file is not valid JSON: %s", path)
+        _protected_log(
+            logging.ERROR,
+            "PROTECTED source=defaults reason=unparseable path=%s count=%d",
+            path, len(defaults),
+        )
+        return defaults
+    if not isinstance(data, list):
+        _protected_log(
+            logging.WARNING,
+            "PROTECTED source=defaults reason=not_a_list type=%s path=%s"
+            " count=%d",
+            type(data).__name__, path, len(defaults),
+        )
+        return defaults
+    entries = [
+        x.strip().lower() for x in data if isinstance(x, str) and x.strip()
+    ]
+    if not entries:
+        _protected_log(
+            logging.WARNING,
+            "PROTECTED source=defaults reason=no_usable_entries raw_len=%d"
+            " path=%s count=%d",
+            len(data), path, len(defaults),
+        )
+        return defaults
+    if len(entries) != len(data):
+        _protected_log(
+            logging.WARNING,
+            "PROTECTED dropped=%d non-string or blank entries path=%s",
+            len(data) - len(entries), path,
+        )
+    _protected_log(
+        logging.INFO,
+        "PROTECTED source=file path=%s count=%d",
+        path, len(entries),
+    )
+    return entries
+
+
 # ---------------------------------------------------------------------------
 # account resolution
 # ---------------------------------------------------------------------------
@@ -604,23 +699,9 @@ class MailboxMoveToTrashTool(BaseTool):
                 _u = str(_h.get("uid", "") or "").strip()
                 if _u.isdigit():
                     _sel.append(_u)
-            # openjarvis-protected-senders-v1
-            import json as _json
-            from pathlib import Path as _Path
-            _defaults = ['stackcommerce.com', 'cdgray33@yahoo.com',
-                'notify@r.groupon.com', 'orders@r.groupon.com',
-                'verify@r.groupon.com', 'otp@r.groupon.com',
-                'orders@sidedeal', 'account@', 'ratings@',
-                'noreply@service.wayfair.com']
-            _prot = _defaults
-            try:
-                _pf = _Path.cwd() / 'protected_senders.json'
-                if _pf.is_file():
-                    _ld = _json.loads(_pf.read_text(encoding='utf-8'))
-                    if isinstance(_ld, list) and _ld:
-                        _prot = [str(x).lower() for x in _ld if str(x).strip()]
-            except Exception:
-                logger.exception('protected_senders.json unreadable; using built-in list')
+            # openjarvis-protected-senders-v2 (W61) - fixed path, loud fallbacks, never empty.
+            # See _load_protected_senders at module level.
+            _prot = _load_protected_senders()
             _keep = []
             for _h in _hits or []:
                 if not isinstance(_h, dict):

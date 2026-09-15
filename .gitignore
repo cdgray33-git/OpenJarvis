@@ -64,3 +64,6 @@ frontend/src-tauri/gen/
 frontend/src-tauri/tauri.conf.json.backup1
 src/openjarvis/traces/Engineering_Wiki/
 src/openjarvis/server/static/
+
+# W61: protected list lives in C:\Users\Admin\.openjarvis, not the repo
+/protected_senders.json
