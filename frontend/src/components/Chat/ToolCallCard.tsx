@@ -22,8 +22,8 @@ function previewArgs(raw: string | object): string {
       const [k, v] = entries[0];
       const valStr =
         typeof v === 'string' ? v : JSON.stringify(v);
-      const trimmed = valStr.length > 40 ? `${valStr.slice(0, 40)}Ã¢â‚¬Â¦` : valStr;
-      return entries.length === 1 ? `${k}: ${trimmed}` : `${k}: ${trimmed}, Ã¢â‚¬Â¦`;
+      const trimmed = valStr.length > 40 ? `${valStr.slice(0, 40)}...` : valStr;
+      return entries.length === 1 ? `${k}: ${trimmed}` : `${k}: ${trimmed}, ...`;
     }
   } catch {
     /* fall through */
@@ -84,9 +84,10 @@ export function ToolCallCard({ toolCall }: Props) {
               flexShrink: 0,
             }}
           >
-            {toolCall.latency < 1000
-              ? `${Math.round(toolCall.latency)}ms`
-              : `${(toolCall.latency / 1000).toFixed(1)}s`}
+            {/* SSE sends latency in SECONDS, not ms. Verified W60 against dispatch.log. */}
+            {toolCall.latency < 1
+              ? `${Math.round(toolCall.latency * 1000)}ms`
+              : `${toolCall.latency.toFixed(1)}s`}
           </span>
         )}
       </button>
