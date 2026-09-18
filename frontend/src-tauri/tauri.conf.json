@@ -22,7 +22,7 @@
         "decorations": true,
         "transparent": false,
         "devtools": true,
-        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --remote-debugging-port=9222"
+        "additionalBrowserArgs": "--autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream"
       }
     ],
     "security": {
