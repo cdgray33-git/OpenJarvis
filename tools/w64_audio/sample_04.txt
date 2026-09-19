@@ -1,0 +1,24 @@
+DEFAULT RENDER console={0.0.0.00000000}.{b5d1a2ce-bb1c-4e54-8528-cd23c0f59ffe} comms={0.0.0.00000000}.{b5d1a2ce-bb1c-4e54-8528-cd23c0f59ffe}  [Headphones (Elgato Wave:3 MK.2) status=OK]
+DEFAULT CAPTURE console={0.0.1.00000000}.{25d640cb-0dce-4745-b5a2-c55693b85f1e} comms={0.0.1.00000000}.{25d640cb-0dce-4745-b5a2-c55693b85f1e}  [Microphone (Elgato Wave:3 MK.2) status=OK]
+ENDPOINT RENDER  {0.0.0.00000000}.{6fa29363-a94e-48d2-9bc6-85173d589545} vol=0.98 mute=False  [SAMSUNG (HD Audio Driver for Display Audio) status=OK]
+  SESSION pid=0 state=0 vol=1.00 mute=False  proc=System Idle Process<-System Idle Process<-System Idle Process<-System Idle Process
+ENDPOINT RENDER  {0.0.0.00000000}.{93f9d789-02b4-43c9-871d-164a8c41aa39} vol=0.60 mute=False  [Speakers (USB Audio and HID) status=OK]
+  SESSION pid=0 state=0 vol=1.00 mute=False  proc=System Idle Process<-System Idle Process<-System Idle Process<-System Idle Process
+ENDPOINT RENDER  {0.0.0.00000000}.{b5d1a2ce-bb1c-4e54-8528-cd23c0f59ffe} vol=0.44 mute=False  [Headphones (Elgato Wave:3 MK.2) status=OK]
+  SESSION pid=0 state=0 vol=1.00 mute=False  proc=System Idle Process<-System Idle Process<-System Idle Process<-System Idle Process
+ENDPOINT CAPTURE {0.0.1.00000000}.{25d640cb-0dce-4745-b5a2-c55693b85f1e} vol=0.86 mute=False  [Microphone (Elgato Wave:3 MK.2) status=OK]
+  SESSION pid=0 state=0 vol=1.00 mute=False  proc=System Idle Process<-System Idle Process<-System Idle Process<-System Idle Process
+ENDPOINT CAPTURE {0.0.1.00000000}.{4d1d4b57-b5d8-4307-8cf1-53f8eb85f5be} vol=1.00 mute=False  [Microphone (USB Audio and HID) status=OK]
+  SESSION pid=0 state=0 vol=1.00 mute=False  proc=System Idle Process<-System Idle Process<-System Idle Process<-System Idle Process
+MIC CONSENT HKCU = [Allow]
+MIC CONSENT HKLM = [Allow]
+MIC DESKTOP-APPS = [Allow]
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#148.0.3967.96#msedgewebview2.exe value=[] lastStart=06/08/2026 15:58:36 lastStop=06/08/2026 15:58:38
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#149.0.4022.62#msedgewebview2.exe value=[] lastStart=06/13/2026 21:58:27 lastStop=06/13/2026 21:58:40
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#149.0.4022.69#msedgewebview2.exe value=[] lastStart=06/14/2026 12:40:57 lastStop=06/14/2026 12:41:01
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#149.0.4022.98#msedgewebview2.exe value=[] lastStart=07/07/2026 22:43:37 lastStop=07/07/2026 22:44:24
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#150.0.4078.48#msedgewebview2.exe value=[] lastStart=07/12/2026 15:10:26 lastStop=07/12/2026 15:10:31
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#150.0.4078.65#msedgewebview2.exe value=[] lastStart=07/15/2026 15:09:47 lastStop=07/15/2026 15:09:53
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#151.0.4129.86#msedgewebview2.exe value=[] lastStart=08/17/2026 16:18:38 lastStop=08/17/2026 16:18:38
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#152.0.4191.53#msedgewebview2.exe value=[] lastStart=09/09/2026 13:15:59 lastStop=09/09/2026 13:15:59
+MIC APP C:#Program Files (x86)#Microsoft#EdgeWebView#Application#152.0.4191.66#msedgewebview2.exe value=[] lastStart=09/14/2026 08:43:50 lastStop=09/14/2026 08:43:50

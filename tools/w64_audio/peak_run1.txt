@@ -1,0 +1,18 @@
+PEAK PROBE W64  started=2026-09-18 16:18:48
+duration=60s interval=200ms
+samples=278
+
+---- PEAK PER RENDER ENDPOINT (max over run) ----
+DEV peak=0.000000  Speakers (USB Audio and HID)  {0.0.0.00000000}.{93f9d789-02b4-43c9-871d-164a8c41aa39}
+DEV peak=0.000000  SAMSUNG (HD Audio Driver for Display Audio)  {0.0.0.00000000}.{6fa29363-a94e-48d2-9bc6-85173d589545}
+
+---- PEAK PER SESSION (max over run) ----
+SES peak=0.000000 pid=0 (system-sounds) state=0  Speakers (USB Audio and HID)
+SES peak=0.000000 pid=20608 (msedgewebview2) state=0  SAMSUNG (HD Audio Driver for Display Audio)
+SES peak=0.000000 pid=0 (system-sounds) state=0  SAMSUNG (HD Audio Driver for Display Audio)
+
+VERDICT NOTE: peak=0.000000 on every sample means NO real audio samples
+were rendered during the run (digital silence only). peak=-1 means the
+meter was not readable; peak=-2 means the interface call threw.
+This block reports ONLY measured peak levels. It does not measure
+whether audio was audible in headphones.

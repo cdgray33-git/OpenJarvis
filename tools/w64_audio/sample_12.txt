@@ -1,0 +1,13 @@
+PEAK PROBE W64  started=2026-09-18 16:15:12
+duration=s interval=ms
+samples=0
+
+---- PEAK PER RENDER ENDPOINT (max over run) ----
+
+---- PEAK PER SESSION (max over run) ----
+
+VERDICT NOTE: peak=0.000000 on every sample means NO real audio samples
+were rendered during the run (digital silence only). peak=-1 means the
+meter was not readable; peak=-2 means the interface call threw.
+This block reports ONLY measured peak levels. It does not measure
+whether audio was audible in headphones.
