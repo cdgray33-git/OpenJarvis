@@ -1,15 +1,16 @@
-// frontend/src/components/Chat/InputArea.tsx
+﻿// frontend/src/components/Chat/InputArea.tsx
 // Updated to use useSpeechStream hook for WebSocket streaming STT
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useSpeechStream, TranscriptCallback } from "@/hooks/useSpeechStream";
 import { useAppStore } from "@/lib/store";
 import { uploadChatFiles, getBase } from "@/lib/api";
-import { Mic, MicOff, Send, X, Loader2, Paperclip, ChevronUp, ChevronDown } from "lucide-react";
+import { Mic, MicOff, Send, Square, X, Loader2, Paperclip, ChevronUp, ChevronDown } from "lucide-react";
 
 interface InputAreaProps {
   onSendMessage: (text: string, attachments?: { name: string; size: number; type: string }[]) => void;
   disabled?: boolean;
+  onStopGeneration?: () => void;
   placeholder?: string;
 }
 
@@ -23,7 +24,7 @@ interface AttachedFile {
   file?: File;
 }
 
-export function InputArea({ onSendMessage, disabled = false, placeholder = "Type a message..." }: InputAreaProps) {
+export function InputArea({ onSendMessage, onStopGeneration, disabled = false, placeholder = "Type a message..." }: InputAreaProps) {
   const [text, setText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [transcriptPreview, setTranscriptPreview] = useState("");
@@ -38,6 +39,7 @@ export function InputArea({ onSendMessage, disabled = false, placeholder = "Type
   const [agents, setAgents] = useState<{ key: string; class: string; accepts_tools: boolean }[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>('');
   const setSelectedAgentId = useAppStore((s) => s.setSelectedAgentId);
+  const chatStreaming = useAppStore((s) => s.streamState.isStreaming);
 
   const { addMessage } = useAppStore();
 
@@ -217,11 +219,11 @@ export function InputArea({ onSendMessage, disabled = false, placeholder = "Type
 
   const getFileIcon = (type: string, preview?: string) => {
     if (preview) return <img src={preview} alt="" className="w-5 h-5 rounded object-cover" />
-    if (type.startsWith('image/')) return <span className="text-xs text-gray-500">🖼</span>
-    if (type.startsWith('video/')) return <span className="text-xs text-gray-500">🎬</span>
-    if (type === 'application/zip' || type === 'application/x-zip-compressed') return <span className="text-xs text-gray-500">📦</span>
-    if (type === 'application/pdf') return <span className="text-xs text-gray-500">📄</span>
-    return <span className="text-xs text-gray-500">📎</span>
+    if (type.startsWith('image/')) return <span className="text-xs text-gray-500">ðŸ–¼</span>
+    if (type.startsWith('video/')) return <span className="text-xs text-gray-500">ðŸŽ¬</span>
+    if (type === 'application/zip' || type === 'application/x-zip-compressed') return <span className="text-xs text-gray-500">ðŸ“¦</span>
+    if (type === 'application/pdf') return <span className="text-xs text-gray-500">ðŸ“„</span>
+    return <span className="text-xs text-gray-500">ðŸ“Ž</span>
   }
 
   return (
@@ -390,7 +392,7 @@ export function InputArea({ onSendMessage, disabled = false, placeholder = "Type
 
         <button
           onClick={handleSendClick}
-          disabled={disabled || (!text.trim() && !transcriptPreview.trim() && attachedFiles.length === 0)}
+          disabled={disabled || chatStreaming || (!text.trim() && !transcriptPreview.trim() && attachedFiles.length === 0)}
           className={`
             p-2.5 rounded-lg transition-colors flex-shrink-0
             ${text.trim() || transcriptPreview.trim() || attachedFiles.length > 0
@@ -402,6 +404,17 @@ export function InputArea({ onSendMessage, disabled = false, placeholder = "Type
         >
           <Send className="w-5 h-5" />
         </button>
+
+        {chatStreaming && (
+          <button
+            onClick={() => onStopGeneration?.()}
+            className="p-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors flex-shrink-0"
+            title="Stop generating"
+            aria-label="Stop generating"
+          >
+            <Square className="w-5 h-5" />
+          </button>
+        )}
 
         {(text.trim() || attachedFiles.length > 0) && (
           <button
@@ -417,7 +430,7 @@ export function InputArea({ onSendMessage, disabled = false, placeholder = "Type
 
       {status === "error" && (
         <div className="text-xs text-red-600 flex items-center gap-1">
-          <span>Speech recognition error — click mic to retry</span>
+          <span>Speech recognition error â€” click mic to retry</span>
         </div>
       )}
     </div>

@@ -1,0 +1,5 @@
+f = open(r'C:\Windows\System32\OpenJarvis\src\openjarvis\server\cloud_router.py', 'r', encoding='utf-8')
+content = f.read()
+f.close()
+idx = content.find('resp.raise_for_status()')
+print(repr(content[idx-200:idx+400]))

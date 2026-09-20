@@ -1,0 +1,163 @@
+=== openjarvis-confirm-frames-v1 ===
+url      : ws://127.0.0.1:8010/v1/agents/events?token=w12-verify-2f7a91c4
+deadline : 240.0 s
+started  : 09:22:38.010
+Send a shell_exec prompt in the desktop app now. No rush.
+
+[09:22:38.211] CONNECTED
+[09:23:43.949] FRAME 1  type=inference_start
+{
+  "data": {
+    "message_count": 2,
+    "model": "qwen3-coder:30b"
+  },
+  "timestamp": 1787750623.9482138,
+  "type": "inference_start"
+}
+
+[09:23:45.235] FRAME 2  type=inference_end
+{
+  "data": {
+    "content": "I'll run the hostname command to get the system's hostname.\n\n<function=shell_exec>\n<parameter=command>\nhostname\n</parameter>\n</function>\n</tool_call>",
+    "content_blocks": [],
+    "decode_energy_joules": 0.0,
+    "decode_latency_seconds": 1.2413214312567138,
+    "energy_joules": 0.0,
+    "energy_method": "",
+    "energy_per_output_token_joules": 0.0,
+    "energy_vendor": "",
+    "finish_reason": "stop",
+    "gpu_memory_used_gb": 0.0,
+    "gpu_temperature_c": 0.0,
+    "gpu_utilization_pct": 0.0,
+    "latency": 1.2834117412567139,
+    "mean_itl_ms": 36.50945386049158,
+    "model": "qwen3-coder:30b",
+    "power_watts": 0.0,
+    "prefill_energy_joules": 0.0,
+    "prefill_latency_seconds": 0.04209031,
+    "throughput_per_watt": 0.0,
+    "throughput_tok_per_sec": 26.491887916427565,
+    "tool_calls": [],
+    "tool_results": [],
+    "ttft": 0.04209031,
+    "usage": {
+      "completion_tokens": 34,
+      "prompt_tokens": 3978,
+      "prompt_tokens_evaluated": 3978,
+      "total_tokens": 4012
+    }
+  },
+  "timestamp": 1787750625.232619,
+  "type": "inference_end"
+}
+
+[09:23:45.254] FRAME 3  type=tool_confirm_request
+{
+  "data": {
+    "agent_id": "native_openhands",
+    "args_digest": "{\"command\": \"hostname\"}",
+    "confirm_id": "0e5e7140bbe84f96a0fc610f2b6b5bc6",
+    "expires_at": 1787750745.2525718,
+    "prompt": "Allow execution of tool 'shell_exec' with args {\"command\": \"hostname\"}?",
+    "tool": "shell_exec",
+    "turn_id": "44fa23b5-t1"
+  },
+  "timestamp": 1787750625.2535696,
+  "type": "tool_confirm_request"
+}
+
+[09:25:45.263] FRAME 4  type=tool_confirm_resolved
+{
+  "data": {
+    "agent_id": "native_openhands",
+    "confirm_id": "0e5e7140bbe84f96a0fc610f2b6b5bc6",
+    "created_at": 1787750625.2525718,
+    "decision": "timeout",
+    "expires_at": 1787750745.2525718,
+    "reaped": false,
+    "state": "resolved",
+    "tool": "shell_exec",
+    "turn_id": "44fa23b5-t1"
+  },
+  "timestamp": 1787750745.2610767,
+  "type": "tool_confirm_resolved"
+}
+
+[09:25:45.265] *** RESOLVED FRAME CAPTURED - closing after 5.0 s grace ***
+
+[09:25:45.266] FRAME 5  type=inference_start
+{
+  "data": {
+    "message_count": 4,
+    "model": "qwen3-coder:30b"
+  },
+  "timestamp": 1787750745.2639525,
+  "type": "inference_start"
+}
+
+[09:25:46.960] FRAME 6  type=inference_end
+{
+  "data": {
+    "content": "I apologize for the timeout issue. Let me try running the hostname command again to get your system's hostname.",
+    "content_blocks": [],
+    "decode_energy_joules": 0.0,
+    "decode_latency_seconds": 1.477114034939209,
+    "energy_joules": 0.0,
+    "energy_method": "",
+    "energy_per_output_token_joules": 0.0,
+    "energy_vendor": "",
+    "finish_reason": "stop",
+    "gpu_memory_used_gb": 0.0,
+    "gpu_temperature_c": 0.0,
+    "gpu_utilization_pct": 0.0,
+    "latency": 1.692624568939209,
+    "mean_itl_ms": 32.824756331982414,
+    "model": "qwen3-coder:30b",
+    "power_watts": 0.0,
+    "prefill_energy_joules": 0.0,
+    "prefill_latency_seconds": 0.215510534,
+    "throughput_per_watt": 0.0,
+    "throughput_tok_per_sec": 26.585931000754712,
+    "tool_calls": [
+      {
+        "arguments": "{\"command\": \"hostname\"}",
+        "id": "call_zuunmmwt",
+        "name": "shell_exec"
+      }
+    ],
+    "tool_results": [],
+    "ttft": 0.215510534,
+    "usage": {
+      "completion_tokens": 45,
+      "prompt_tokens": 4069,
+      "prompt_tokens_evaluated": 4069,
+      "total_tokens": 4114
+    }
+  },
+  "timestamp": 1787750746.9581745,
+  "type": "inference_end"
+}
+
+[09:25:46.977] FRAME 7  type=tool_confirm_request
+{
+  "data": {
+    "agent_id": "native_openhands",
+    "args_digest": "{\"command\": \"hostname\"}",
+    "confirm_id": "a6939579fbf649e0b98255c166a6c8f5",
+    "expires_at": 1787750866.975886,
+    "prompt": "Allow execution of tool 'shell_exec' with args {\"command\": \"hostname\"}?",
+    "tool": "shell_exec",
+    "turn_id": "44fa23b5-t2"
+  },
+  "timestamp": 1787750746.9768076,
+  "type": "tool_confirm_request"
+}
+
+
+[09:25:50.381] GRACE ELAPSED AFTER RESOLVED
+=== SUMMARY ===
+frames seen        : 7
+confirm_request    : YES
+confirm_resolved   : YES
+capture file       : confirm_frames_capture.log

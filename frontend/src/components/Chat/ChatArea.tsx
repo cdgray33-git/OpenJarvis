@@ -65,6 +65,15 @@ export function ChatArea() {
     shouldAutoScroll.current = scrollHeight - scrollTop - clientHeight < 100;
   };
 
+  const stopStreaming = useCallback(() => {
+    const _s = useAppStore.getState();
+    _s.addLogEntry({ timestamp: Date.now(), level: 'info', category: 'chat', message: '[STOP] pressed streaming=' + _s.streamState.isStreaming + ' abort=' + (sendAbortRef.current ? 'present' : 'null') });
+    sendAbortRef.current?.abort();
+    if (sendTimerRef.current) { clearInterval(sendTimerRef.current); sendTimerRef.current = null; }
+    useAppStore.getState().resetStream();
+    stopAll();
+  }, []);
+
   const toggleMute = useCallback(() => {
     setMuted((prev) => {
       const next = !prev;
@@ -268,6 +277,7 @@ export function ChatArea() {
     } catch (err) {
       const anyErr = err as { name?: string; message?: string };
       if (anyErr?.name === 'AbortError') {
+        useAppStore.getState().addLogEntry({ timestamp: Date.now(), level: 'info', category: 'chat', message: '[STOP] AbortError observed acc=' + acc.length });
         if (!acc) acc = '(Generation stopped)';
       } else {
         const errMsg = anyErr?.message || String(err);
@@ -289,6 +299,7 @@ export function ChatArea() {
       };
       useAppStore.getState().updateLastAssistant(convId, acc, toolCalls.length > 0 ? toolCalls : undefined, usage, telemetry);
       if (sendTimerRef.current) { clearInterval(sendTimerRef.current); sendTimerRef.current = null; }
+      useAppStore.getState().addLogEntry({ timestamp: Date.now(), level: 'info', category: 'chat', message: '[STOP] stream end acc=' + acc.length + ' elapsed=' + (Date.now() - startTime) + 'ms' });
       useAppStore.getState().resetStream();
       useAppStore.getState().addLogEntry({ timestamp: Date.now(), level: 'info', category: 'chat', message: 'Response: ' + acc.length + ' chars' });
       sendAbortRef.current = null;
@@ -443,7 +454,7 @@ export function ChatArea() {
       </div>
 
       <div style={{ paddingBottom: '0.75rem' }}>
-        <InputArea onSendMessage={handleSendMessage} />
+        <InputArea onSendMessage={handleSendMessage} onStopGeneration={stopStreaming} />
       </div>
     </div>
   );

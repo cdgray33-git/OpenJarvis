@@ -1,0 +1,12 @@
+﻿import inspect, openjarvis.cli as c
+g = getattr(c, "cli", None) or getattr(c, "main", None)
+print("GROUP:", g)
+cmds = getattr(g, "commands", {})
+print("COMMANDS:", sorted(cmds))
+s = cmds.get("serve")
+print("SERVE CMD:", s)
+fn = getattr(s, "callback", None)
+print("CALLBACK FILE:", inspect.getsourcefile(fn))
+print("CALLBACK LINE:", inspect.getsourcelines(fn)[1])
+src = inspect.getsource(fn)
+print("MARKER IN CALLBACK:", "openjarvis-bind-assert-v1" in src)

@@ -1,0 +1,660 @@
+# BUNDLE: serve.py for the :554 question
+Line 554 is a single ~50KB damaged string literal and is TRUNCATED below. Do not comment on its contents.
+
+```python
+1: """jarvis serve - OpenAI-compatible API server."""
+2: 
+3: from __future__ import annotations
+4: 
+5: import logging
+6: import os
+7: import sys
+8: from logging.handlers import RotatingFileHandler
+9: 
+10: import click
+11: from rich.console import Console
+12: 
+13: from openjarvis.core.config import load_config
+14: from openjarvis.core.events import EventBus
+15: from openjarvis.engine import (
+16:     discover_engines,
+17:     discover_models,
+18:     get_engine,
+19: )
+20: from openjarvis.intelligence import (
+21:     merge_discovered_models,
+22:     register_builtin_models,
+23: )
+24: 
+25: logger = logging.getLogger(__name__)
+26: 
+27: 
+28: class _TelemetryNoiseFilter(logging.Filter):
+29:     """Drop uvicorn.access records for the telemetry polling endpoints.
+30: 
+31:     openjarvis-log-budget-v1: these two paths are polled roughly every 3
+32:     seconds and accounted for 98 percent of backend.log volume, crowding
+33:     every record worth keeping out of the rotation budget.
+34:     """
+35: 
+36:     _NOISE = ("/v1/telemetry/energy", "/v1/telemetry/stats")
+37: 
+38:     def filter(self, record):
+39:         if record.name != "uvicorn.access":
+40:             return True
+41:         try:
+42:             msg = record.getMessage()
+43:         except Exception:
+44:             return True
+45:         return not any(p in msg for p in self._NOISE)
+46: 
+47: 
+48: def _configure_file_logging() -> str:
+49:     """Route all server logs to a rotating file instead of the console.
+50: 
+51:     Writing to a console with active text selection (QuickEdit mode) blocks
+52:     the writing thread indefinitely on Windows, which freezes the entire
+53:     single-threaded asyncio event loop. Logging to a file removes this
+54:     dependency entirely.
+55:     """
+56:     log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "OpenJarvis", "logs")
+57:     os.makedirs(log_dir, exist_ok=True)
+58:     log_path = os.path.join(log_dir, "backend.log")
+59: 
+60:     file_handler = RotatingFileHandler(
+61:         log_path, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+62:     )
+63:     from openjarvis.cli.log_config import SanitizingFormatter
+64: 
+65:     file_handler.setFormatter(
+66:         SanitizingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+67:     )
+68: 
+69:     file_handler.addFilter(_TelemetryNoiseFilter())  # openjarvis-log-budget-v1
+70: 
+71:     root_logger = logging.getLogger()
+72:     root_logger.handlers.clear()
+73:     root_logger.addHandler(file_handler)
+74:     root_logger.setLevel(logging.INFO)
+75: 
+76:     return log_path
+77: 
+78: 
+79: @click.command()
+80: @click.option("--host", default=None, help="Bind address (default: config).")
+81: @click.option(
+82:     "--port",
+83:     default=None,
+84:     type=int,
+85:     help="Port number (default: config).",
+86: )
+87: @click.option("-e", "--engine", "engine_key", default=None, help="Engine backend.")
+88: @click.option("-m", "--model", "model_name", default=None, help="Default model.")
+89: @click.option(
+90:     "-a",
+91:     "--agent",
+92:     "agent_name",
+93:     default=None,
+94:     help="Agent for non-streaming requests (simple, orchestrator, react, openhands).",
+95: )
+96: def serve(
+97:     host: str | None,
+98:     port: int | None,
+99:     engine_key: str | None,
+100:     model_name: str | None,
+101:     agent_name: str | None,
+102: ) -> None:
+103:     """Start the OpenAI-compatible API server."""
+104:     console = Console(stderr=True)
+105:     # >>> openjarvis-eventloop-patch start
+106:     if sys.platform == "win32":
+107:         import asyncio
+108:         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+109:     # <<< openjarvis-eventloop-patch end
+110: 
+111:     log_path = _configure_file_logging()
+112:     console.print(f"[dim]Logs: {log_path}[/dim]")
+113: 
+114:     # Check for server dependencies
+115:     try:
+116:         import uvicorn  # noqa: F401
+117:         from fastapi import FastAPI  # noqa: F401
+118:     except ImportError:
+119:         console.print(
+120:             "[red bold]Server dependencies not installed.[/red bold]\n\n"
+121:             "Install the server extra:\n"
+122:             "  [cyan]uv sync --extra server[/cyan]"
+123:         )
+124:         sys.exit(1)
+125: 
+126:     config = load_config()
+127: 
+128:     # Resolve host/port from CLI args or config
+129:     bind_host = host or config.server.host
+130:     bind_port = port or config.server.port
+131: 
+132:     # Set up engine
+133:     register_builtin_models()
+134:     bus = EventBus(record_history=False)
+135: 
+136:     # Set up telemetry
+137:     telem_store = None
+138:     if config.telemetry.enabled:
+139:         try:
+140:             from pathlib import Path
+141: 
+142:             from openjarvis.telemetry.store import TelemetryStore
+143: 
+144:             db_path = Path(config.telemetry.db_path).expanduser()
+145:             db_path.parent.mkdir(parents=True, exist_ok=True)
+146:             telem_store = TelemetryStore(str(db_path))
+147:             telem_store.subscribe_to_bus(bus)
+148:         except Exception as exc:
+149:             logger.debug("Telemetry store init failed: %s", exc)
+150: 
+151:     resolved = get_engine(config, engine_key)
+152:     if resolved is None:
+153:         console.print(
+154:             "[red bold]No inference engine available.[/red bold]\n\n"
+155:             "Make sure an engine is running."
+156:         )
+157:         sys.exit(1)
+158: 
+159:     engine_name, engine = resolved
+160: 
+161:     # Apply security guardrails
+162:     from openjarvis.security import setup_security
+163: 
+164:     sec = setup_security(config, engine, bus)
+165:     engine = sec.engine
+166: 
+167:     # If cloud API keys are set, wrap with MultiEngine so both local
+168:     # and cloud models appear in the model list and can be used.
+169:     import os
+170: 
+171:     _has_cloud = (
+172:         os.environ.get("OPENAI_API_KEY")
+173:         or os.environ.get("ANTHROPIC_API_KEY")
+174:         or os.environ.get("GEMINI_API_KEY")
+175:         or os.environ.get("GOOGLE_API_KEY")
+176:         or os.environ.get("OPENROUTER_API_KEY")
+177:     )
+178:     if _has_cloud and engine_name != "cloud":
+179:         try:
+180:             from openjarvis.engine.cloud import CloudEngine
+181:             from openjarvis.engine.multi import MultiEngine
+182: 
+183:             cloud = CloudEngine()
+184:             engine = MultiEngine([(engine_name, engine), ("cloud", cloud)])
+185:             engine_name = "multi"
+186:             if cloud.health():
+187:                 console.print("  Cloud:  [cyan]enabled[/cyan] (API keys detected)")
+188:             else:
+189:                 console.print(
+190:                     "  Cloud:  [yellow]keys set but packages missing[/yellow] "
+191:                     "(run: uv sync --extra inference-cloud --extra inference-google)"
+192:                 )
+193:         except Exception as exc:
+194:             logger.debug("Cloud engine init failed: %s", exc)
+195: 
+196:     # Wrap engine with InstrumentedEngine for telemetry recording
+197:     try:
+198:         from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+199: 
+200:         energy_mon = None
+201:         try:
+202:             from openjarvis.telemetry.energy_monitor import create_energy_monitor
+203: 
+204:             energy_mon = create_energy_monitor()
+205:             if energy_mon is not None:
+206:                 console.print(
+207:                     f"  Energy: [cyan]{energy_mon.vendor().value}[/cyan] "
+208:                     f"({energy_mon.energy_method()})"
+209:                 )
+210:         except Exception as exc:
+211:             logger.debug("Energy monitor creation failed: %s", exc)
+212: 
+213:         engine = InstrumentedEngine(engine, bus, energy_monitor=energy_mon)
+214:     except Exception as exc:
+215:         logger.debug("Engine instrumentation failed: %s", exc)
+216: 
+217:     # Discover models
+218:     all_engines = discover_engines(config)
+219:     all_models = discover_models(all_engines)
+220:     for ek, model_ids in all_models.items():
+221:         merge_discovered_models(ek, model_ids)
+222: 
+223:     # Resolve model
+224:     if model_name is None:
+225:         model_name = config.server.model or config.intelligence.default_model
+226:     if not model_name:
+227:         engine_models = all_models.get(engine_name, [])
+228:         if engine_models:
+229:             model_name = engine_models[0]
+230:         else:
+231:             console.print("[red]No model available on engine.[/red]")
+232:             sys.exit(1)
+233: 
+234:     # Resolve agent
+235:     agent = None
+236:     agent_key = agent_name or config.server.agent
+237:     if agent_key:
+238:         try:
+239:             import openjarvis.agents  # noqa: F401
+240:             from openjarvis.core.registry import AgentRegistry
+241: 
+242:             if AgentRegistry.contains(agent_key):
+243:                 agent_cls = AgentRegistry.get(agent_key)
+244:                 agent_kwargs = {"bus": bus}
+245:                 if sec.capability_policy is not None:
+246:                     agent_kwargs["capability_policy"] = sec.capability_policy
+247: 
+248:                 # Load tools for agents that support them
+249:                 if getattr(agent_cls, "accepts_tools", False):
+250:                     import openjarvis.tools  # noqa: F401  # trigger registration
+251:                     from openjarvis.core.registry import ToolRegistry
+252:                     from openjarvis.tools._stubs import BaseTool
+253: 
+254:                     _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+255:                     configured = config.agent.tools
+256:                     if configured:
+257:                         if isinstance(configured, list):
+258:                             allowed = {
+259:                                 t.strip()
+260:                                 for t in configured
+261:                                 if isinstance(t, str) and t.strip()
+262:                             }
+263:                         else:
+264:                             allowed = {
+265:                                 t.strip() for t in configured.split(",") if t.strip()
+266:                             }
+267:                     else:
+268:                         allowed = _DEFAULT_TOOLS
+269: 
+270:                     logger.info(f'[DEBUG] allowed={allowed}')  # openjarvis-debug-readable-v1
+271:                     tools = []
+272:                     for name in ToolRegistry.keys():
+273:                         if name not in allowed:
+274:                             continue
+275:                         tool_cls = ToolRegistry.get(name)
+276:                         if isinstance(tool_cls, type) and issubclass(
+277:                             tool_cls, BaseTool
+278:                         ):
+279:                             tools.append(tool_cls())
+280:                         elif isinstance(tool_cls, BaseTool):
+281:                             tools.append(tool_cls)
+282:                     logger.info(f'[DEBUG] registry_keys={list(ToolRegistry.keys())}')  # openjarvis-debug-readable-v1
+283:                     logger.info(f'[DEBUG] tools_loaded={[t.__class__.__name__ for t in tools]}')  # openjarvis-debug-readable-v1
+284:                     if tools:
+285:                         agent_kwargs["tools"] = tools
+286: 
+287:                 if getattr(agent_cls, "accepts_tools", False):
+288:                     agent_kwargs["max_turns"] = config.agent.max_turns
+289: 
+290:                 # openjarvis-confirm-live-v1
+291:                 # Defect 6 / 6d: make the confirmation gate live on the chat
+292:                 # path. The agent forwards these straight to its ToolExecutor
+293:                 # (agents\_stubs.py:325-332). Opt-in per server run so that
+294:                 # unattended entry points never inherit a blocking gate.
+295:                 if getattr(agent_cls, "accepts_tools", False):
+296:                     import os as _os
+297: 
+298:                     _confirm_flag = _os.getenv(
+299:                         "OPENJARVIS_CONFIRM_INTERACTIVE", "1"
+300:                     )
+301:                     if _confirm_flag.strip().lower() not in (
+302:                         "0",
+303:                         "false",
+304:                         "no",
+305:                         "off",
+306:                     ):
+307:                         from openjarvis.core import confirm_registry as _cr
+308:                         from openjarvis.tools import _stubs as _confirm_stubs
+309: 
+310:                         def _server_confirm_callback(_prompt: str) -> bool:
+311:                             _cid = _confirm_stubs.CURRENT_CONFIRM_ID.get()
+312:                             if not _cid:
+313:                                 return False
+314:                             return _cr.wait(_cid) == _cr.APPROVED
+315: 
+316:                         agent_kwargs["interactive"] = True
+317:                         agent_kwargs["confirm_callback"] = (
+318:                             _server_confirm_callback
+319:                         )
+320: 
+321:                 agent = agent_cls(engine, model_name, **agent_kwargs)
+322:         except Exception as exc:
+323:             import traceback
+324: 
+325:             console.print(f"[yellow]Agent '{agent_key}' failed to load: {exc}[/yellow]")
+326:             traceback.print_exc()
+327: 
+328:     # Set up channel backend if enabled
+329:     channel_bridge = None
+330:     if config.channel.enabled and config.channel.default_channel:
+331:         try:
+332:             from openjarvis.system import SystemBuilder
+333: 
+334:             # Reuse _resolve_channel logic from SystemBuilder
+335:             sb = SystemBuilder(config)
+336:             sb._bus = bus
+337:             channel_bridge = sb._resolve_channel(config, bus)
+338:             if channel_bridge is not None:
+339:                 channel_bridge.connect()
+340:                 console.print(
+341:                     f"  Channel: [cyan]{config.channel.default_channel}[/cyan]"
+342:                 )
+343:         except Exception as exc:
+344:             console.print(f"[yellow]Channel failed to start: {exc}[/yellow]")
+345:             channel_bridge = None
+346: 
+347:     # Wire channel messages ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢Ã ...[TRUNCATED, original length 53004]
+348:     if channel_bridge is not None:
+349:         from openjarvis.system import JarvisSystem
+350: 
+351:         channel_agent = config.channel.default_agent or agent_key or "simple"
+352: 
+353:         _channel_tools: list = []
+354:         if channel_agent:
+355:             try:
+356:                 import openjarvis.agents
+357:                 from openjarvis.core.registry import AgentRegistry
+358: 
+359:                 if AgentRegistry.contains(channel_agent):
+360:                     _ch_cls = AgentRegistry.get(channel_agent)
+361:                     if getattr(_ch_cls, "accepts_tools", False):
+362:                         import openjarvis.tools
+363:                         from openjarvis.core.registry import ToolRegistry
+364:                         from openjarvis.tools._stubs import BaseTool
+365: 
+366:                         _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+367:                         configured = config.agent.tools
+368:                         if configured:
+369:                             if isinstance(configured, list):
+370:                                 _allowed = {
+371:                                     t.strip()
+372:                                     for t in configured
+373:                                     if isinstance(t, str) and t.strip()
+374:                                 }
+375:                             else:
+376:                                 _allowed = {
+377:                                     t.strip()
+378:                                     for t in configured.split(",")
+379:                                     if t.strip()
+380:                                 }
+381:                         else:
+382:                             _allowed = _DEFAULT_TOOLS
+383: 
+384:                         for _tname in ToolRegistry.keys():
+385:                             if _tname not in _allowed:
+386:                                 continue
+387:                             _tcls = ToolRegistry.get(_tname)
+388:                             if isinstance(_tcls, type) and issubclass(_tcls, BaseTool):
+389:                                 _channel_tools.append(_tcls())
+390:                             elif isinstance(_tcls, BaseTool):
+391:                                 _channel_tools.append(_tcls)
+392:             except Exception as exc:
+393:                 logger.warning("Channel tools failed to load: %s", exc)
+394: 
+395:         _wire_system = JarvisSystem(
+396:             config=config,
+397:             bus=bus,
+398:             engine=engine,
+399:             engine_key=engine_name,
+400:             model=model_name,
+401:             agent_name=channel_agent,
+402:             tools=_channel_tools,
+403:         )
+404:         _wire_system.wire_channel(channel_bridge)
+405: 
+406:     # Set up speech backend
+407:     speech_backend = None
+408:     try:
+409:         from openjarvis.speech._discovery import get_speech_backend
+410: 
+411:         speech_backend = get_speech_backend(config)
+412:         if speech_backend:
+413:             console.print(f"  Speech: [cyan]{speech_backend.backend_id}[/cyan]")
+414:         else:
+415:             console.print("[red]Speech backend discovery returned None[/red]")
+416:             # Debug: try direct instantiation
+417:             from openjarvis.speech.faster_whisper import FasterWhisperBackend
+418:             test_b = FasterWhisperBackend(
+419:                 model_size=config.speech.model,
+420:                 device=config.speech.device,
+421:                 compute_type=config.speech.compute_type,
+422:             )
+423:             console.print(f"  Direct FasterWhisperBackend health: {test_b.health()}")
+424:     except Exception as exc:
+425:         console.print(f"[red]Speech backend discovery EXCEPTION: {exc}[/red]")
+426:         import traceback
+427:         traceback.print_exc()
+428: 
+429:     # Create app
+430:     from openjarvis.server.app import create_app
+431: 
+432:     # Set up agent manager
+433:     agent_manager = None
+434:     if config.agent_manager.enabled:
+435:         try:
+436:             from pathlib import Path
+437: 
+438:             from openjarvis.agents.manager import AgentManager
+439: 
+440:             am_db = config.agent_manager.db_path or str(
+441:                 Path("~/.openjarvis/agents.db").expanduser()
+442:             )
+443:             agent_manager = AgentManager(db_path=am_db)
+444:         except Exception as exc:
+445:             logger.debug("Agent manager init failed: %s", exc)
+446: 
+447:     # Set up agent scheduler for cron/interval agents
+448:     agent_scheduler = None
+449:     if agent_manager is not None:
+450:         try:
+451:             from openjarvis.agents.executor import AgentExecutor
+452:             from openjarvis.agents.scheduler import AgentScheduler
+453: 
+454:             _trace_store = None
+455:             try:
+456:                 if config.traces.enabled:
+457:                     from openjarvis.traces.store import TraceStore
+458: 
+459:                     _trace_store = TraceStore(db_path=config.traces.db_path)
+460:             except Exception:
+461:                 pass
+462: 
+463:             executor = AgentExecutor(
+464:                 manager=agent_manager,
+465:                 event_bus=bus,
+466:                 trace_store=_trace_store,
+467:             )
+468:             from openjarvis.system import SystemBuilder
+469: 
+470:             system = SystemBuilder(config).build()
+471:             executor.set_system(system)
+472: 
+473:             agent_scheduler = AgentScheduler(
+474:                 manager=agent_manager,
+475:                 executor=executor,
+476:                 event_bus=bus,
+477:             )
+478:             for ag in agent_manager.list_agents():
+479:                 sched_type = ag.get("config", {}).get("schedule_type", "manual")
+480:                 if sched_type in ("cron", "interval") and ag["status"] not in (
+481:                     "archived",
+482:                     "error",
+483:                 ):
+484:                     agent_scheduler.register_agent(ag["id"])
+485:             agent_scheduler.start()
+486:             console.print("  Scheduler: [cyan]active[/cyan]")
+487:         except Exception as exc:
+488:             logger.debug("Agent scheduler init failed: %s", exc)
+489: 
+490:     # Set up memory backend for context injection
+491:     memory_backend = None
+492:     if config.agent.context_from_memory:
+493:         try:
+494:             import openjarvis.tools.storage  # noqa: F401
+495:             from openjarvis.core.registry import MemoryRegistry
+496: 
+497:             mem_key = config.memory.default_backend
+498:             if MemoryRegistry.contains(mem_key):
+499:                 memory_backend = MemoryRegistry.create(
+500:                     mem_key,
+501:                     db_path=config.memory.db_path,
+502:                 )
+503:                 console.print("  Memory:    [cyan]active[/cyan]")
+504:                 # Backfill: the chat agent's tools were built above (before
+505:                 # memory_backend existed), so retrieval/memory_* tools have
+506:                 # _backend=None. Inject the live backend into them now.
+507:                 try:
+508:                     _agent_tools = getattr(agent, "_tools", None) or []
+509:                     _wired = 0
+510:                     for _t in _agent_tools:
+511:                         _tname = getattr(getattr(_t, "spec", None), "name", "")
+512:                         if (_tname == "retrieval" or _tname.startswith("memory_")) and hasattr(_t, "_backend"):
+513:                             _t._backend = memory_backend
+514:                             _wired += 1
+515:                     logger.info(f"[DEBUG] wired memory_backend into {_wired} agent tool(s)")  # openjarvis-debug-readable-v1
+516:                 except Exception as _exc:
+517:                     logger.debug("Agent tool backend injection failed: %s", _exc)
+518:         except Exception as exc:
+519:             logger.debug("Memory backend init failed: %s", exc)
+520: 
+521:     # --- Channel Gateway: API key, sessions, ChannelBridge ---
+522:     import os as _os
+523: 
+524:     api_key = _os.environ.get("OPENJARVIS_API_KEY", "")
+525:     if not api_key:
+526:         try:
+527:             import tomllib
+528: 
+529:             _cfg_path = str(
+530:                 __import__("pathlib").Path.home() / ".openjarvis" / "config.toml"
+531:             )
+532:             with open(_cfg_path, "rb") as _f:
+533:                 _raw = tomllib.load(_f)
+534:             api_key = _raw.get("server", {}).get("auth", {}).get("api_key", "")
+535:         except (FileNotFoundError, ImportError):
+536:             pass
+537: 
+538:     from openjarvis.server.auth_middleware import check_bind_safety, record_bind
+539: 
+540:     check_bind_safety(bind_host, api_key=api_key)
+541:     record_bind(bind_host, bind_port, api_key=api_key)
+542: 
+543:     # Log credential status at startup
+544:     from openjarvis.core.credentials import TOOL_CREDENTIALS, get_credential_status
+545: 
+546:     _cred_parts = []
+547:     for _tool_name in sorted(TOOL_CREDENTIALS):
+548:         _status = get_credential_status(_tool_name)
+549:         _set = sum(1 for v in _status.values() if v)
+550:         _total = len(_status)
+551:         if _set > 0:
+552:             _cred_parts.append(f"{_tool_name}: {_set}/{_total} keys")
+553:     if _cred_parts:
+554:         logger.info("Credentials loaded ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒ ...[TRUNCATED, original length 49789]
+555: 
+556:     webhook_config = {
+557:         "twilio_auth_token": _os.environ.get("TWILIO_AUTH_TOKEN", ""),
+558:         "bluebubbles_password": _os.environ.get("BLUEBUBBLES_PASSWORD", ""),
+559:         "whatsapp_verify_token": _os.environ.get("WHATSAPP_VERIFY_TOKEN", ""),
+560:         "whatsapp_app_secret": _os.environ.get("WHATSAPP_APP_SECRET", ""),
+561:     }
+562: 
+563:     # Wrap existing channel in ChannelBridge orchestrator
+564:     if channel_bridge is not None:
+565:         try:
+566:             from openjarvis.server.channel_bridge import (
+567:                 ChannelBridge,
+568:             )
+569:             from openjarvis.server.session_store import (
+570:                 SessionStore,
+571:             )
+572: 
+573:             session_store = SessionStore()
+574:             channels = {channel_bridge.channel_id: channel_bridge}
+575:             channel_bridge = ChannelBridge(
+576:                 channels=channels,
+577:                 session_store=session_store,
+578:                 bus=bus,
+579:                 system=None,
+580:                 agent_manager=agent_manager,
+581:             )
+582:         except Exception as exc:
+583:             logger.debug("ChannelBridge init skipped: %s", exc)
+584: 
+585:     app = create_app(
+586:         engine,
+587:         model_name,
+588:         agent=agent,
+589:         bus=bus,
+590:         engine_name=engine_name,
+591:         agent_name=agent_key or "",
+592:         channel_bridge=channel_bridge,
+593:         config=config,
+594:         memory_backend=memory_backend,
+595:         speech_backend=speech_backend,
+596:         agent_manager=agent_manager,
+597:         agent_scheduler=agent_scheduler,
+598:         api_key=api_key,
+599:         webhook_config=webhook_config,
+600:         cors_origins=config.server.cors_origins,
+601:     )
+602: 
+603:     console.print(
+604:         f"[green]Starting OpenJarvis API server[/green]\n"
+605:         f"  Engine: [cyan]{engine_name}[/cyan]\n"
+606:         f"  Model:  [cyan]{model_name}[/cyan]\n"
+607:         f"  Agent:  [cyan]{agent_key or 'none'}[/cyan]\n"
+608:         f"  URL:    [cyan]http://{bind_host}:{bind_port}[/cyan]"
+609:     )
+610: 
+611:     # Warn about wildcard CORS on non-loopback
+612:     import ipaddress as _ipa
+613: 
+614:     try:
+615:         _is_loop = _ipa.ip_address(bind_host).is_loopback
+616:     except ValueError:
+617:         _is_loop = bind_host in ("localhost", "")
+618: 
+619:     # openjarvis-ws-cid-redact-v3
+620:     # The confirm-channel redaction in server/ws_bridge.py keys on this
+621:     # value. Published, never re-derived there. See W18 s6.B.
+622:     app.state.bind_is_loopback = _is_loop
+623: 
+624:     # openjarvis-bind-assert-v1
+625:     # Runtime bind assertion. The confirm-channel redaction posture is
+626:     # conditional on this bind, so the bind must be recoverable from the log.
+627:     logger.warning(
+628:         "BIND_ASSERT host=%s port=%s loopback=%s engine=%s model=%s agent=%s",
+629:         bind_host,
+630:         bind_port,
+631:         _is_loop,
+632:         engine_name,
+633:         model_name,
+634:         agent_key or "none",
+635:     )
+636:     if not _is_loop:
+637:         logger.warning(
+638:             "BIND_ASSERT NON_LOOPBACK host=%s - confirm channel is exposed "
+639:             "beyond this host. Socket auth is deliberately absent (ruling "
+640:             "2026-08-29). Do not run this bind with untrusted network reach.",
+641:             bind_host,
+642:         )
+643: 
+644:     if not _is_loop and "*" in config.server.cors_origins:
+645:         console.print(
+646:             "[yellow bold]WARNING:[/yellow bold] Wildcard CORS with credentials "
+647:             "enabled on non-loopback interface. This allows any website to make "
+648:             "authenticated requests to your instance."
+649:         )
+650: 
+651:     import uvicorn
+652: 
+653:     config = uvicorn.Config(app, host=bind_host, port=bind_port, log_level="info", loop="asyncio", log_config=None)
+654:     server = uvicorn.Server(config)
+655:     asyncio.run(server.serve())
+```

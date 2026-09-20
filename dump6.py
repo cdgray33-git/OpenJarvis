@@ -1,0 +1,5 @@
+f = open(r'C:\Windows\System32\OpenJarvis\frontend\src\components\Chat\ChatArea.tsx', 'r', encoding='latin-1')
+content = f.read()
+f.close()
+idx = content.find('<ThinkingCircle')
+print(repr(content[idx-300:idx+300]))
