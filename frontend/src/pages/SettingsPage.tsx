@@ -10,9 +10,19 @@ import {
   Key,
   Brain,
   Server,
+  Volume2,
 } from 'lucide-react';
 import { useAppStore, type ThemeMode } from '../lib/store';
 import { checkHealth, getMemoryStats } from '../lib/api';
+import {
+  isSinkSelectionSupported,
+  isEnumerationSupported,
+  requestDeviceLabels,
+  listAudioOutputs,
+  getSavedSinkId,
+  type AudioOutputDevice,
+} from '../lib/audioOutput';
+import { setOutputDevice } from '../audio/ttsPlayer';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -97,6 +107,12 @@ export function SettingsPage() {
   });
   const [confirmClear, setConfirmClear] = useState(false);
 
+  /* Audio output endpoint selection - see lib/audioOutput.ts for why. */
+  const [audioDevices, setAudioDevices] = useState<AudioOutputDevice[]>([]);
+  const [sinkId, setSinkId] = useState<string>(() => getSavedSinkId());
+  const [audioProbe, setAudioProbe] = useState<string>('Not checked yet');
+  const [labelsUnlocked, setLabelsUnlocked] = useState(false);
+
   const showSaved = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
@@ -106,6 +122,53 @@ export function SettingsPage() {
     checkHealth().then(ok => setHealthy(ok));
     getMemoryStats().then(stats => setMemoryStats(stats)).catch(() => setMemoryStats(null));
   }, []);
+
+  /*
+   * On-screen capability readout. The webview console is unreadable without a
+   * CDP opt-in, so this line IS the instrument: it reports setSinkId support,
+   * how many audiooutput endpoints were found, and whether their labels came
+   * back named or blank.
+   */
+  const probeAudio = async (unlockLabels: boolean) => {
+    const sinkOk = isSinkSelectionSupported();
+    const enumOk = isEnumerationSupported();
+    if (!enumOk) {
+      setAudioProbe('setSinkId=' + sinkOk + ' | enumerateDevices UNAVAILABLE');
+      setAudioDevices([]);
+      return;
+    }
+    let granted = labelsUnlocked;
+    if (unlockLabels && !granted) {
+      granted = await requestDeviceLabels();
+      setLabelsUnlocked(granted);
+    }
+    const devices = await listAudioOutputs();
+    setAudioDevices(devices);
+    const named = devices.filter((d) => d.label && d.label.trim().length > 0).length;
+    setAudioProbe(
+      'setSinkId=' + sinkOk +
+      ' | endpoints=' + devices.length +
+      ' | named=' + named +
+      (granted ? ' | labels unlocked' : ' | labels LOCKED (click Detect)')
+    );
+  };
+
+  useEffect(() => {
+    void probeAudio(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /*
+   * setOutputDevice persists the choice AND retargets the live AudioContext, so
+   * a device change takes effect immediately. Before this, selection was
+   * persist-only and needed an app relaunch to be picked up at context
+   * creation - which is how W66's device test had to be run.
+   */
+  const handleSinkChange = (id: string) => {
+    setSinkId(id);
+    void setOutputDevice(id);
+    showSaved();
+  };
 
   const handleExport = () => {
     const data = localStorage.getItem('openjarvis-conversations') || '{}';
@@ -171,7 +234,7 @@ export function SettingsPage() {
             )}
           </div>
           <p className="text-sm mt-2 max-w-2xl" style={{ color: 'var(--color-text-secondary)' }}>
-            App preferences — appearance, model defaults, keyboard shortcuts, and data management.
+            App preferences - appearance, model defaults, keyboard shortcuts, and data management.
           </p>
         </header>
 
@@ -214,6 +277,45 @@ export function SettingsPage() {
                 <option value="default">Default</option>
                 <option value="large">Large</option>
               </select>
+            </SettingRow>
+          </Section>
+
+          <Section title="Audio Output">
+            <SettingRow
+              label="Speech output device"
+              description="Where Jarvis speaks. Default follows Windows, which can silently select a phantom endpoint."
+            >
+              <select
+                value={sinkId}
+                onChange={(e) => handleSinkChange(e.target.value)}
+                className="text-sm px-3 py-1.5 rounded-lg outline-none cursor-pointer w-64"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <option value="">System default</option>
+                {audioDevices.map((d, i) => (
+                  <option key={d.deviceId || i} value={d.deviceId}>
+                    {d.label || `Endpoint ${i + 1} (unnamed)`}
+                  </option>
+                ))}
+              </select>
+            </SettingRow>
+            <SettingRow label="Detect devices" description={audioProbe}>
+              <button
+                onClick={() => { void probeAudio(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <Volume2 size={14} />
+                Detect
+              </button>
             </SettingRow>
           </Section>
 
@@ -272,7 +374,7 @@ export function SettingsPage() {
           </Section>
 
           <Section title="Memory">
-            <SettingRow label="Memory status" description={memoryStats ? `${memoryStats.backend} backend — ${memoryStats.entries} entries` : 'Unable to reach memory service'}>
+            <SettingRow label="Memory status" description={memoryStats ? `${memoryStats.backend} backend - ${memoryStats.entries} entries` : 'Unable to reach memory service'}>
               <div className="flex items-center gap-2">
                 <Brain size={14} style={{ color: memoryStats ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }} />
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>

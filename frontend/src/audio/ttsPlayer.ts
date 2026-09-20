@@ -23,11 +23,19 @@
  * deliberately a short clause so audio begins early, and everything after it is
  * packed normally to keep request count down.
  *
+ * OUTPUT ENDPOINT (W66): the context is retargeted to the user's chosen render
+ * endpoint via setSinkId, because the Windows default cannot be trusted - a
+ * phantom "Speakers (USB Audio and HID)" endpoint on a mic dongle will accept
+ * the whole stream and render nothing, silently. Selection lives in
+ * lib/audioOutput.ts; this file only applies it. The context is NEVER rebuilt
+ * to change devices, since that would drop the keepalive above.
+ *
  * This module owns playback and nothing else. It has no React dependency and no
  * knowledge of messages or streaming state. The caller feeds it text.
  */
 
 import { synthesizeSpeech } from '../lib/api';
+import { applySavedSink, applySink, saveSinkId } from '../lib/audioOutput';
 
 /* Short first unit: time-to-first-audio is dominated by this one request. */
 const FIRST_UNIT_MAX_CHARS = 90;
@@ -85,6 +93,15 @@ function ensureContext(): AudioContext | null {
     ctx = null;
     return null;
   }
+
+  /*
+   * Retarget to the saved endpoint. Deliberately fire-and-forget: this function
+   * is synchronous and is called on the queueing path, so making it await would
+   * change the shape of every caller. The first unit is a short clause plus a
+   * synthesis round-trip away, which is far longer than setSinkId takes to
+   * settle. A no-op when nothing is saved.
+   */
+  void applySavedSink(ctx);
 
   masterGain = ctx.createGain();
   masterGain.gain.value = 1;
@@ -288,6 +305,25 @@ async function pump(): Promise<void> {
 /* Create or resume the context. Safe to call repeatedly. */
 export function primeAudio(): void {
   ensureContext();
+}
+
+/*
+ * Change the output endpoint on the LIVE context, and persist the choice so the
+ * next session starts there. Passing '' reverts to the Windows default.
+ *
+ * Retarget rather than rebuild: tearing down the context to change devices
+ * would drop the keepalive source and reintroduce the swallowed-first-word
+ * defect documented at the top of this file.
+ *
+ * Returns true if the live context was actually retargeted. False means either
+ * no context exists yet - in which case the saved value is applied at creation,
+ * which is still correct - or the retarget was refused.
+ */
+export async function setOutputDevice(deviceId: string): Promise<boolean> {
+  saveSinkId(deviceId);
+  if (!ctx) return false;
+  if (!deviceId) return applySink(ctx, '');
+  return applySink(ctx, deviceId);
 }
 
 /*
