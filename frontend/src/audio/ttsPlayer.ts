@@ -1,4 +1,4 @@
-﻿/*
+/*
  * ttsPlayer.ts - OpenJarvis TTS playback engine.
  * MARKER: openjarvis-tts-player-v1
  *
@@ -295,6 +295,7 @@ async function pump(): Promise<void> {
     }
   } finally {
     pumping = false;
+    if (pending.length > 0) void pump();
   }
 }
 
