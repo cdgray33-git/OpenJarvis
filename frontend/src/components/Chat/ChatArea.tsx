@@ -121,7 +121,12 @@ export function ChatArea() {
 
     if (streamState.isStreaming) {
       const unspoken = fullText.slice(spokenCharsRef.current);
-      const match = unspoken.match(/^[\s\S]*[.!?](?=\s)/);
+      const sentenceEnd = /^[\s\S]*[.!?](?=\s)/;
+      // First segment of a reply only: release at the earliest clause
+      // boundary past 20 chars so audio starts before the sentence ends.
+      const match = spokenCharsRef.current === 0
+        ? (unspoken.match(/^[\s\S]{20,}?[.!?,;:](?=\s)/) || unspoken.match(sentenceEnd))
+        : unspoken.match(sentenceEnd);
       if (!match) return;
       take = spokenCharsRef.current + match[0].length;
     }

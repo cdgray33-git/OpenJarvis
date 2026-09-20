@@ -1,4 +1,4 @@
-/*
+﻿/*
  * ttsPlayer.ts - OpenJarvis TTS playback engine.
  * MARKER: openjarvis-tts-player-v1
  *
@@ -52,7 +52,7 @@ const SCHEDULE_LEAD_SECONDS = 0.08;
  * driver still idles through digital silence, raise this to something tiny like
  * 0.0001 - inaudible, but non-zero output. One line, one place.
  */
-const KEEPALIVE_GAIN = 0.0;
+const KEEPALIVE_GAIN = 0.0001;
 
 let ctx: AudioContext | null = null;
 let masterGain: GainNode | null = null;
