@@ -1,7 +1,7 @@
-import type { ModelInfo, SavingsData, ServerInfo } from '../types';
+﻿import type { ModelInfo, SavingsData, ServerInfo } from '../types';
 
 // ---------------------------------------------------------------------------
-// Supabase config â€” safe to embed (RLS protects writes)
+// Supabase config - safe to embed (RLS protects writes)
 // ---------------------------------------------------------------------------
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://mtbtgpwzrbostweaanpr.supabase.co';
@@ -16,7 +16,7 @@ declare global {
 export const isTauri = () => typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 
 // Cached API base URL fetched from the Tauri backend at startup.
-// This avoids hardcoding the port â€” the Rust backend is the single
+// This avoids hardcoding the port - the Rust backend is the single
 // source of truth for JARVIS_PORT.
 let _tauriApiBase: string | null = null;
 
@@ -258,6 +258,10 @@ export async function synthesizeSpeech(text: string, voiceId = 'am_adam', speed 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, voice_id: voiceId, speed, output_format: 'wav' }),
+    // F-W62-2d: a hung synthesize parks the ttsPlayer pump forever -
+    // pumping stays true, every later enqueue is dropped, and voice dies
+    // for the session with no error. Throws into the pump catch instead.
+    signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`Synthesis failed: ${res.status}`);
   return res.blob();
