@@ -1,4 +1,4 @@
-﻿import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
@@ -81,6 +81,74 @@ export function ChatArea() {
       if (next) stopAll();
       return next;
     });
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // W70 MAIN-THREAD LIVENESS PROBE (F-W69-FREEZE measurement)
+  //
+  // Two independent instruments on one readout:
+  //   maxGap  - worst delay between 100ms setInterval ticks. Measures TASK
+  //             SCHEDULING latency. A large gap means the main thread was
+  //             blocked and could not run a queued macrotask - which is
+  //             exactly what swallows the stop button click.
+  //   minFPS  - lowest 1-second requestAnimationFrame rate seen. Measures
+  //             PAINT liveness. Low FPS with small gaps means render churn,
+  //             not a blocking task.
+  //
+  // Counters live in a ref so the measurement survives the freeze; the text
+  // is only pushed to state on a stall or every 2s, so the probe itself adds
+  // at most 0.5 renders/sec when idle. Readout is in the chat header.
+  // -------------------------------------------------------------------------
+  const probeRef = useRef({ last: 0, maxGap: 0, stalls: [] as number[], minFps: 999, ticks: 0 });
+  const [probeText, setProbeText] = useState('probe armed');
+  useEffect(() => {
+    const p = probeRef.current;
+    p.last = performance.now();
+    let frames = 0;
+    let fpsMark = performance.now();
+    let raf = 0;
+    const render = () => {
+      setProbeText(
+        'gap=' + p.maxGap + 'ms stalls=' + p.stalls.length +
+        ' [' + p.stalls.slice(-5).join(',') + '] fps=' + (p.minFps === 999 ? '-' : p.minFps)
+      );
+    };
+    const loop = () => {
+      frames++;
+      const now = performance.now();
+      if (now - fpsMark >= 1000) {
+        const fps = Math.round((frames * 1000) / (now - fpsMark));
+        if (fps < p.minFps) p.minFps = fps;
+        frames = 0;
+        fpsMark = now;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    const id = setInterval(() => {
+      const now = performance.now();
+      const gap = Math.round(now - p.last);
+      p.last = now;
+      p.ticks += 1;
+      if (gap > p.maxGap) p.maxGap = gap;
+      if (gap >= 250) {
+        p.stalls.push(gap);
+        render();
+      } else if (p.ticks % 20 === 0) {
+        render();
+      }
+    }, 100);
+    return () => { clearInterval(id); cancelAnimationFrame(raf); };
+  }, []);
+
+  const resetProbe = useCallback(() => {
+    const p = probeRef.current;
+    p.last = performance.now();
+    p.maxGap = 0;
+    p.stalls = [];
+    p.minFps = 999;
+    p.ticks = 0;
+    setProbeText('probe armed');
   }, []);
 
   // -------------------------------------------------------------------------
@@ -313,6 +381,19 @@ export function ChatArea() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-end px-3 py-1.5 shrink-0 gap-1">
+        {/* W70 main-thread liveness readout */}
+        <span
+          onClick={resetProbe}
+          title="Main-thread probe. gap = worst setInterval delay (thread blocked). fps = lowest 1s frame rate (paint). Click to reset."
+          className="mr-auto px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer select-none"
+          style={{
+            color: probeRef.current.stalls.length > 0 ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+            background: 'var(--color-bg-secondary)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          {probeText}
+        </span>
         {/* Mute toggle */}
         <button
           onClick={toggleMute}
