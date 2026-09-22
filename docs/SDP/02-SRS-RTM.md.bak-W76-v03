@@ -1,5 +1,5 @@
 # VOL 2 - SOFTWARE REQUIREMENTS SPECIFICATION (SRS) AND TRACEABILITY MATRIX
-Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28; requirements unchanged.
+Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22).
 v0.1 (W72) seeded RQ-001..004. v0.2 adds RQ-005..031 recovered from the pre-OpenJarvis
 executive-assistant artifacts (R1.1). Design mapping is R1.2; verification is R1.3.
 
@@ -90,20 +90,7 @@ adoption of that capability set. Excluded: "New build before my requirements doc
 | RQ-033 | Create diagrams (Visio and similar) | S-07 09/22 | [S] |
 
 ## 4. QUALIFICATION PROVISIONS
-Two tiers, owner-approved W76 2026-09-22.
-TIER A - author Agent QA Runbook, docs\testing\agent-qa-runbook.md (37 scenarios, 75 lines,
-sha256 LF-normalized EFD739690939836A5E5262CD59BA9910DC47C3D29D7C89216DECFCBE715E0AFA,
-unchanged upstream as of 09-21). PARTIAL SET ONLY:
-  Direct (partial): RQ-005, 006, 008, 011 via Channel Gmail and Channel Email (SMTP/IMAP).
-  Partial/indirect: RQ-021, 025 (CLI 3); RQ-031 (CLI 7, Desktop 7, Desktop 9); RQ-028 (Desktop 8).
-  No core row: CLI 1,2,4,5,6,8,9,11,12; Desktop 1-6,10; Stress 1-7 (platform evidence for R1.2).
-  Phase 2: CLI 10 and Channel Slack (RQ-027). Out of scope: iMessage, Twitter/X, Discord, Telegram, WhatsApp.
-  Prerequisite conflicts with Graystone rules: desktop via npm run dev (use production build),
-  qwen3:8b model, manual click steps (automate before use as evidence).
-TIER B - Graystone acceptance test per core row, written from the row text: non-interactive,
-production build, one pass criterion each. First priority, the 20 rows with no Tier A coverage:
-RQ-001, 002, 004, 007, 009, 010, 012, 013-020, 022, 024, 026, 029, 030.
-A row is VERIFIED only when its full row text passes. Tier A evidence supplements, not substitutes.
+Author Agent QA Runbook (37 scenarios) is the verification set (R1.3). Mapping TBD.
 
 ## 5. REQUIREMENTS TRACEABILITY MATRIX
 | Req ID | Design element (Vol 1/4) | Interface (Vol 3) | Test evidence | Status |
@@ -114,9 +101,6 @@ A row is VERIFIED only when its full row text passes. Tier A evidence supplement
 | RQ-004 | Path 1b, stream_bridge, Option A | IF-01 | stream_probe_w70 | OPEN (POAM-01) |
 | RQ-005..RQ-031 core | TBD (R1.2) | TBD | TBD (R1.3) | NOT ASSESSED |
 | RQ-023, 027, 032, 033 | - | - | - | DEFERRED (Phase 2) |
-
-PROGRESS BASELINE (W76, 2026-09-22, before any test run): VERIFIED 0/28.
-PARTIAL: RQ-001, RQ-002. OPEN: RQ-004. NOT ASSESSED: 25.
 
 ## 6. NOTES
 - RQ-028 is the original design's control against claims without invocation (Defect 1).

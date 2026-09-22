@@ -1,0 +1,79 @@
+﻿# VOL 3A - AUTHOR BASELINE AND GRAYSTONE DIVERGENCE REGISTER
+v0.1 W76 2026-09-22. Owner rule 09/22: the author's procedures come first. Graystone aligns
+to them, and every departure is recorded in section D with its class and reason.
+
+Plain language: the people who wrote OpenJarvis published instructions for installing and
+running it. This document keeps those instructions as the ruler. Every place our setup is
+different is written down in section D, so a real bug can be told apart from "we set it up
+differently" or "our copy is older than their instructions".
+
+## SOURCES
+Upstream clone C:\Users\Admin\upstream-OpenJarvis (read-only). Freshness = git last-commit date;
+clone file dates are checkout time only (W76 negative result).
+| Doc | Last commit | sha256 (first 16) |
+|---|---|---|
+| docs\getting-started\install.md (canonical, README links it) | 2026-09-04 | e19f1a6937883ed0 |
+| docs\getting-started\installation.md (contributor/manual path) | 2026-06-20 | 3d1e68b262fb3c7c |
+| docs\getting-started\windows-native.md | 2026-07-01 | 068acfec0041a06f |
+| docs\getting-started\configuration.md | 2026-09-21 | b51ef1b5e200432f |
+| docs\getting-started\quickstart.md, wsl2.md, snippets.md, README.md | see inventory | see inventory |
+| docs\testing\agent-qa-runbook.md | 2026-03-16 | (Tier A, RTM section 4) |
+Inventory: docs\SDP\evidence\W76\author-docs-inventory.md. Measurement: docs\SDP\evidence\W76\graystone-vs-author-install.md.
+VERSION LAG: Graystone code snapshot is 2026-05-19. install.md, windows-native.md and
+configuration.md were revised after it, so they may describe behavior newer than our code.
+Each section D row states CHOICE (Graystone decided) or LAG (our copy predates the author's).
+
+## A. INSTALL PATH
+A1 Canonical doc: install.md. installation.md is the older clone + uv sync + maturin + npm run dev
+   path, retained by the author (author duplicate, not ours to remove).
+A2 Windows: WSL2 is the author's recommended path. Native Windows is "advanced" (RFC #298):
+   install.ps1 -> %LOCALAPPDATA%\OpenJarvis\src, uv sync --extra desktop --group desktop-native,
+   optional scheduled task deploy\windows\jarvis-service.ps1, loopback 127.0.0.1:8000, verify /health.
+A3 Requirements: Python 3.10-3.13, uv, git, Rust (extension for memory + security), Node 18+ for UI.
+A4 Health checks: jarvis doctor; GET /health.
+A5 Desktop: prebuilt installers or tauri build; app connects to localhost:8000.
+Measured W76: Python 3.12.10 OK. uv 0.11.11 OK. openjarvis_rust 0.1.0 built OK.
+
+## B. CONFIGURATION BASELINE
+Author: ~/.openjarvis/config.toml; overrides OPENJARVIS_HOME, XDG_DATA_HOME, OPENJARVIS_CONFIG.
+Author defaults that matter here:
+- [engine.ollama] host (nested form; old flat ollama_host still accepted).
+- [agent] default_agent = simple, max_turns = 10, context_from_memory = true.
+- [tools.storage] replaces [memory] (old name still accepted).
+- [server] host 127.0.0.1, port 8000, agent orchestrator. Author: configure API authentication
+  before binding 0.0.0.0.
+- [security] enabled, mode warn, enforce_tool_confirmation = true, which the author states is
+  ACCEPTED BUT NOT CURRENTLY ENFORCED; prompts depend on the entry point (system-access.md).
+- [telemetry] enabled = true. [traces] enabled = false.
+Measured W76: config at the author default path; no override variables set. Values in section D.
+
+## C. CORE REQUIREMENT -> AUTHOR MECHANISM (R1.2, seeded from the install batch only)
+| Req | Author mechanism | Author's own check | Source |
+|---|---|---|---|
+| RQ-022 | built-in tool calculator | jarvis ask --agent orchestrator --tools calculator "What is 137 * 42?" | installation.md, quickstart.md |
+| RQ-021 | built-in tool web_search; You.com keyless default, DuckDuckGo fallback; OPENJARVIS_WEB_SEARCH_ENGINE | jarvis ask --agent orchestrator --tools calculator,web_search "..." | quickstart.md, configuration.md |
+| RQ-005, RQ-016 | jarvis connect gdrive (one OAuth: Gmail, Calendar, Tasks) | pending connectors doc | README.md, quickstart.md |
+| RQ-012 | enforce_tool_confirmation (author: not enforced, entry-point dependent); requires_confirmation per tool | pending system-access.md | configuration.md, snippets.md |
+| RQ-030 | Ollama recommended; local-first default when no cloud key in env | pending | install.md, installation.md |
+| RQ-031 | learning loop requires [traces] enabled = true | pending memory.md, learning | configuration.md |
+Remaining core rows: mapped from the capability batch (channels-and-connectors, tools, memory,
+security, system-access, agents, scheduler, morning-digest).
+
+## D. DIVERGENCE REGISTER
+| ID | Area | Author | Graystone (measured W76) | Class | Note |
+|---|---|---|---|---|---|
+| D-01 | Install location | %LOCALAPPDATA%\OpenJarvis\src or ~/.openjarvis/src | C:\Users\Admin\OpenJarvis repo, own .venv | CHOICE | dev repo is the runtime |
+| D-02 | Service | scheduled task jarvis-service.ps1 | none; manual admin start-openjarvis.ps1; file absent from repo | LAG | author added after 05-19 |
+| D-03 | Engine host | [engine.ollama] host | no [engine.ollama] section; remote Ollama 172.16.33.200 | OPEN | source of host not yet measured |
+| D-04 | Storage section | [tools.storage] | legacy [memory] | LAG | backward compatible |
+| D-05 | Default agent | simple / server orchestrator | native_openhands (both) | CHOICE | CodeAct agent |
+| D-06 | Default tools | none | code_interpreter, file_read, file_write, shell_exec, think, calculator, retrieval, 5 mailbox tools incl move_to_trash, empty_folder | CHOICE | destructive set, see H-W76-EXPOSURE |
+| D-07 | Server bind | 127.0.0.1:8000 | 0.0.0.0:8010 | CHOICE | author: auth first; H-W74-AUTHOFF |
+| D-08 | Tool confirmation | true, not enforced | unset (default true, not enforced) | MATCH | gap is the author's; RQ-012, Defect 6 |
+| D-09 | Traces | false | unset (false) | MATCH | blocks RQ-031 learning, runbook Desktop 9 |
+| D-10 | Extra sections | not in configuration.md | [speech] model base; [analytics] enabled false | OPEN | verify against author docs |
+| D-11 | Default model | empty (router) | qwen3-coder:30b | CHOICE | |
+| D-12 | Desktop | prebuilt or tauri build | production tauri build from repo | CHOICE | production only (owner rule) |
+HAZARD H-W76-EXPOSURE: D-05 + D-06 + D-07 + D-08 together = LAN-bound server, CodeAct agent with
+shell and destructive mailbox tools, confirmation not enforced (author-documented). Confirm auth
+state by whole-file upload of server\app.py (BRIEF W75 item 6).
