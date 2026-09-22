@@ -908,6 +908,30 @@ class ToolsConfig:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     enabled: str = ""  # comma-separated default tools
+    file_allowed_dirs: str = ""  # openjarvis-file-confine-v1 (W78): comma-separated; empty = scratch pad
+
+
+def resolve_file_write_dirs(cfg: "JarvisConfig") -> List[str]:
+    """Directories file_write may write to. openjarvis-file-confine-v1 (W78).
+
+    FileWriteTool accepts allowed_dirs, but no builder ever passed it, so on
+    every surface an empty list meant write anywhere. Graystone confines it
+    to [tools] file_allowed_dirs, or to the Jarvis scratch pad
+    (~/.openjarvis/workspace) when unset. Never returns an empty list.
+    """
+    raw = getattr(getattr(cfg, "tools", None), "file_allowed_dirs", "") or ""
+    dirs = [d.strip() for d in str(raw).split(",") if d.strip()]
+    if not dirs:
+        dirs = [str(DEFAULT_CONFIG_DIR / "workspace")]
+    out: List[str] = []
+    for d in dirs:
+        p = Path(d).expanduser()
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        out.append(str(p))
+    return out
 
 
 @dataclass

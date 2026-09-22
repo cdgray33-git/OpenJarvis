@@ -276,7 +276,14 @@ def serve(
                         if isinstance(tool_cls, type) and issubclass(
                             tool_cls, BaseTool
                         ):
-                            tools.append(tool_cls())
+                            if name == "file_write":  # openjarvis-file-confine-v1 (W78)
+                                from openjarvis.core.config import resolve_file_write_dirs
+
+                                _fdirs = resolve_file_write_dirs(config)
+                                logger.info(f"[DEBUG] file_write allowed_dirs={_fdirs}")  # openjarvis-file-confine-v1
+                                tools.append(tool_cls(allowed_dirs=_fdirs))
+                            else:
+                                tools.append(tool_cls())
                         elif isinstance(tool_cls, BaseTool):
                             tools.append(tool_cls)
                     logger.info(f'[DEBUG] registry_keys={list(ToolRegistry.keys())}')  # openjarvis-debug-readable-v1
@@ -420,7 +427,12 @@ def serve(
                                 continue
                             _tcls = ToolRegistry.get(_tname)
                             if isinstance(_tcls, type) and issubclass(_tcls, BaseTool):
-                                _channel_tools.append(_tcls())
+                                if _tname == "file_write":  # openjarvis-file-confine-v1 (W78)
+                                    from openjarvis.core.config import resolve_file_write_dirs
+
+                                    _channel_tools.append(_tcls(allowed_dirs=resolve_file_write_dirs(config)))
+                                else:
+                                    _channel_tools.append(_tcls())
                             elif isinstance(_tcls, BaseTool):
                                 _channel_tools.append(_tcls)
             except Exception as exc:

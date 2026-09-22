@@ -305,6 +305,10 @@ def _build_tools(
             tools.append(tool_cls(engine=engine, model=model_name))
         elif name == "file_read":
             tools.append(tool_cls())
+        elif name == "file_write":  # openjarvis-file-confine-v1 (W78)
+            from openjarvis.core.config import resolve_file_write_dirs
+
+            tools.append(tool_cls(allowed_dirs=resolve_file_write_dirs(config)))
         else:
             tools.append(tool_cls())
     return tools
