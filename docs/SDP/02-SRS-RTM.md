@@ -68,7 +68,7 @@ adoption of that capability set. Excluded: "New build before my requirements doc
 ### 3.5 Research, content, notes
 | Req ID | Requirement | Source | Grade |
 |---|---|---|---|
-| RQ-021 | web_search tool; shared ToolUsingAgent text parser (textparse-v3) + [agent] tools config - Vol 3A C, F8 | SDK ask_full AND live server 8010 | W77: SDK tool_results [web_search] turns 2 (sdk-verify-after.json); server sourced World Bank/Statista answer (surfaceA-gdp.json) | VERIFIED |
+| RQ-021 | Web search | S-01 S-02 S-03 S-04 | [R] |
 | RQ-022 | Calculator | S-01 S-02 | [R] |
 | RQ-024 | Notes: take, get, list | S-03 S-04 | [R] |
 | RQ-025 | Summarize text | S-03 S-04 | [R] |
