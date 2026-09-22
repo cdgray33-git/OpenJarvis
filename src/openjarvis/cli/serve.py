@@ -76,6 +76,48 @@ def _configure_file_logging() -> str:
     return log_path
 
 
+def _build_agent_tools(config, builder: str) -> list:
+    """Build the agent toolkit from [agent] tools. openjarvis-tools-dedupe-v1 (W78).
+
+    ONE builder for the chat agent and the channel agent. Before W78 serve()
+    carried two inline copies of this loop (CLEANUP REGISTER); the removed
+    copies are in serve.py.bak_w78dedupe_*. file_write is confined per
+    openjarvis-file-confine-v1. Banner lines keep their pre-W78 prefixes.
+    """
+    import openjarvis.tools  # noqa: F401  # trigger registration
+    from openjarvis.core.config import resolve_file_write_dirs
+    from openjarvis.core.registry import ToolRegistry
+    from openjarvis.tools._stubs import BaseTool
+
+    _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+    configured = config.agent.tools
+    if configured:
+        if isinstance(configured, list):
+            allowed = {t.strip() for t in configured if isinstance(t, str) and t.strip()}
+        else:
+            allowed = {t.strip() for t in configured.split(",") if t.strip()}
+    else:
+        allowed = _DEFAULT_TOOLS
+    logger.info(f"[DEBUG] allowed={allowed} builder={builder}")  # openjarvis-debug-readable-v1
+    tools = []
+    for name in ToolRegistry.keys():
+        if name not in allowed:
+            continue
+        tool_cls = ToolRegistry.get(name)
+        if isinstance(tool_cls, type) and issubclass(tool_cls, BaseTool):
+            if name == "file_write":  # openjarvis-file-confine-v1 (W78)
+                _fdirs = resolve_file_write_dirs(config)
+                logger.info(f"[DEBUG] file_write allowed_dirs={_fdirs} builder={builder}")
+                tools.append(tool_cls(allowed_dirs=_fdirs))
+            else:
+                tools.append(tool_cls())
+        elif isinstance(tool_cls, BaseTool):
+            tools.append(tool_cls)
+    logger.info(f"[DEBUG] registry_keys={list(ToolRegistry.keys())} builder={builder}")  # openjarvis-debug-readable-v1
+    logger.info(f"[DEBUG] tools_loaded={[t.__class__.__name__ for t in tools]} builder={builder}")  # openjarvis-debug-readable-v1
+    return tools
+
+
 @click.command()
 @click.option("--host", default=None, help="Bind address (default: config).")
 @click.option(
@@ -247,47 +289,7 @@ def serve(
 
                 # Load tools for agents that support them
                 if getattr(agent_cls, "accepts_tools", False):
-                    import openjarvis.tools  # noqa: F401  # trigger registration
-                    from openjarvis.core.registry import ToolRegistry
-                    from openjarvis.tools._stubs import BaseTool
-
-                    _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
-                    configured = config.agent.tools
-                    if configured:
-                        if isinstance(configured, list):
-                            allowed = {
-                                t.strip()
-                                for t in configured
-                                if isinstance(t, str) and t.strip()
-                            }
-                        else:
-                            allowed = {
-                                t.strip() for t in configured.split(",") if t.strip()
-                            }
-                    else:
-                        allowed = _DEFAULT_TOOLS
-
-                    logger.info(f'[DEBUG] allowed={allowed}')  # openjarvis-debug-readable-v1
-                    tools = []
-                    for name in ToolRegistry.keys():
-                        if name not in allowed:
-                            continue
-                        tool_cls = ToolRegistry.get(name)
-                        if isinstance(tool_cls, type) and issubclass(
-                            tool_cls, BaseTool
-                        ):
-                            if name == "file_write":  # openjarvis-file-confine-v1 (W78)
-                                from openjarvis.core.config import resolve_file_write_dirs
-
-                                _fdirs = resolve_file_write_dirs(config)
-                                logger.info(f"[DEBUG] file_write allowed_dirs={_fdirs}")  # openjarvis-file-confine-v1
-                                tools.append(tool_cls(allowed_dirs=_fdirs))
-                            else:
-                                tools.append(tool_cls())
-                        elif isinstance(tool_cls, BaseTool):
-                            tools.append(tool_cls)
-                    logger.info(f'[DEBUG] registry_keys={list(ToolRegistry.keys())}')  # openjarvis-debug-readable-v1
-                    logger.info(f'[DEBUG] tools_loaded={[t.__class__.__name__ for t in tools]}')  # openjarvis-debug-readable-v1
+                    tools = _build_agent_tools(config, "chat")  # openjarvis-tools-dedupe-v1
                     if tools:
                         agent_kwargs["tools"] = tools
 
@@ -368,6 +370,12 @@ def serve(
 
     # Set up channel backend if enabled
     channel_bridge = None
+    logger.warning(  # openjarvis-channel-assert-v1 (W78): readable; console.print is not
+        "CHANNEL_ASSERT enabled=%s default_channel=%s default_agent=%s",
+        config.channel.enabled,
+        config.channel.default_channel or "-",
+        config.channel.default_agent or "-",
+    )
     if config.channel.enabled and config.channel.default_channel:
         try:
             from openjarvis.system import SystemBuilder
@@ -400,41 +408,7 @@ def serve(
                 if AgentRegistry.contains(channel_agent):
                     _ch_cls = AgentRegistry.get(channel_agent)
                     if getattr(_ch_cls, "accepts_tools", False):
-                        import openjarvis.tools
-                        from openjarvis.core.registry import ToolRegistry
-                        from openjarvis.tools._stubs import BaseTool
-
-                        _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
-                        configured = config.agent.tools
-                        if configured:
-                            if isinstance(configured, list):
-                                _allowed = {
-                                    t.strip()
-                                    for t in configured
-                                    if isinstance(t, str) and t.strip()
-                                }
-                            else:
-                                _allowed = {
-                                    t.strip()
-                                    for t in configured.split(",")
-                                    if t.strip()
-                                }
-                        else:
-                            _allowed = _DEFAULT_TOOLS
-
-                        for _tname in ToolRegistry.keys():
-                            if _tname not in _allowed:
-                                continue
-                            _tcls = ToolRegistry.get(_tname)
-                            if isinstance(_tcls, type) and issubclass(_tcls, BaseTool):
-                                if _tname == "file_write":  # openjarvis-file-confine-v1 (W78)
-                                    from openjarvis.core.config import resolve_file_write_dirs
-
-                                    _channel_tools.append(_tcls(allowed_dirs=resolve_file_write_dirs(config)))
-                                else:
-                                    _channel_tools.append(_tcls())
-                            elif isinstance(_tcls, BaseTool):
-                                _channel_tools.append(_tcls)
+                        _channel_tools = _build_agent_tools(config, "channel")  # openjarvis-tools-dedupe-v1
             except Exception as exc:
                 logger.warning("Channel tools failed to load: %s", exc)
 
