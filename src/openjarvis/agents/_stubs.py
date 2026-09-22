@@ -8,6 +8,7 @@ base for agents that accept tools.
 
 from __future__ import annotations
 
+import json as _json
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -353,6 +354,92 @@ class ToolUsingAgent(BaseAgent):
                 self._loop_guard = LoopGuard(loop_guard_config, bus=bus)
         except ImportError:
             pass
+
+
+    # --- openjarvis-w77-textparse-v3: shared text tool-call parser ---
+    def _extract_text_tool_call(self, text):
+        """Parse a tool call emitted as TEXT when native tool_calls is empty."""
+        action_match = re.search(r"Action:\s*(.+)", text, re.IGNORECASE)
+        input_match = re.search(r"Action Input:\s*(.+?)(?=\n\n|\Z)", text, re.DOTALL | re.IGNORECASE)
+        if action_match:
+            return (action_match.group(1).strip(), input_match.group(1).strip() if input_match else "{}")
+        xml_match = re.search(r"<tool_call>\s*(\w+)\s*(.*?)(?:</tool_call>|\Z)", text, re.DOTALL)
+        if xml_match:
+            tool_name = xml_match.group(1).strip()
+            raw_params = xml_match.group(2).strip()
+            params = {}
+            for m in re.finditer(r"\$(\w+)=(.+?)(?=\$|\n<|</|$)", raw_params, re.DOTALL):
+                params[m.group(1)] = m.group(2).strip().rstrip("</>\n")
+            for m in re.finditer(r"<(\w+)>(.*?)</\1>", raw_params, re.DOTALL):
+                key, val = m.group(1), m.group(2).strip()
+                try:
+                    params[key] = int(val)
+                except ValueError:
+                    params[key] = val
+            if not params:
+                for m in re.finditer(r"(\w+)\s*:\s*(.+?)(?=\n\w+\s*:|$)", raw_params, re.DOTALL):
+                    key, val = m.group(1), m.group(2).strip().strip(chr(34) + chr(39))
+                    try:
+                        params[key] = int(val)
+                    except ValueError:
+                        params[key] = val
+            return (tool_name, _json.dumps(params) if params else "{}")
+        fn_match = re.search(r"<function\s*=\s*[\"\']?([\w.\-]+)[\"\']?\s*>(.*?)(?:</function>|\Z)", text, re.DOTALL)
+        if fn_match:
+            fn_params = {}
+            for _pm in re.finditer(r"<parameter\s*=\s*[\"\']?([\w.\-]+)[\"\']?\s*>(.*?)(?:</parameter>|\Z)", fn_match.group(2), re.DOTALL):
+                _val = _pm.group(2).strip()
+                try:
+                    fn_params[_pm.group(1)] = int(_val)
+                except ValueError:
+                    fn_params[_pm.group(1)] = _val
+            return (fn_match.group(1).strip(), _json.dumps(fn_params))
+        return self._extract_json_text_call(text)
+
+    def _extract_json_text_call(self, text):
+        """Bare JSON tool call: {"name": "...", "arguments": {...}}."""
+        start = text.find("{")
+        while start != -1:
+            depth = 0
+            in_str = False
+            esc = False
+            for j in range(start, len(text)):
+                ch = text[j]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == chr(92):
+                        esc = True
+                    elif ch == chr(34):
+                        in_str = False
+                    continue
+                if ch == chr(34):
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            obj = _json.loads(text[start:j + 1])
+                        except Exception:
+                            obj = None
+                        if isinstance(obj, dict):
+                            nm = obj.get("name") or obj.get("tool")
+                            ar = obj.get("arguments", obj.get("parameters", obj.get("input")))
+                            if isinstance(nm, str) and ar is not None:
+                                return (nm, ar if isinstance(ar, str) else _json.dumps(ar))
+                        break
+            start = text.find("{", start + 1)
+        return None
+
+    def _known_tool_names(self):
+        names = set()
+        for _t in (self._tools or []):
+            _n = getattr(_t, "name", None) or getattr(_t, "tool_id", None)
+            if _n:
+                names.add(str(_n))
+        return names
 
 
 __all__ = ["AgentContext", "AgentResult", "BaseAgent", "ToolUsingAgent"]

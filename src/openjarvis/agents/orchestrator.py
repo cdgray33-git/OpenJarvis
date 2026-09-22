@@ -245,6 +245,12 @@ class OrchestratorAgent(ToolUsingAgent):
             content = result.get("content", "")
             raw_tool_calls = result.get("tool_calls", [])
 
+            # openjarvis-w77-textparse-v1: native tool_calls empty -> try a TEXT call
+            if not raw_tool_calls and self._tools:
+                _tc = self._extract_text_tool_call(content)
+                if _tc is not None and _tc[0] in self._known_tool_names():
+                    raw_tool_calls = [{"id": "orch_text_%d" % turns, "name": _tc[0], "arguments": _tc[1]}]
+
             # No tool calls -> check continuation, then final answer
             if not raw_tool_calls:
                 content = self._check_continuation(result, messages)

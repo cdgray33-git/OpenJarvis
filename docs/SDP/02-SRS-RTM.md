@@ -1,5 +1,5 @@
 # VOL 2 - SOFTWARE REQUIREMENTS SPECIFICATION (SRS) AND TRACEABILITY MATRIX
-Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28; requirements unchanged.
+Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28. v0.5 (W77): first VERIFIED rows (RQ-022, RQ-030); requirements unchanged since W75.
 v0.1 (W72) seeded RQ-001..004. v0.2 adds RQ-005..031 recovered from the pre-OpenJarvis
 executive-assistant artifacts (R1.1). Design mapping is R1.2; verification is R1.3.
 
@@ -68,7 +68,7 @@ adoption of that capability set. Excluded: "New build before my requirements doc
 ### 3.5 Research, content, notes
 | Req ID | Requirement | Source | Grade |
 |---|---|---|---|
-| RQ-021 | Web search | S-01 S-02 S-03 S-04 | [R] |
+| RQ-021 | web_search tool; shared ToolUsingAgent text parser (textparse-v3) + [agent] tools config - Vol 3A C, F8 | SDK ask_full AND live server 8010 | W77: SDK tool_results [web_search] turns 2 (sdk-verify-after.json); server sourced World Bank/Statista answer (surfaceA-gdp.json) | VERIFIED |
 | RQ-022 | Calculator | S-01 S-02 | [R] |
 | RQ-024 | Notes: take, get, list | S-03 S-04 | [R] |
 | RQ-025 | Summarize text | S-03 S-04 | [R] |
@@ -112,11 +112,21 @@ A row is VERIFIED only when its full row text passes. Tier A evidence supplement
 | RQ-002 | imap_mail connector, mailbox_tools | TBD | 08/11 live usage report | PARTIAL |
 | RQ-003 | Decomposed into RQ-005..031 | - | - | ROLLUP |
 | RQ-004 | Path 1b, stream_bridge, Option A | IF-01 | stream_probe_w70 | OPEN (POAM-01) |
-| RQ-005..RQ-031 core | TBD (R1.2) | TBD | TBD (R1.3) | NOT ASSESSED |
+| RQ-021 | web_search tool; shared ToolUsingAgent text parser (textparse-v3) + [agent] tools config - Vol 3A C, F8 | SDK ask_full AND live server 8010 | W77: SDK tool_results [web_search] turns 2 (sdk-verify-after.json); server sourced World Bank/Statista answer (surfaceA-gdp.json) | VERIFIED |
+| RQ-022 | calculator tool (ast-based) - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results [calculator -> "5754.0" success], turns 2 - evidence\W77\sdk-verify.json | VERIFIED |
+| RQ-025 | llm tool, any agent - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results EMPTY, turns 1, model answered directly - evidence\W77\sdk-verify.json | NOT VERIFIED (not delegated) |
+| RQ-030 | Ollama engine, local-first default - Vol 3A C | engine gate, TCP 11434 | W77: engine=ollama telemetry 7118-7132; TCP peer 172.16.33.200:11434 (E3); jarvis model list - evidence\W77\model-list.txt, surface-probe.txt | VERIFIED |
+| RQ-005..RQ-031 core (remaining 24) | TBD (R1.2) | TBD | TBD (R1.3) | NOT ASSESSED |
 | RQ-023, 027, 032, 033 | - | - | - | DEFERRED (Phase 2) |
 
 PROGRESS BASELINE (W76, 2026-09-22, before any test run): VERIFIED 0/28.
-PARTIAL: RQ-001, RQ-002. OPEN: RQ-004. NOT ASSESSED: 25.
+PROGRESS (W77, 2026-09-22, after the parser + config fix): VERIFIED 3/28 - RQ-021, RQ-022, RQ-030.
+PARTIAL: RQ-001, RQ-002. OPEN: RQ-004. NOT VERIFIED (tested, failed): RQ-025 (model did not delegate to the llm tool; not a parse failure). NOT ASSESSED: 22.
+QUALIFICATION RULE (W77, Vol 3A F7): a tool-backed row is VERIFIED only on a machine invocation
+record. The only one that exists today is AgentResult.tool_results via the SDK. telemetry.db proves
+engine and model only; [traces] is disabled; the OpenAI response tool_calls field was null on every
+run; CLI stdout shows the answer only. Tier B tests for tool-backed rows target ask_full until the
+server path emits a record of its own (Defect 6 / event bus; RQ-028 depends on it too).
 
 ## 6. NOTES
 - RQ-028 is the original design's control against claims without invocation (Defect 1).

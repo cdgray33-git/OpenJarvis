@@ -1,0 +1,60 @@
+[
+ {
+  "rq": "RQ-022",
+  "kwargs": {
+   "agent": "orchestrator",
+   "tools": [
+    "calculator"
+   ]
+  },
+  "result": {
+   "content": "137 multiplied by 42 equals 5754.",
+   "usage": {},
+   "tool_results": [
+    {
+     "tool_name": "calculator",
+     "content": "5754.0",
+     "success": true
+    }
+   ],
+   "turns": 2,
+   "model": "qwen3-coder:30b",
+   "engine": "ollama"
+  }
+ },
+ {
+  "rq": "RQ-021",
+  "kwargs": {
+   "agent": "orchestrator",
+   "tools": [
+    "calculator",
+    "web_search"
+   ]
+  },
+  "result": {
+   "content": "<function=web_search>\n<parameter=query>\nFrance GDP 2023 USD\n</parameter>\n</function>\n</tool_call>",
+   "usage": {},
+   "tool_results": [],
+   "turns": 1,
+   "model": "qwen3-coder:30b",
+   "engine": "ollama"
+  }
+ },
+ {
+  "rq": "RQ-025",
+  "kwargs": {
+   "agent": "orchestrator",
+   "tools": [
+    "llm"
+   ]
+  },
+  "result": {
+   "content": "The quarterly review revealed that implementing the new triage process led to an 18% decrease in support tickets, reduced response times from 9 hours to 4 hours, and increased customer satisfaction to its highest point in two years.",
+   "usage": {},
+   "tool_results": [],
+   "turns": 1,
+   "model": "qwen3-coder:30b",
+   "engine": "ollama"
+  }
+ }
+]

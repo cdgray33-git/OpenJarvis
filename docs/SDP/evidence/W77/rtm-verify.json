@@ -1,0 +1,153 @@
+{
+ "model": "qwen3-coder:30b",
+ "tools_http": 200,
+ "registered": {
+  "calculator": true,
+  "web_search": true,
+  "llm": true
+ },
+ "tools_raw": "{\"tools\":[{\"name\":\"calculator\",\"description\":\"Evaluate a mathematical expression safely. Supports arithmetic, math functions (sqrt, log, sin, cos), and constants.\",\"category\":\"math\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"think\",\"description\":\"A reasoning scratchpad. Think through a problem step by step. Input is echoed.\",\"category\":\"reasoning\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"retrieval\",\"description\":\"Search the knowledge base for relevant information. Returns context with sources.\",\"category\":\"memory\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"llm\",\"description\":\"Send a prompt to a language model. Useful for sub-queries or summarization.\",\"category\":\"inference\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"file_read\",\"description\":\"Read the contents of a file. Returns the text content.\",\"category\":\"filesystem\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"web_search\",\"description\":\"Search the web for current information. Returns relevant search results.\",\"category\":\"search\",\"source\":\"tool\",\"requires_credentials\":true,\"credential_keys\":[\"TAVILY_API_KEY\"],\"configured\":false},{\"name\":\"code_interpreter\",\"description\":\"Execute Python code and return the output. Code runs in an isolated subprocess.\",\"category\":\"code\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"code_interpreter_docker\",\"description\":\"Execute Python code in an isolated Docker container. Provides sandboxed execution with resource limits (512MB memory, 1 CPU, no network, PID limit 100).\",\"category\":\"code\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"repl\",\"description\":\"Execute Python code in a persistent REPL session. Variables, functions, and imports persist across calls within the same session.\",\"category\":\"code\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"memory_store\",\"description\":\"Store content in the memory backend for later retrieval.\",\"category\":\"storage\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"memory_retrieve\",\"description\":\"Retrieve relevant content from the memory backend.\",\"category\":\"storage\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"memory_search\",\"description\":\"Search memory for content relevant to a query. Returns results with scores and sources.\",\"category\":\"storage\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"memory_index\",\"description\":\"Index a file or directory into the memory backend.\",\"category\":\"storage\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"channel_send\",\"description\":\"Send a message to a channel (Telegram, Discord, Slack, etc.).\",\"category\":\"channel\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"channel_list\",\"description\":\"List available messaging channels.\",\"category\":\"channel\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"channel_status\",\"description\":\"Check the connection status of the messaging channel.\",\"category\":\"channel\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"http_request\",\"description\":\"Make an HTTP request to a URL. Supports GET, POST, PUT, DELETE, PATCH, and HEAD methods. Includes SSRF protection against private IPs and cloud metadata.\",\"category\":\"network\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"docker_shell_exec\",\"description\":\"Execute a shell command inside the task's Linux container (the /app working directory is mounted and writable). Use this for ALL filesystem operations, running scripts, and installing packages. Returns stdout/stderr/exit-code.\",\"category\":\"system\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"shell_exec\",\"description\":\"Execute a shell command and return its stdout/stderr. Runs with a minimal environment for security.\",\"category\":\"system\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"memory_manage\",\"description\":\"Read, add, update, or remove entries in persistent agent memory.\",\"category\":\"memory\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"user_profile_manage\",\"description\":\"Read, add, update, or remove entries in user profile.\",\"category\":\"memory\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"skill_manage\",\"description\":\"Create, list, load, or delete agent-authored skills.\",\"category\":\"skill\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"file_write\",\"description\":\"Write content to a file. Supports write and append modes.\",\"category\":\"filesystem\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"apply_patch\",\"description\":\"Apply a unified diff patch to a file. Supports standard unified diff format with context lines, additions, and removals.\",\"category\":\"filesystem\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"git_status\",\"description\":\"Show the working tree status of a git repository. Returns porcelain-format output.\",\"category\":\"vcs\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"git_diff\",\"description\":\"Show changes in the working tree or staging area. Use staged=true for staged changes.\",\"category\":\"vcs\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"git_commit\",\"description\":\"Stage files and create a git commit. Optionally stage specific files before committing.\",\"category\":\"vcs\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"git_log\",\"description\":\"Show recent commit history of a git repository. Returns the last N commits.\",\"category\":\"vcs\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"db_query\",\"description\":\"Execute a SQL query against a SQLite or PostgreSQL database. Returns results as a formatted table.\",\"category\":\"database\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"pdf_extract\",\"description\":\"Extract text from a PDF file. Returns the extracted text content.\",\"category\":\"media\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"image_generate\",\"description\":\"Generate an image from a text description. Returns the image URL.\",\"category\":\"media\",\"source\":\"tool\",\"requires_credentials\":true,\"credential_keys\":[\"OPENAI_API_KEY\"],\"configured\":false},{\"name\":\"audio_transcribe\",\"description\":\"Transcribe an audio file to text. Supports mp3, wav, m4a, ogg, flac, and webm formats.\",\"category\":\"media\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"kg_add_entity\",\"description\":\"Add an entity to the knowledge graph.\",\"category\":\"knowledge_graph\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"kg_add_relation\",\"description\":\"Add a relation between two entities in the knowledge graph.\",\"category\":\"knowledge_graph\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"kg_query\",\"description\":\"Query the knowledge graph by entity or relation type.\",\"category\":\"knowledge_graph\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"kg_neighbors\",\"description\":\"Find entities connected to a given entity.\",\"category\":\"knowledge_graph\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"text_to_speech\",\"description\":\"Convert text to spoken audio. Returns the file path to the generated audio file.\",\"category\":\"audio\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"digest_collect\",\"description\":\"Fetch recent data from configured connectors (email, calendar, health, tasks, etc.) and return a structured, human-readable summary grouped by section (Health, Messages, Calendar, Music) for digest synthesis.\",\"category\":\"data\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"mailbox_list_accounts\",\"description\":\"List the configured mailbox accounts and their providers. Call this first when the user does not name an account.\",\"category\":\"communication\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"mailbox_usage_report\",\"description\":\"Report what is consuming storage in a mailbox: total size, size per folder, the senders responsible for the most bytes, and the largest individual messages. Reads message headers and sizes only, never message bodies. Use this to answer questions about a mailbox being full or over quota. ALSO use this whenever the user asks WHO is sending them mail, which senders or domains are cluttering the mailbox, or asks for a list of senders to review, classify, or approve - it is the correct first call for any such question. Raise top_senders to 40 or more when the user wants a list to review. openjarvis-sender-discovery-v1\",\"category\":\"communication\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"mailbox_find_messages\",\"description\":\"Find messages in a mailbox by sender address, subject text, minimum size in bytes, or age in days. Defaults to detail=summary, which returns counts grouped by sender and folder. Summary is a complete and authoritative answer to how many, from whom, and which folder. Do NOT call this tool a second time with detail=full to confirm or expand a count you already have. Use detail=full only when you are about to move or delete specific messages and need their uids to do it. from_addr is OPTIONAL: OMIT it entirely to enumerate senders rather than confirm one. An unfiltered summary call returns by_address rows for every sender in the search window, which answers who is sending mail and how much. NEVER guess a sender name to search for - if the user has not named one, omit from_addr or call mailbox_usage_report instead.\",\"category\":\"communication\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"mailbox_move_to_trash\",\"description\":\"Move specific messages to the mailbox trash folder. DESTRUCTIVE. Defaults to a dry run that reports exactly what would move and changes nothing. To actually move messages you must pass dry_run=false AND confirm='CONFIRM DELETE'. Run the dry run first and report its counts to the user. A human approval prompt fires automatically on the apply call, so do not ask for a typed confirmation in chat. Note that trash still counts against quota until it is emptied.\",\"category\":\"communication\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"mailbox_empty_folder\",\"description\":\"Permanently delete every message in a folder, normally the trash folder, to reclaim storage. IRREVERSIBLE AND DESTRUCTIVE. Defaults to a dry run reporting the exact message count and byte total. To actually delete you must pass dry_run=false AND confirm='CONFIRM DELETE'. Run the dry run first and report its counts to the user. A human approval prompt fires automatically on the apply call, so do not ask for a typed confirmation in chat.\",\"category\":\"communication\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"browser\",\"description\":\"Web browser automation (navigate, click, type, screenshot, extract)\",\"category\":\"browser\",\"source\":\"tool\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"telegram\",\"description\":\"Telegram messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"TELEGRAM_BOT_TOKEN\"],\"configured\":false},{\"name\":\"discord\",\"description\":\"Discord messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"DISCORD_BOT_TOKEN\"],\"configured\":false},{\"name\":\"slack\",\"description\":\"Slack messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"SLACK_BOT_TOKEN\",\"SLACK_APP_TOKEN\"],\"configured\":false},{\"name\":\"webhook\",\"description\":\"Webhook messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"email\",\"description\":\"Email messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"EMAIL_USERNAME\",\"EMAIL_PASSWORD\"],\"configured\":false},{\"name\":\"whatsapp\",\"description\":\"Whatsapp messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"WHATSAPP_ACCESS_TOKEN\",\"WHATSAPP_PHONE_NUMBER_ID\"],\"configured\":false},{\"name\":\"signal\",\"description\":\"Signal messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"SIGNAL_CLI_PATH\"],\"configured\":false},{\"name\":\"google_chat\",\"description\":\"Google Chat messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"GOOGLE_CHAT_WEBHOOK_URL\"],\"configured\":false},{\"name\":\"irc\",\"description\":\"Irc messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"webchat\",\"description\":\"Webchat messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"teams\",\"description\":\"Teams messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"TEAMS_WEBHOOK_URL\"],\"configured\":false},{\"name\":\"matrix\",\"description\":\"Matrix messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"MATRIX_HOMESERVER\",\"MATRIX_ACCESS_TOKEN\"],\"configured\":false},{\"name\":\"mattermost\",\"description\":\"Mattermost messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"MATTERMOST_URL\",\"MATTERMOST_TOKEN\"],\"configured\":false},{\"name\":\"feishu\",\"description\":\"Feishu messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"FEISHU_APP_ID\",\"FEISHU_APP_SECRET\"],\"configured\":false},{\"name\":\"bluebubbles\",\"description\":\"Bluebubbles messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"BLUEBUBBLES_SERVER_URL\",\"BLUEBUBBLES_PASSWORD\"],\"configured\":false},{\"name\":\"whatsapp_baileys\",\"description\":\"Whatsapp Baileys messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"line\",\"description\":\"Line messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"LINE_CHANNEL_ACCESS_TOKEN\",\"LINE_CHANNEL_SECRET\"],\"configured\":false},{\"name\":\"viber\",\"description\":\"Viber messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"VIBER_AUTH_TOKEN\"],\"configured\":false},{\"name\":\"messenger\",\"description\":\"Messenger messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"MESSENGER_PAGE_ACCESS_TOKEN\",\"MESSENGER_VERIFY_TOKEN\"],\"configured\":false},{\"name\":\"reddit\",\"description\":\"Reddit messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"REDDIT_CLIENT_ID\",\"REDDIT_CLIENT_SECRET\",\"REDDIT_USERNAME\",\"REDDIT_PASSWORD\"],\"configured\":false},{\"name\":\"mastodon\",\"description\":\"Mastodon messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"MASTODON_ACCESS_TOKEN\",\"MASTODON_API_BASE_URL\"],\"configured\":false},{\"name\":\"xmpp\",\"description\":\"Xmpp messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"XMPP_JID\",\"XMPP_PASSWORD\"],\"configured\":false},{\"name\":\"rocketchat\",\"description\":\"Rocketchat messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"ROCKETCHAT_URL\",\"ROCKETCHAT_USER_ID\",\"ROCKETCHAT_AUTH_TOKEN\"],\"configured\":false},{\"name\":\"zulip\",\"description\":\"Zulip messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"ZULIP_EMAIL\",\"ZULIP_API_KEY\",\"ZULIP_SITE\"],\"configured\":false},{\"name\":\"twitch\",\"description\":\"Twitch messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"TWITCH_TOKEN\",\"TWITCH_CHANNEL\"],\"configured\":false},{\"name\":\"twitter\",\"description\":\"Twitter messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"nostr\",\"description\":\"Nostr messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":true,\"credential_keys\":[\"NOSTR_PRIVATE_KEY\"],\"configured\":false},{\"name\":\"twilio\",\"description\":\"Twilio messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"sendblue\",\"description\":\"Sendblue messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true},{\"name\":\"gmail\",\"description\":\"Gmail messaging channel\",\"category\":\"communication\",\"source\":\"channel\",\"requires_credentials\":false,\"credential_keys\":[],\"configured\":true}]}",
+ "checks": [
+  {
+   "rq": "RQ-022",
+   "prompt": "What is 137 * 42?",
+   "http": 200,
+   "secs": 17.1,
+   "hits_trace": {
+    "\"calculator\"": false
+   },
+   "hits_response": {
+    "\"calculator\"": false
+   },
+   "response_has_tool_results": false,
+   "new_traces": [],
+   "telemetry_rows": [
+    {
+     "id": 7118,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 16.067358016967773,
+     "metadata": "{}"
+    },
+    {
+     "id": 7119,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 0.9039132595062256,
+     "metadata": "{}"
+    }
+   ],
+   "answer": "137 multiplied by 42 equals 5,754.",
+   "response_raw": "{\"id\":\"chatcmpl-2069e4c59d3c\",\"object\":\"chat.completion\",\"created\":1790092412,\"model\":\"qwen3-coder:30b\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"137 multiplied by 42 equals 5,754.\",\"tool_calls\":null,\"audio\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8135,\"completion_tokens\":45,\"total_tokens\":8180},\"complexity\":{\"score\":0.0,\"tier\":\"trivial\",\"suggested_max_tokens\":1024}}",
+   "traces_raw": {},
+   "expected_in_answer": false
+  },
+  {
+   "rq": "RQ-021",
+   "prompt": "Search the web for the latest stable Python release and tell me the version number.",
+   "http": 200,
+   "secs": 21.6,
+   "hits_trace": {
+    "\"web_search\"": false
+   },
+   "hits_response": {
+    "\"web_search\"": false
+   },
+   "response_has_tool_results": false,
+   "new_traces": [],
+   "telemetry_rows": [
+    {
+     "id": 7120,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 1.3951241970062256,
+     "metadata": "{}"
+    },
+    {
+     "id": 7121,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 1.5723116397857666,
+     "metadata": "{}"
+    },
+    {
+     "id": 7122,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 3.3971385955810547,
+     "metadata": "{}"
+    },
+    {
+     "id": 7123,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 5.014430284500122,
+     "metadata": "{}"
+    },
+    {
+     "id": 7124,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 6.175282955169678,
+     "metadata": "{}"
+    },
+    {
+     "id": 7125,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 4.000707149505615,
+     "metadata": "{}"
+    }
+   ],
+   "answer": "Based on my knowledge, the latest stable Python release is Python 3.12.2, which was released in February 2024. This is the most recent stable version in the Python 3.12 series.\n\nHowever, I should note that my information might not be completely up-to-date, as Python releases regularly. For the absolute latest version, I'd recommend checking the official Python website (python.org) or the Python Discord server for the most current information.\n\nIf you need more specific information about the latest Python release, I'd recommend visiting the official Python website or checking Python's official announcements.",
+   "response_raw": "{\"id\":\"chatcmpl-70c53829b6aa\",\"object\":\"chat.completion\",\"created\":1790092435,\"model\":\"qwen3-coder:30b\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Based on my knowledge, the latest stable Python release is Python 3.12.2, which was released in February 2024. This is the most recent stable version in the Python 3.12 series.\\n\\nHowever, I should note that my information might not be completely up-to-date, as Python releases regularly. For the absolute latest version, I'd recommend checking the official Python website (python.org) or the Python Discord server for the most current information.\\n\\nIf you need more specific information about the latest Python release, I'd recommend visiting the official Python website or checking Python's official announcements.\",\"tool_calls\":null,\"audio\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":32848,\"completion_tokens\":593,\"total_tokens\":33441},\"complexity\":{\"score\":0.06,\"tier\":\"trivial\",\"suggested_max_tokens\":1024}}",
+   "traces_raw": {}
+  },
+  {
+   "rq": "RQ-025",
+   "prompt": "Summarize in one sentence: The quarterly review found that support tickets fell 18 percent after the new triage process, while response times improved from 9 hours to 4 hours, and customer satisfaction rose to its highest level in two years.",
+   "http": 200,
+   "secs": 5.8,
+   "hits_trace": {
+    "\"llm\"": false
+   },
+   "hits_response": {
+    "\"llm\"": false
+   },
+   "response_has_tool_results": false,
+   "new_traces": [],
+   "telemetry_rows": [
+    {
+     "id": 7126,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 4.0523130893707275,
+     "metadata": "{}"
+    },
+    {
+     "id": 7127,
+     "model_id": "qwen3-coder:30b",
+     "engine": "ollama",
+     "agent": "",
+     "latency": 1.7151377201080322,
+     "metadata": "{}"
+    }
+   ],
+   "answer": "The implementation of the new triage process resulted in an 18% decrease in support tickets, reduced response times from 9 to 4 hours, and achieved the highest customer satisfaction level in two years.",
+   "response_raw": "{\"id\":\"chatcmpl-6deed28654a2\",\"object\":\"chat.completion\",\"created\":1790092443,\"model\":\"qwen3-coder:30b\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"The implementation of the new triage process resulted in an 18% decrease in support tickets, reduced response times from 9 to 4 hours, and achieved the highest customer satisfaction level in two years.\",\"tool_calls\":null,\"audio\":null},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8417,\"completion_tokens\":191,\"total_tokens\":8608},\"complexity\":{\"score\":0.12,\"tier\":\"trivial\",\"suggested_max_tokens\":1024}}",
+   "traces_raw": {}
+  }
+ ],
+ "rq030_engines": [
+  "ollama"
+ ]
+}

@@ -1,0 +1,28 @@
+{
+ "id": "chatcmpl-7642b5946e5c",
+ "object": "chat.completion",
+ "created": 1790109644,
+ "model": "qwen3-coder:30b",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "Based on the search results, France's GDP in 2023 was approximately $3.37 trillion (US dollars), according to Statista data. \n\nThe World Bank also reports that France's GDP was worth $3,366.32 billion US dollars in 2025, which represents 2.84 percent of the world economy.\n\nThese figures represent the gross domestic product (GDP) of France, which is a measure of the economic output of the country. The GDP figures are expressed in current US dollars, which means they reflect the value of goods and services produced in France at current exchange rates.\n\nIt's worth noting that these are estimates and actual GDP figures may vary depending on the source and methodology used. The World Bank and IMF provide regular updates on GDP figures for countries around the world, so these numbers may be revised in the future as more accurate data becomes available.",
+    "tool_calls": null,
+    "audio": null
+   },
+   "finish_reason": "stop"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 8856,
+  "completion_tokens": 214,
+  "total_tokens": 9070
+ },
+ "complexity": {
+  "score": 0.06,
+  "tier": "trivial",
+  "suggested_max_tokens": 1024
+ }
+}
