@@ -409,6 +409,9 @@ class EngineConfig:
     """Inference engine settings with nested per-engine configs."""
 
     default: str = "ollama"
+    # openjarvis-engine-disable-v1 (Graystone D-16): comma-separated engine keys that are
+    # never constructed or probed. The author ships no engine off-switch.
+    disabled: str = ""
     ollama: OllamaEngineConfig = field(default_factory=OllamaEngineConfig)
     vllm: VLLMEngineConfig = field(default_factory=VLLMEngineConfig)
     sglang: SGLangEngineConfig = field(default_factory=SGLangEngineConfig)

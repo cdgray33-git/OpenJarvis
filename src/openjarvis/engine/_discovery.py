@@ -11,6 +11,10 @@ from openjarvis.engine._base import InferenceEngine
 
 logger = logging.getLogger(__name__)
 
+
+class EngineDisabled(RuntimeError):
+    """Raised by _make_engine for keys listed in [engine] disabled (openjarvis-engine-disable-v1)."""
+
 # Map registry keys to config host attribute (None = no host arg)
 _HOST_MAP: Dict[str, str | None] = {
     "ollama": "ollama_host",
@@ -32,6 +36,10 @@ _HOST_MAP: Dict[str, str | None] = {
 
 def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
     """Instantiate a registered engine with the appropriate config host."""
+    # openjarvis-engine-disable-v1 (Graystone D-16): single choke point for every enumerator
+    _off = {k.strip() for k in (getattr(config.engine, "disabled", "") or "").split(",") if k.strip()}
+    if key in _off:
+        raise EngineDisabled(f"engine {key!r} disabled by [engine] disabled")
     cls = EngineRegistry.get(key)
 
     # gemma_cpp: pass config fields instead of host
