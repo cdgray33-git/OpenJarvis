@@ -8,6 +8,7 @@ environment.  Uses httpx directly so no cloud SDK packages are required.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -309,13 +310,31 @@ async def _stream_google(
 
 
 def _ollama_host() -> str:
-    """Get Ollama host from environment - raises error if not configured."""
-    host = os.environ.get("OLLAMA_HOST", "").rstrip("/")
+    """Resolve Ollama host: config [engine.ollama] host > OLLAMA_HOST > raise.
+
+    openjarvis-w81-f1-host-order-v1. Author original (upstream) was
+    env > localhost for local inference. Graystone f2fcb30 replaced the
+    localhost default with a raise (remote Ollama on the MCP host; a
+    localhost fallback would silently self-loop). W81 adds the author's
+    config-first priority from engine/ollama.py:40 and keeps the raise.
+    """
+    host = ""
+    try:
+        from openjarvis.core.config import load_config
+
+        host = (load_config().engine.ollama.host or "").strip()
+    except Exception:
+        logging.getLogger("openjarvis.server").warning(
+            "cloud_router: config read failed, falling back to OLLAMA_HOST",
+            exc_info=True,
+        )
+    if not host:
+        host = os.environ.get("OLLAMA_HOST", "").strip()
+    host = host.rstrip("/")
     if not host:
         raise RuntimeError(
-            "OLLAMA_HOST environment variable not set. "
-            "Ollama is not configured on this system. "
-            "Use cloud models (gpt-*, claude-*, gemini-*) instead."
+            "Ollama host not configured. Set [engine.ollama] host in "
+            "config.toml or the OLLAMA_HOST environment variable."
         )
     return host
 
