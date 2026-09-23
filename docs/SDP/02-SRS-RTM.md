@@ -133,3 +133,19 @@ server path emits a record of its own (Defect 6 / event bus; RQ-028 depends on i
 - RQ-012 and the confirmation gate (Defect 6) trace together.
 - REUSE CANDIDATE for RQ-005/006/010/011: S-04 embeds a working IMAP/SMTP function set (add/list accounts, fetch unread, mark read, send; Yahoo defaults). Newer copy C:\Users\Admin\executive-assistant\install_executive_assistant_mac.sh (2026-01-19) not yet read.
 - Progress measure: core requirements VERIFIED / 28 (Phase 1 measured rows), from section 5. Phase 2 tracked separately.
+
+## 7. W78 TOOLKIT AUDIT - AGENT TOOLKIT VS ROW MECHANISM (v0.6, W78 2026-09-22)
+Source: startup banner tools_loaded= (ground truth for what the agent can call) against each
+row's needed mechanism; tool sources read whole. Requirements unchanged. VERIFIED 3/28 unchanged.
+| Class | Meaning | Rows | Count |
+|---|---|---|---|
+| A | Tool loaded and wired on the server | RQ-002, RQ-011 (read half), RQ-021 V, RQ-022 V | 4 |
+| B | Config-only unlock (server memory backfill wires memory_*) | RQ-024, RQ-031 | 2 |
+| B2 | Needs dependency wiring on the server (SDK already wires it) | RQ-025 (llm) | 1 |
+| C | Capability not in the tool registry | RQ-005, 006, 007, 008, 009, 010, 013-020 | 14 |
+| D | Not a tool (UI, transport, gate, record) | RQ-001, 004, 012, 028, 029, RQ-030 V | 6 |
+| E | Composite | RQ-026 | 1 |
+Notes: RQ-025 SDK non-delegation was the model's choice (llm tool offered and wired); owner to
+rule whether a direct summary satisfies the row text. RQ-005 needs unread/recent/body support.
+Class C is next assessed against the author's read-only connectors and [tools.mcp] (W79).
+file_write confined to the Jarvis scratch pad (829cea7); tool builders deduplicated (854b9c7).
