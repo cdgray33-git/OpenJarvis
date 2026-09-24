@@ -1,0 +1,11 @@
+W83 D-29 shared decode patch 2026-09-24T17:43:16
+DECODE refused u5: 25 of 50 chars NUL after utf-8 decode - not stored
+ANCHORS a1=1 a2=1 a3=1 (want 1 1 1) nl_ing='\n' nl_upr='\n'
+BACKUP ingest.py.bak-W83-decode2-20260924_174316
+BACKUP upload_router.py.bak-W83-decode2-20260924_174316
+AFTER ingest.py         sha256=273EDB21C2BFC3FB bytes=7147 marker=1
+AFTER upload_router.py  sha256=34216482170056F2 bytes=12845 marker=1
+U1 True U2 True U3 True U4 True U5 True
+S1 upload_router uses shared helper True
+I1 read_document utf16 clean True
+I2 ingest_path chunks=2 sources=['lib.rlib', 'note.txt'] nul=20 PASS=False

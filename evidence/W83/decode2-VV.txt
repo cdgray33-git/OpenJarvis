@@ -1,0 +1,10 @@
+W83 D-29 live V&V 2026-09-24T17:48:55
+V1 PID 13744 START 2026-09-24T17:47:05  PASS=True
+V2 route status=200 body={"chunks_added":2,"source":"upload"}
+V2 stats 3 -> 4  PASS=True
+V3 hits=1 nul_in_top=0 top='W83 decode test ZEPHYRQUILL8842 remote host line'  PASS=True
+V5 cleanup deleted=1 of 1
+V5 count=3 rows_with_NUL=0  PASS=True
+V4 2026-09-24 17:48:59,828 INFO openjarvis.tools.storage.ingest: DECODE w83_utf16.txt as utf-16 chars=50
+V4 2026-09-24 17:48:59,843 WARNING openjarvis.tools.storage.ingest: DECODE refused w83_junk.txt: nul=87 ctl=87 of 174 chars after utf-8 decode - not stored
+LIVE stats {"entries":3,"total_documents":3,"total_chunks":3,"backend":"sqlite"}

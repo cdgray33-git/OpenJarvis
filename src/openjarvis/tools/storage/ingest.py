@@ -8,6 +8,10 @@ from typing import List, Optional, Tuple
 
 from openjarvis.tools.storage.chunking import Chunk, ChunkConfig, chunk_text
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Directories to skip when walking a tree
 _SKIP_DIRS = frozenset(
     {
@@ -125,12 +129,38 @@ def read_document(path: Path) -> Tuple[str, DocumentMeta]:
     return text, meta
 
 
-def _read_text(path: Path) -> str:
-    """Read a text file with UTF-8, falling back to latin-1."""
+# openjarvis-w83-decode-v2 (D-29): ONE decoder for both ingest paths (this file and server/upload_router.py).
+# Author defect: utf-8 then latin-1. latin-1 never fails, so UTF-16 text was stored as char+NUL and binaries were
+# accepted as text. BOM first, then utf-8, then latin-1; refuse any NUL or >5% control chars (returns None).
+def decode_text_bytes(data: bytes, name: str = "") -> Optional[str]:
+    enc = None
     try:
-        return path.read_text(encoding="utf-8")
+        if data[:3] == b"\xef\xbb\xbf":
+            text, enc = data[3:].decode("utf-8", errors="replace"), "utf-8-sig"
+        elif data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            text, enc = data.decode("utf-16"), "utf-16"
     except UnicodeDecodeError:
-        return path.read_text(encoding="latin-1")
+        enc = None
+    if enc is None:
+        try:
+            text, enc = data.decode("utf-8"), "utf-8"
+        except UnicodeDecodeError:
+            text, enc = data.decode("latin-1"), "latin-1"
+    nul = text.count("\x00")
+    ctl = sum(1 for ch in text if ord(ch) < 32 and ch not in "\t\n\r\f\v")
+    if text and (nul > 0 or ctl * 20 > len(text)):
+        logger.warning("DECODE refused %s: nul=%d ctl=%d of %d chars after %s decode - not stored", name, nul, ctl, len(text), enc)
+        return None
+    logger.info("DECODE %s as %s chars=%d", name, enc, len(text))
+    return text
+
+
+def _read_text(path: Path) -> str:
+    """Read a text file through decode_text_bytes; refused content raises OSError (walker skips it)."""
+    text = decode_text_bytes(path.read_bytes(), str(path))
+    if text is None:
+        raise OSError("refused undecodable file: %s" % path)
+    return text
 
 
 def _read_pdf(path: Path) -> str:
