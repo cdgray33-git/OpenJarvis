@@ -1,5 +1,5 @@
 # VOL 3 - INTERFACE DESIGN DESCRIPTION (IDD / ICD, SV-6 DATA EXCHANGE)
-Governing DID: DI-IPSC-81436 (outline to be verified against the DID text, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (IF-02 system-message rule, IF-18).
+Governing DID: DI-IPSC-81436 (outline to be verified against the DID text, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (IF-02 system-message rule, IF-18, IF-19).
 v0.2 harvests W42-W82 archives into this volume (GAP-003 harvest, W82). v0.1 (W71) rows IF-01..IF-05 are kept and completed.
 Owner requirement [S 08/22]: ports, protocols and encoding at EVERY gate. Every row carries an evidence grade and source window.
 Grades: [M] measured, [R] read from code (file:line), [S] owner statement. [I] is not permitted as a basis (Master section 3).
@@ -54,6 +54,7 @@ Those use the internet's locked envelope (HTTPS/TLS), except where marked "not y
 | IF-15 | Desktop renderer debug port (REMOVED) | 127.0.0.1:9222 | Chrome DevTools Protocol | - | NONE - any local process could drive approvals | - | [M W63] CLOSED W63 |
 | IF-16 | Windows portproxy (not Jarvis) | 0.0.0.0:8000 -> 172.21.134.21:8000 | TCP forward (iphlpsvc) | - | none; LAN reachable; dead target | - | [M W79] H-W79-PORTPROXY |
 | IF-18 | Local client -> backend memory API (model-free RAG test surface) | TCP 127.0.0.1:8010 | HTTP/1.1 POST /v1/memory/search, /store, /index; GET /v1/memory/stats, /config | JSON UTF-8: search {query, top_k=5} -> {results:[{content, score, metadata}]}; store {content, metadata}; index {path}; stats {entries, total_documents, total_chunks, backend}; config {backend_type, context_top_k, context_min_score, context_max_tokens, context_from_memory} | NO key required on loopback (stats 200 without Authorization) | - | [M W83 memory-routes.txt] |
+| IF-19 | Local client (desktop upload) -> backend ingest | TCP 127.0.0.1:8010 | HTTP/1.1 POST /v1/connectors/upload/ingest (JSON {content, title}) and /ingest/files (multipart: files[], title) | text decoded by decode_text_bytes (BOM, utf-8, latin-1; refuses any NUL or >5% control chars); chunked ~1000 chars; response {chunks_added, source} where chunks_added counts FILES, including refused ones (POAM-44) | NO key required on loopback | - | [M W83 decode-VV, decode2-VV] |
 | IF-17 | Backend -> PostHog analytics (author default, DISABLED here) | 34.231.106.201.sslip.io | HTTPS | telemetry | hardcoded key | - | [R W78] config sets enabled=false (D-10) |
 
 ## 4. LOCAL (NON-NETWORK) INTERFACES

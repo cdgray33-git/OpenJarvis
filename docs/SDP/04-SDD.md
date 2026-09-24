@@ -1,5 +1,5 @@
 # VOL 4 - SOFTWARE DESIGN DESCRIPTION (SDD)
-Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16), harvested from ARCHIVE-W42..W81 plus W82 measurement.
+Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16 incl. 16.4), harvested from ARCHIVE-W42..W81 plus W82 measurement.
 Every fact carries a grade and the window that established it. Line numbers are as recorded in that window; files have since
 changed, so a line cite is a pointer to verify, not a guarantee (the gate moved from _stubs.py:265 to :390 in W58, for example).
 Interfaces (ports, protocols, encoding) are in Vol 3; this volume references them by IF number.
@@ -322,3 +322,21 @@ Cost: about +1,100 prompt tokens per agent turn at current content.
 Plain language: Jarvis has a notebook and now actually opens it before answering - before today it opened the notebook and then a
 filter threw every page away, and even when a page got through, the brain's reading glasses only showed it the first note on the desk.
 Both are fixed. The notebook itself is still full of test scribbles, so what Jarvis reads is not yet useful to you.
+
+### 16.4 Memory stores - they are SEPARATE by author design (W83) [M/R]
+| Store | Written by | Read by | Synchronized with | State W83 close |
+|---|---|---|---|---|
+| memory.db (SQLite FTS5, author default) | upload route (IF-19), memory_index, memory_store | memory_search, memory_retrieve, retrieval tool, context injection (16.1), /v1/memory/* | nothing else | 3 docs, NUL-free, all writers and readers use the ONE app.state backend object [M] |
+| MEMORY.md | memory_manage | memory_manage | nothing | NOT MEASURED |
+| knowledge.db | connectors (KnowledgeStore) | deep_research, knowledge tools | nothing | 0 chunks |
+| memory.db.old (21 GB) | nothing | nothing | - | retained, condition unmet |
+Ingest paths into memory.db, gate by gate: (1) upload route -> _process_single_file -> decode_text_bytes -> _chunk_text (~1000
+chars, paragraph then last-space split) -> backend.store; (2) memory_index -> ingest_path (rglob; skips hidden, _SKIP_DIRS incl.
+target/dist/build, sensitive files, binary extensions) -> read_document -> decode_text_bytes -> chunk_text (512 tokens, 64 overlap,
+min 50 - shorter content dropped) -> backend.store; (3) memory_store -> backend.store (no chunking, no minimum).
+Decoder (D-29, one implementation): BOM -> utf-8 -> latin-1; refuse any NUL or >5% control chars; logs DECODE lines to backend.log.
+Memory tools (D-26): wired to the backend by the Graystone backfill (D-27 author ordering defect); no memory tool is gate-eligible.
+CLEANUP REGISTER: memory_search, memory_retrieve and retrieval are three model-visible readers of the same store, plus context
+injection - redundant access points; kept by owner decision (O3), logged for later consolidation.
+Plain language: Jarvis has four separate filing cabinets. Only one (memory.db) is in daily use, and everything that files or looks
+things up uses that same cabinet. The other three are either empty, unused, or not yet inspected.

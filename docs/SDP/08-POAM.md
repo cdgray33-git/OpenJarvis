@@ -1,5 +1,5 @@
 # VOL 8 - PLAN OF ACTION AND MILESTONES (POA&M)
-v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..42, one CLOSED row). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
+v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..46, CLOSED rows). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
 assessment; the assessor and AO make the determination. Owner ruling W82 (DD-14): dormant findings are recorded and assessed at
 the end-of-build security review, not changed piecemeal.
 
@@ -44,9 +44,14 @@ the end-of-build security review, not changed piecemeal.
 | POAM-37 | First request after idle pays ~11.7 s model reload | - | W82 [M] | Open (record) |
 | POAM-38 | Streaming speech input dead: stub WS handler registered first; 3 stacked copies; _transcribe_and_send signature mismatch | - (Requirement One) | W82 [R/M] | Open - own change after H5 |
 | POAM-39 | 18 family mic clips (4.6 MB, 07/13-07/15) left in %LOCALAPPDATA%\OpenJarvis\audio_debug by a temp diagnostic | SC-28, data minimization | W82 [M] | Writer removed W82 (H5); clip disposition = owner decision |
-| POAM-40 | memory.db holds only test uploads; about 1,100 tokens of it injected into every agent turn; replies may cite probe/README text as the user's notes | SI-10 (information quality), data minimization | H-W83-1 [M] | Open - content/ingestion is an owner decision; delete nothing before a replacement is proven |
+| POAM-40 | memory.db test uploads injected into every agent turn; OBSERVED W83: model presented author tutorial chunks as the user's stored notes | SI-10 | H-W83-1 [M rq024-list-test] | CLOSED W83 4ee2053 (113 test chunks removed; snapshot kept) |
 | POAM-41 | Context-injection failure in routes.py logs only at DEBUG (openjarvis.server) - dark at INFO | AU-2 | H-W83-3 [R] | Open (record) |
 | POAM-42 | Multi-system-message handling not assessed for other models' templates or non-Ollama engines | CM-4 | H-W83-5 | Open (assess when a model or engine is added) |
+| POAM-43 | memory_index loaded (D-26): model-invoked, ungated, path unconfined; walks a whole tree into memory.db | AC-6, CM-7 | [R W83] | Open - mitigated by D-29 (binaries refused) and D-30 (build trees skipped); path confinement not built |
+| POAM-44 | Upload route reports chunks_added as +1 per FILE, including refused files (measured 2 reported, 1 stored) | SI-11 | [M W83 decode-VV] | Open (record; author code not yet diffed for this line) |
+| POAM-45 | Upload chunker can leave a one-word tail chunk (owner EA notes chunk 2 = 'attached') | SI-10 (quality) | [M W83 memdb-selective-clear] | Open (record) |
+| POAM-46 | Walker drops any file or tail under 50 tokens (author min_chunk_size) - short notes via memory_index are silently not stored | SI-10 | [R W83 chunking.py] | Accepted by owner (keep author 50; short notes use memory_store) |
+| CLOSED | Ingest decode stored UTF-16 as char+NUL and accepted binaries (author defect, both paths) | SI-10 | W83 [M] | CLOSED W83 a457239 + 00edd61 (D-28, D-29) |
 | CLOSED | Author context injection never reached the model: min_score 20.0 above every score, and qwen3-coder template dropped the second system message | SI-11 | W83 [M] | CLOSED W83 (D-24 config, D-25 675cda6; V&V +1120 tokens) |
 | CLOSED | Duplicate /v1/speech/health and /transcribe (Graystone shadowing author routes; mic dump in the live route) | CM-7, SI-11 | H-W81-5 | CLOSED W82 H5 (author routes serve; V1-V5 PASS) |
 | CLOSED | CDP port 9222 on production exe | AC-17 | W63 | CLOSED W63 |

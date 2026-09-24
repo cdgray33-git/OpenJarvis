@@ -376,3 +376,31 @@ Plain language: Jarvis's author built it to glance at its notebook before every 
 relevant" dial so high that no page ever qualified - that dial is back where the author set it. Separately, the brain only reads the
 first instruction card on the desk, and the notebook page arrived as a second card, so it was never read; Jarvis now staples the cards
 together before handing them over.
+
+### G.3 W83 additions - memory tools, ingestion, content (appended 2026-09-24, second package)
+Defect record format (owner rule W83): symptom, trigger conditions, fix, evidence.
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-26 | Memory tools in the chat toolkit | memory_store/retrieve/search/index (storage_tools.py) and memory_manage registered, IDENTICAL to ours; NOT in any author default toolkit (fallback {think, calculator, web_search}, serve.py:197/:275); docstring says MCP-exposed | all five added to [agent] tools (config.toml out of git, backup config.toml.bak-W83-memtools-20260924_114429) | CHOICE (installer decision, owner O3) | 430742c; memtools-VV.txt: store 115->116 dispatch OUTCOME OK, recall BLUEHERON-7731 via injection, +923 prompt tokens per turn |
+| D-27 | Toolkit built before the memory backend | serve.py:197 builds tools with tool_cls() (no backend); memory_backend created later at :386 | pre-W83 Graystone backfill wires the backend into retrieval and memory_* tools after both exist ("wired memory_backend into N agent tool(s)") | AUTHOR DEFECT, fixed pre-W83 (backfill), recorded W83 | [R W83 memtools-author-bundle; M W83 wired into 5] |
+| D-28 | Upload decode | upload_router.py:182-184 utf-8 then latin-1 | BOM-aware decode + refusal (superseded by D-29) | AUTHOR DEFECT, fixed | a457239; decode-VV.txt |
+| D-29 | One decoder for both ingest paths | ingest.py _read_text has the same utf-8 then latin-1 defect | shared decode_text_bytes in tools\storage\ingest.py; upload_router imports it (duplicate removed); refuse ANY NUL or >5% control characters | AUTHOR DEFECT, fixed | 00edd61; decode2-patch (FIRST RULE >10% NUL FAILED on a low-NUL binary - negative result), decode2b-patch, decode2-VV |
+| D-30 | Ingest walker skip list | _SKIP_DIRS: hidden dirs, .git, node_modules, .venv, caches, egg-info | + target, dist, build | CHOICE (owner O-a) | 2277df0; skipdirs-patch.txt |
+| D-31 | memory.db content | installer content (author leaves it to the installer) | 113 test chunks removed via the author's SQLiteMemory.delete; kept owner EA notes (S-05) and BLUEHERON; snapshot evidence\W83\backup\memory.db.snap-20260924_171031 | CONTENT (owner) | 4ee2053; memdb-titles, memdb-selective-clear |
+
+Defect record D-28/D-29 (decode):
+- SYMPTOM: an uploaded or indexed text file is stored but can never be found by search; the model sees letter-by-letter noise;
+  SQLite length() reports almost 0 bytes for the chunk (it stops at the first NUL), which misled W83's own first inventory.
+- TRIGGER: the file is UTF-16 (PowerShell 5.1 ">" redirection, some Windows editors) or is binary with an allowed extension.
+  utf-8 fails, latin-1 never fails, so each character is stored followed by NUL, or binary bytes are stored as text.
+- FIX: BOM first (utf-8-sig, utf-16), then utf-8, then latin-1; refuse any NUL or >5% control characters, logged as
+  "DECODE refused <file>: nul=N ctl=M" (WARNING, openjarvis.tools.storage.ingest, backend.log). Accepted files log "DECODE <file> as <enc>".
+- EVIDENCE: boot_backend_dump.txt (FF FE, 24,438 NUL) produced 50 unsearchable chunks; after the fix a UTF-16 file ingests clean
+  and searchable, junk is refused, stats count exactly.
+Defect record D-27 (toolkit ordering): SYMPTOM - retrieval and memory tools answer "no backend" in an author-built server.
+TRIGGER - any [agent] tools list naming them. FIX - backfill after backend creation (present); verified W83 "wired into 5".
+Assessment behind D-26 (owner chose O3 over the O1 lean): O1 store only - minimal; O2 + manage; O3 all five - adds
+memory_index (ungated, unconfined path, walker) and redundant readers; O4 none. Owner: "the author put it there for a reason".
+Risks carried as POAM-43 (memory_index) and the cleanup register (redundant readers).
+Plain language: Jarvis can now write things into its notebook and read them back. Files you give it are read properly even
+when Windows saved them in an unusual format, and junk files are turned away at the door instead of filling the notebook with noise.
