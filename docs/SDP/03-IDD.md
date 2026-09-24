@@ -1,5 +1,5 @@
 # VOL 3 - INTERFACE DESIGN DESCRIPTION (IDD / ICD, SV-6 DATA EXCHANGE)
-Governing DID: DI-IPSC-81436 (outline to be verified against the DID text, GAP-002). v0.2 DRAFT 2026-09-23 (W82).
+Governing DID: DI-IPSC-81436 (outline to be verified against the DID text, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (IF-02 system-message rule, IF-18).
 v0.2 harvests W42-W82 archives into this volume (GAP-003 harvest, W82). v0.1 (W71) rows IF-01..IF-05 are kept and completed.
 Owner requirement [S 08/22]: ports, protocols and encoding at EVERY gate. Every row carries an evidence grade and source window.
 Grades: [M] measured, [R] read from code (file:line), [S] owner statement. [I] is not permitted as a basis (Master section 3).
@@ -30,7 +30,7 @@ Those use the internet's locked envelope (HTTPS/TLS), except where marked "not y
 | IF | From -> To | Transport | Protocol / route | Payload and encoding | Auth / TLS | Timeout | Grade |
 |---|---|---|---|---|---|---|---|
 | IF-01 | Desktop webview -> backend | TCP 127.0.0.1:8010 | HTTP/1.1 POST /v1/chat/completions, SSE response (text/event-stream; charset=utf-8, chunked) | Request JSON UTF-8 {model, messages, stream, temperature, max_tokens, agent}; response `data:` ChatCompletionChunk JSON lines, named `event:` lines, terminator `data: [DONE]`; client decodes with TextDecoder | Optional `Authorization: Bearer` from localStorage `openjarvis-settings.apiKey`; no challenge on loopback [M W80 EV11]; no TLS (loopback) | Client builds a timeout controller but chat has no effective timeout (H-W69) | [M W70, W80] [R sse.ts] |
-| IF-02 | Backend engine -> Ollama (Path A) | TCP 172.16.33.200:11434 from 192.168.1.137 | HTTP/1.1 POST /api/chat (stream), GET /api/tags health about every 30 s | Request JSON UTF-8; streamed NDJSON; tool_calls arrive whole in one chunk; think=false default; num_ctx from config/env; httpx pooled, 3 keep-alive | NONE (Ollama has no auth); NO TLS - plaintext on lab segment | per engine config | [M W80 EV8/EV11] [R ollama.py] |
+| IF-02 | Backend engine -> Ollama (Path A) | TCP 172.16.33.200:11434 from 192.168.1.137 | HTTP/1.1 POST /api/chat (stream), GET /api/tags health about every 30 s | Request JSON UTF-8; streamed NDJSON; tool_calls arrive whole in one chunk; think=false default; num_ctx from config/env; httpx pooled, 3 keep-alive; EXACTLY ONE system message per request since W83 (sysmerge 675cda6) because the qwen3-coder template renders only the first system message [M W83 H4] | NONE (Ollama has no auth); NO TLS - plaintext on lab segment | per engine config | [M W80 EV8/EV11] [R ollama.py] |
 | IF-02a | Backend cloud_router -> Ollama (Path B1, fallback) | same as IF-02 | POST {host}/api/chat via httpx.AsyncClient | JSON UTF-8 {model, messages, stream:true, think:false, options}; NDJSON response | NONE / no TLS | 300 s | [R W81 s5.1] |
 | IF-02b | Backend cloud_router -> Ollama (Path B2, model list fallback) | same | GET {host}/api/tags | JSON UTF-8 | NONE / no TLS | 10 s | [R W81 s5.1] |
 | IF-03 | Webview -> backend speech synthesis | TCP 127.0.0.1:8010 | HTTP/1.1 POST /v1/speech/synthesize | JSON in {text, voice_id am_adam, speed 0.85, output_format wav}; audio/wav blob out | Bearer optional; no TLS | 30 s client timeout (W67) | [M W62, W64, W67] |
@@ -53,6 +53,7 @@ Those use the internet's locked envelope (HTTPS/TLS), except where marked "not y
 | IF-14 | Frontend static assets | TCP 127.0.0.1:8010 GET / | backend serves src\openjarvis\server\static (vite output); the exe EMBEDS the same directory at build time | HTML/JS/CSS | - | - | [M W51, W63] |
 | IF-15 | Desktop renderer debug port (REMOVED) | 127.0.0.1:9222 | Chrome DevTools Protocol | - | NONE - any local process could drive approvals | - | [M W63] CLOSED W63 |
 | IF-16 | Windows portproxy (not Jarvis) | 0.0.0.0:8000 -> 172.21.134.21:8000 | TCP forward (iphlpsvc) | - | none; LAN reachable; dead target | - | [M W79] H-W79-PORTPROXY |
+| IF-18 | Local client -> backend memory API (model-free RAG test surface) | TCP 127.0.0.1:8010 | HTTP/1.1 POST /v1/memory/search, /store, /index; GET /v1/memory/stats, /config | JSON UTF-8: search {query, top_k=5} -> {results:[{content, score, metadata}]}; store {content, metadata}; index {path}; stats {entries, total_documents, total_chunks, backend}; config {backend_type, context_top_k, context_min_score, context_max_tokens, context_from_memory} | NO key required on loopback (stats 200 without Authorization) | - | [M W83 memory-routes.txt] |
 | IF-17 | Backend -> PostHog analytics (author default, DISABLED here) | 34.231.106.201.sslip.io | HTTPS | telemetry | hardcoded key | - | [R W78] config sets enabled=false (D-10) |
 
 ## 4. LOCAL (NON-NETWORK) INTERFACES

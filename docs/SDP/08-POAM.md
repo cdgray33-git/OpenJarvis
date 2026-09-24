@@ -1,5 +1,5 @@
 # VOL 8 - PLAN OF ACTION AND MILESTONES (POA&M)
-v0.2 DRAFT 2026-09-23 (W82). Harvest of W42-W82; v0.1 items kept with status updated. Control mapping is an engineering
+v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..42, one CLOSED row). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
 assessment; the assessor and AO make the determination. Owner ruling W82 (DD-14): dormant findings are recorded and assessed at
 the end-of-build security review, not changed piecemeal.
 
@@ -44,6 +44,10 @@ the end-of-build security review, not changed piecemeal.
 | POAM-37 | First request after idle pays ~11.7 s model reload | - | W82 [M] | Open (record) |
 | POAM-38 | Streaming speech input dead: stub WS handler registered first; 3 stacked copies; _transcribe_and_send signature mismatch | - (Requirement One) | W82 [R/M] | Open - own change after H5 |
 | POAM-39 | 18 family mic clips (4.6 MB, 07/13-07/15) left in %LOCALAPPDATA%\OpenJarvis\audio_debug by a temp diagnostic | SC-28, data minimization | W82 [M] | Writer removed W82 (H5); clip disposition = owner decision |
+| POAM-40 | memory.db holds only test uploads; about 1,100 tokens of it injected into every agent turn; replies may cite probe/README text as the user's notes | SI-10 (information quality), data minimization | H-W83-1 [M] | Open - content/ingestion is an owner decision; delete nothing before a replacement is proven |
+| POAM-41 | Context-injection failure in routes.py logs only at DEBUG (openjarvis.server) - dark at INFO | AU-2 | H-W83-3 [R] | Open (record) |
+| POAM-42 | Multi-system-message handling not assessed for other models' templates or non-Ollama engines | CM-4 | H-W83-5 | Open (assess when a model or engine is added) |
+| CLOSED | Author context injection never reached the model: min_score 20.0 above every score, and qwen3-coder template dropped the second system message | SI-11 | W83 [M] | CLOSED W83 (D-24 config, D-25 675cda6; V&V +1120 tokens) |
 | CLOSED | Duplicate /v1/speech/health and /transcribe (Graystone shadowing author routes; mic dump in the live route) | CM-7, SI-11 | H-W81-5 | CLOSED W82 H5 (author routes serve; V1-V5 PASS) |
 | CLOSED | CDP port 9222 on production exe | AC-17 | W63 | CLOSED W63 |
 | CLOSED | Self-loop engines at port 8010 | SC-5 | W79 | CLOSED a0704c4 |

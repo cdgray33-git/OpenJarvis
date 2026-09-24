@@ -1,16 +1,17 @@
 # VOL 5 - DATABASE DESIGN DESCRIPTION (DBDD)
-Governing DID: DI-IPSC-81437 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82). Harvest of W42-W82.
+Governing DID: DI-IPSC-81437 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (memory.db schema, memory.db.old, config [memory]). Harvest of W42-W83.
 Plain language: this volume lists every place Jarvis keeps information on disk - what is in it, who writes it, who reads it,
 and whether it holds anything sensitive. Schemas not yet read are marked as gaps rather than guessed.
 
 ## 1. DATASTORES AND CONFIGURATION ITEMS
 | Store | Location | Format | Contents | Writer / reader | Sensitivity | In git | Grade |
 |---|---|---|---|---|---|---|---|
-| config.toml | C:\Users\Admin\.openjarvis\config.toml | TOML, UTF-8 NO BOM (tomllib rejects BOM), CRLF | [engine] (num_ctx, default, disabled "vllm,uzu,lemonade,litellm"), [engine.ollama] host, [intelligence], [memory] (no backend key -> sqlite default), [agent] tools (13 names incl web_search), [security], [analytics] enabled=false, [server] host "0.0.0.0", [speech] | owner / load_config (lru_cached, restart to reload); OPENJARVIS_CONFIG can redirect | low | NO (H-W80-7) | [M W80, W82] |
+| config.toml | C:\Users\Admin\.openjarvis\config.toml | TOML, UTF-8 NO BOM (tomllib rejects BOM), CRLF | [engine] (num_ctx, default, disabled "vllm,uzu,lemonade,litellm"), [engine.ollama] host, [intelligence], [memory] (no backend key -> sqlite default; context_top_k 5, context_min_score 0.0, context_max_tokens 2048 = author defaults since W83, D-24), [agent] tools (13 names incl web_search), [security], [analytics] enabled=false, [server] host "0.0.0.0", [speech] | owner / load_config (lru_cached, restart to reload); OPENJARVIS_CONFIG can redirect | low | NO (H-W80-7) | [M W80, W82] |
 | cloud-keys.env | C:\Users\Admin\.openjarvis\cloud-keys.env | KEY=VALUE text | OPENROUTER_API_KEY (sk-or-, 73 chars); Anthropic/Gemini empty | UI Cloud Models tab / cloud_router._load_keys every request | SECRET | NO | [M W43] |
 | IMAP credentials | C:\Users\Admin\.openjarvis\connectors\imap_mail_<account>.json | JSON {email, password, provider, [host]} plaintext | family mail credentials | setup_mailbox_account.py / mailbox_tools load_tokens, connector_for | SECRET | NO | [R W61] |
 | protected_senders.json | C:\Users\Admin\.openjarvis\protected_senders.json | JSON array of strings, UTF-8 (BOM tolerated) | senders never trashed | owner / mailbox_tools | PII | NO | [R W61] |
-| memory.db | C:\Users\Admin\.openjarvis\memory.db | SQLite | persistent memory (SQLite backend, author default) | memory tools, context injection | family data | NO | [M W82 config] schema GAP-017 |
+| memory.db | C:\Users\Admin\.openjarvis\memory.db (405 KB) | SQLite via Rust SQLiteMemory; tables documents(id TEXT PK, content TEXT, source TEXT, metadata TEXT JSON, created_at REAL = JULIAN DAY, not epoch) + documents_fts FTS5(content, source, tokenize porter unicode61) and its 5 shadow tables | 115 chunks, all source=upload, TEST material (probe files, code-companion.md, README text); metadata {chunk_index, doc_id, doc_type, title}; injected into every chat turn since W83 (H-W83-1) | upload ingest / memory tools, context injection, /v1/memory/* | today test data; intended family data | NO | [M W83 memdb-inventory.txt, author-intent-context.txt] |
+| memory.db.old | C:\Users\Admin\.openjarvis\memory.db.old | SQLite | pre-cutover corpus, 21,356,789,760 bytes, last write 2026-07-18 | none (retained) | may hold family data | NO | [M W83]; retention condition: ingester fix + one real ingestion cycle (not met) - do not delete |
 | agents.db | ~\.openjarvis (per W72) | SQLite | managed agents (8), 901 messages, 14 learning-log rows | agent manager | personal agent data | NO | [M W72] |
 | telemetry.db | C:\Users\Admin\.openjarvis\telemetry.db | SQLite | one row per MODEL call (engine, model, timing); no tool columns | InstrumentedEngine | low | NO | [M W77] |
 | traces.db | ~\.openjarvis | SQLite | 0 traces ([traces] disabled; trace modules deleted H-W73-TRACELOST) | - | - | NO | [M W72-W73] |
@@ -25,5 +26,5 @@ and whether it holds anything sensitive. Schemas not yet read are marked as gaps
 | Rollback copies | *.bak-* beside sources and in evidence\W8x\backup | copies | prior versions | patch harnesses | same as source | git-ignored (.gitignore line 20) | [M v0.1] |
 
 ## 2. OPEN
-Schemas, retention and access units for memory.db, agents.db, telemetry.db, knowledge.db: GAP-017. Encryption at rest: none
+memory.db schema RECORDED W83 (row above). Schemas, retention and access units for agents.db, telemetry.db, knowledge.db: GAP-017. Encryption at rest: none
 recorded for any store (feeds Vol 7 SC-28).

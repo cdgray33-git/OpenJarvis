@@ -348,3 +348,31 @@ Jarvis is rebuilt or a setting goes missing.
 |---|---|---|---|---|---|
 | D-23 | Speech routes /transcribe, /health | author routes in api_routes.py (speech_backend driven) | Graystone speech_router.py duplicated both and was mounted first (app.py:294), shadowing the author; W82 H5 removed the duplicates so the AUTHOR routes serve again; Graystone keeps /synthesize (Kokoro, D4) and /stream (dead, POAM-38) | MATCH (restored) | [M W82 H5-live V1-V5] |
 
+
+### G.2 W83 additions - context injection (appended 2026-09-24)
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-24 | [memory] context injection settings | context_top_k 5, context_min_score 0.0, context_max_tokens 2048, context_from_memory True (core\config.py:874-876, :923) - injection ON by default | Was 3 / 20.0 / 1200 (set against the old 21 GB corpus). 20.0 sat above every score this corpus produces (max 8.32), so injection never fired. RESTORED to author values W83 | MATCH (restored) | [M W83] evidence\W83\author-intent-context.txt, memory-search-scores.txt, inject-probe.txt, optionA-VV.txt; config.toml out of git, backup config.toml.bak-W83-A-20260924_102149 |
+| D-25 | System messages sent to Ollama | messages passed through unchanged; _build_messages (agents\_stubs.py, author-unchanged) emits [agent system prompt, context system message, user] | engine\ollama.py _oj_merge_system merges all system messages into one, in order, at the first's position, at generate / stream / stream_full; logs SYSMERGE to backend.log | CHOICE (compatibility fix enabling author intent) | 675cda6 openjarvis-w83-sysmerge-v1 [M W83] h4-multisystem.txt, sysmerge-VV.txt |
+
+Assessment behind D-24 (owner ruling A, W83; "the 20 was based on raw data but was more than 50% noise"):
+| Option | Effect | Risk |
+|---|---|---|
+| A restore author 5 / 0.0 / 2048 (CHOSEN) | author baseline; up to 5 chunks / 2048 words injected on any term match | noise from test content (H-W83-1); per-turn prompt cost; the old 143k blowup cannot recur because top_k and max_tokens bound it |
+| B min_score 0.0 only, keep 3 / 1200 | works at lower cost | recorded divergence remains |
+| C keep 20.0 | nothing changes | the author feature stays dark; memory requirements unverifiable |
+
+Assessment behind D-25 (owner ruling option 2, W83; "the author's full intent is the requirement"). Root cause measured: the
+qwen3-coder:30b Ollama chat template renders only the FIRST system message (one system 58 tokens, two system 59, merged 238).
+| Option | Where | Effect | Risk |
+|---|---|---|---|
+| 1 merge in _build_messages | agents\_stubs.py (shared base class) | fixes agent paths | broad blast radius across all tool-using agents |
+| 2 merge at the engine (CHOSEN) | engine\ollama.py, 3 call sites | fixes the defect class for every Ollama caller; cloud path untouched | engine-wide; a mid-conversation system message moves to the top (before: dropped) |
+| 3 inject into the user message | routes.py | local | REJECTED - _truncate_if_needed cuts the tail of the last user message, would cut the user's question; diverges from context.py |
+| 4 custom Modelfile template | .200 | no code change | REJECTED - diverges from the stock model, hides the defect |
+V&V: first-inference prompt_tokens_evaluated 4194 -> 5314 (+1120, predicted about 1100); SYSMERGE merged=2 in backend.log; tool events unchanged.
+Owner statement recorded W83: author-first due diligence had been missed; the author's full intent is the requirement.
+Plain language: Jarvis's author built it to glance at its notebook before every answer. We had set the "only show me pages this
+relevant" dial so high that no page ever qualified - that dial is back where the author set it. Separately, the brain only reads the
+first instruction card on the desk, and the notebook page arrived as a second card, so it was never read; Jarvis now staples the cards
+together before handing them over.
