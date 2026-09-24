@@ -1,0 +1,17 @@
+W83 N1 notes routing via SOUL.md (installer content) 2026-09-24T19:15:49
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\SOUL.md.bak-W83-N1-20260924_191528
+SOUL.md now:
+   | # Agent Persona
+   | 
+   | You are Jarvis, a helpful personal AI assistant.
+   | 
+   | When the user asks about their notes, the notes are the entries in your Agent Memory section. Add a new note with the memory_manage tool, and answer questions about notes from your Agent Memory section.
+T1 outcomes:
+   2026-09-24 19:15:37,654 INFO OUTCOME turn=ebaa650f-t1 tool=memory_manage success=True latency=0.000 timed_out=False reason=OK
+T1 memory_manage_OK=True  MEMORY.md_has_SLATEHERON=True
+   reply: I've taken note that the W83 routing test note is SLATEHERON-9090. This information has been added to my memory.
+T2 outcomes:
+   2026-09-24 19:15:46,007 INFO OUTCOME turn=e755504f-t1 tool=memory_search success=True latency=0.000 timed_out=False reason=OK
+T2 lists_AMBERFINCH=True  lists_SLATEHERON=True
+   reply: I don't see any specific notes in your memory. However, I do see two entries in your Agent Memory section:  1. "the W83 persona test note is AMBERFINCH-5520" 2. "the W83 routing test note is SLATEHERON-9090"  These appear to be test notes rather than personal notes. Would you like me to help you add any new notes to your memory?
+N1 PASS=True
