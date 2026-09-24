@@ -327,7 +327,7 @@ Both are fixed. The notebook itself is still full of test scribbles, so what Jar
 | Store | Written by | Read by | Synchronized with | State W83 close |
 |---|---|---|---|---|
 | memory.db (SQLite FTS5, author default) | upload route (IF-19), memory_index, memory_store | memory_search, memory_retrieve, retrieval tool, context injection (16.1), /v1/memory/* | nothing else | 3 docs, NUL-free, all writers and readers use the ONE app.state backend object [M] |
-| MEMORY.md | memory_manage | memory_manage | nothing | NOT MEASURED |
+| MEMORY.md | memory_manage | memory_manage (SystemPromptBuilder would, but is unwired - D-33) | nothing | seeded W83 (D-32), directed take/list verified (P2) |
 | knowledge.db | connectors (KnowledgeStore) | deep_research, knowledge tools | nothing | 0 chunks |
 | memory.db.old (21 GB) | nothing | nothing | - | retained, condition unmet |
 Ingest paths into memory.db, gate by gate: (1) upload route -> _process_single_file -> decode_text_bytes -> _chunk_text (~1000
@@ -340,3 +340,7 @@ CLEANUP REGISTER: memory_search, memory_retrieve and retrieval are three model-v
 injection - redundant access points; kept by owner decision (O3), logged for later consolidation.
 Plain language: Jarvis has four separate filing cabinets. Only one (memory.db) is in daily use, and everything that files or looks
 things up uses that same cabinet. The other three are either empty, unused, or not yet inspected.
+### 16.5 Persona layer (W83) - author-built, not wired
+SOUL.md / MEMORY.md / USER.md seeded by the author function (D-32). SystemPromptBuilder (prompt\builder.py) would place them in
+the system prompt as '## Agent Persona', '## Agent Memory', '## User Profile' (frozen prefix, 4000/2500/1500 chars) but nothing
+constructs it in the author tree or ours (D-33). Wiring it (P3) must keep ONE system message (sysmerge, 16.1 gate 7).

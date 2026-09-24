@@ -404,3 +404,19 @@ memory_index (ungated, unconfined path, walker) and redundant readers; O4 none. 
 Risks carried as POAM-43 (memory_index) and the cleanup register (redundant readers).
 Plain language: Jarvis can now write things into its notebook and read them back. Files you give it are read properly even
 when Windows saved them in an unusual format, and junk files are turned away at the door instead of filling the notebook with noise.
+
+### G.4 W83 additions - persona layer (appended 2026-09-24, third package)
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-32 | Persona files seeded | _seed_memory_files() (cli\_bootstrap.py:170) creates SOUL.md, MEMORY.md, USER.md, skills\ if absent; its only callers are write_initial_config() (which FIRST OVERWRITES config.toml) and jarvis init (config behaviour NOT MEASURED) | called _seed_memory_files() ALONE; author default texts; config.toml sha unchanged | MATCH (author function, author content) | c792038; persona-seed.txt |
+| D-33 | Persona layer in the prompt | prompt\builder.py SystemPromptBuilder loads SOUL/MEMORY/USER into the system prompt (4000/2500/1500 chars, head_tail truncation) - but has NO CALLER in af21bc18 or locally | none yet (P3 owner-approved next) | AUTHOR INTENT NOT IMPLEMENTED | c792038; persona-wiring.txt |
+| D-34 | user_profile_manage | author tool for USER.md (read/add/update/remove), registered, not in any toolkit | none yet (P4 owner-approved after P3) | NOT LOADED | [R W83 persona-wiring] |
+Finding: the persona gap is the footprint of the author's installation procedure never having been followed on this install
+(owner W83). HAZARD: never run `jarvis _bootstrap --write-config` (overwrites config.toml); do not run `jarvis init` until its
+config behaviour is measured.
+P2 (b66d8d1): memory_manage DIRECTED take and list PASS (dispatch OUTCOME OK, reply lists AMBERFINCH-5520, MEMORY.md holds it);
+UNDIRECTED "What notes do I have?" FAILED - the model called think only and said it has no access to notes. Cause: nothing tells
+the model it has notes; D-33 is the author mechanism that would.
+Plain language: the author wrote Jarvis a name tag, a diary and a card about you, and a machine to read them to Jarvis before every
+conversation - but never plugged that machine in. We have now put the name tag, diary and card on the desk; plugging in the
+machine is next.
