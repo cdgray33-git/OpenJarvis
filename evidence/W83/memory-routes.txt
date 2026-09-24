@@ -1,0 +1,10 @@
+W83 memory routes 2026-09-24T08:53:41
+POST /v1/memory/store
+  body MemoryStoreRequest: {"content":{"type":"string","title":"Content"},"metadata":{"anyOf":[{"additionalProperties":true,"type":"object"},{"type":"null"}],"title":"Metadata"}}
+POST /v1/memory/search
+  body MemorySearchRequest: {"query":{"type":"string","title":"Query"},"top_k":{"type":"integer","title":"Top K","default":5}}
+GET /v1/memory/stats
+GET /v1/memory/config
+POST /v1/memory/index
+  body MemoryIndexRequest: {"path":{"type":"string","title":"Path"}}
+stats NOKEY 200 {"entries":115,"total_documents":115,"total_chunks":115,"backend":"sqlite"}

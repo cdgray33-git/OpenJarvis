@@ -1,0 +1,8 @@
+W83 chat-path injection test 2026-09-24T09:10:01
+context.py vs af21bc18 numstat: IDENTICAL (no output)
+duration_s=47 events=6
+types: inference_start=2 inference_end=2 tool_call_start=1 tool_call_end=1
+MEM {"type":"inference_end","timestamp":1790255394.7037714,"data":{"model":"qwen3-coder:30b","latency":19.28137493133545,"usage":{"prompt_tokens":4194,"prompt_tokens_evaluated":4194,"completion_tokens":58,"total_tokens":4252},"ttft":5.543484262,"throughput_tok_per_sec":3.0080842370706837,"energy_per_out
+MEM {"type":"inference_end","timestamp":1790255398.1982834,"data":{"model":"qwen3-coder:30b","latency":3.4544332027435303,"usage":{"prompt_tokens":4310,"prompt_tokens_evaluated":4310,"completion_tokens":97,"total_tokens":4407},"ttft":0.236734987,"throughput_tok_per_sec":28.079859793775157,"energy_per_ou
+INJECTION_EVENT=False
+USAGE {"prompt_tokens":8504,"completion_tokens":155,"total_tokens":8659}

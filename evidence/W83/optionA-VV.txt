@@ -1,0 +1,6 @@
+W83 option A V&V 2026-09-24T10:27:28
+V1 PID 23212 START 2026-09-24T10:23:11  PASS=True
+V2 config {"backend_type":"sqlite","context_top_k":5,"context_min_score":0.0,"context_max_tokens":2048,"context_from_memory":true}  PASS=True
+V3 inference prompt_tokens: 4194, 4318  baseline_first=4194  delta_first=0  PASS=False
+USAGE {"prompt_tokens":8512,"completion_tokens":182,"total_tokens":8694}
+REPLY I see you have a Yahoo email account configured. However, I don't have access to your personal notes or files. To help you find information about email in your notes, I would need you to either:  1. Share the content of your notes file 2. Provide the path to the specific notes file you want me to re

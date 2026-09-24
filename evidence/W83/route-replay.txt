@@ -1,0 +1,13 @@
+W83 routes.py injection replay 2026-09-24T10:31:54
+OK   load_config -> JarvisConfig(installed_at='', installer_version='', hardware=HardwareInfo(platform='windows', cpu_brand='Intel64 Family 6 Model 190 Stepping 0, GenuineIntel', c
+OK   memory cfg -> ('sqlite', 'C:\\Users\\Admin\\.openjarvis\\memory.db', 5, 0.0, 2048, True)
+OK   backend create -> <openjarvis.tools.storage.sqlite.SQLiteMemory object at 0x000001F075F17BF0>
+OK   backend count -> 115
+OK   request model -> ChatCompletionRequest(model='qwen3-coder:30b', messages=[ChatMessage(role='user', content='What do my notes say about email? One sentence.', name=None, tool_cal
+OK   _to_messages -> [Message(role=<Role.USER: 'user'>, content='What do my notes say about email? One sentence.', name=None, tool_calls=None, tool_call_id=None, metadata={})]
+OK   ContextConfig -> ContextConfig(enabled=True, top_k=5, min_score=0.0, max_context_tokens=2048)
+OK   inject_context -> [Message(role=<Role.SYSTEM: 'system'>, content='The following context was retrieved from the knowledge base. Use it to inform your response, citing sources wher
+LEN in=1 out=2
+OK   ChatMessage rebuild -> [ChatMessage(role='system', content='The following context was retrieved from the knowledge base. Use it to inform your response, citing sources where applicabl
+OK   _handle_agent prior -> [Message(role=<Role.SYSTEM: 'system'>, content='The following context was retrieved from the knowledge base. Use it to inform your response, citing sources wher
+PRIOR roles=['system'] chars=[4657]

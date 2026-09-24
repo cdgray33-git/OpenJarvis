@@ -1,0 +1,5 @@
+W83 H4 Ollama multi-system-message test 2026-09-24T10:43:20
+A one system          prompt_eval=58
+B two system msgs     prompt_eval=59  delta_vs_A=1
+C merged one system   prompt_eval=238  delta_vs_A=180
+H4_CONFIRMED=True

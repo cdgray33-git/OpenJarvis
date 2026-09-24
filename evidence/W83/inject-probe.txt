@@ -1,0 +1,8 @@
+W83 inject probe 2026-09-24T09:11:24
+BUS subscribe OK
+DB C:\Users\Admin\.openjarvis\memory.db count 115
+RAW q='What do my notes say about email? One sentence.' hits=10 scores=[8.32, 8.304, 8.208, 8.195, 6.964, 6.577, 6.35, 6.335, 6.322, 5.897]
+RAW q='email' hits=4 scores=[5.897, 4.005, 3.799, 3.477]
+RAW q='notes email' hits=9 scores=[5.897, 4.005, 3.799, 3.479, 3.477, 3.41, 3.361, 3.344, 3.328]
+INJECT min_score=20.0 in=1 out=1 injected=False events=1 inj_event=[]
+INJECT min_score=0.0 in=1 out=2 injected=True events=2 inj_event=[{"context_injection": true, "query": "What do my notes say about email? One sentence.", "num_results": 3, "total_tokens": 396}]

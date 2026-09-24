@@ -1,0 +1,8 @@
+W83 memory search score range 2026-09-24T09:00:01
+config: {"backend_type":"sqlite","context_top_k":3,"context_min_score":20.0,"context_max_tokens":1200,"context_from_memory":true}
+RAW {"results":[{"content":"```bash\n# Example: Morning Digest on Mac\nuv run jarvis init --preset morning-digest-mac\nuv run jarvis connect gdrive          # one OAuth flow covers Gmail, Calendar, Tasks\nuv run jarvis digest --fresh          # generate and play your first briefing\n\n# Example: Deep Re
+q=Jarvis  hits=10 min=1.569 med=1.692 max=1.797 ge20=0
+q=email   hits= 4 min=3.477 med=4.005 max=5.897 ge20=0
+q=Ollama  hits=10 min=1.873 med=2.278 max=3.004 ge20=0
+q=memory  hits=10 min=2.385 med=2.688 max=3.141 ge20=0
+q=the     hits=10 min=0.034 med=0.034 max=0.035 ge20=0

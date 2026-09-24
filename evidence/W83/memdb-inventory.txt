@@ -1,0 +1,9 @@
+W83 memory.db content inventory 2026-09-24T10:16:18
+TABLES ['documents', 'documents_fts', 'documents_fts_data', 'documents_fts_idx', 'documents_fts_content', 'documents_fts_docsize', 'documents_fts_config']
+COLS ['id', 'content', 'source', 'metadata', 'created_at']
+SRC n=115 bytes=   53843 1970-01-29..1970-01-29  upload
+META {"chunk_index":0,"doc_id":"fbb2820a-ee2f-4f3f-9c99-14d4cc85c4e3","doc_type":"txt","title":"cutover_probe_OJPROBE-31A92CD53424.txt"}
+META {"chunk_index":0,"doc_id":"a41a6c2d-c1ee-4cef-9c57-64d28933f474","doc_type":"md","title":"code-companion.md"}
+META {"chunk_index":1,"doc_id":"a41a6c2d-c1ee-4cef-9c57-64d28933f474","doc_type":"md","title":"code-companion.md"}
+FILE memory.db                             405504 bytes  2026-09-20T14:40:56
+FILE memory.db.old                    21356789760 bytes  2026-07-18T12:02:07

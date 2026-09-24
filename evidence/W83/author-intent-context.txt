@@ -1,0 +1,18 @@
+W83 author-intent check, context injection defaults 2026-09-24T10:18:01
+config-af21bc18.py             :874   context_top_k: int = 5
+config-af21bc18.py             :875   context_min_score: float = 0.0
+config-af21bc18.py             :876   context_max_tokens: int = 2048
+config-af21bc18.py             :923   context_from_memory: bool = True  # inject relevant memory context into prompts
+config-af21bc18.py             :1656  # context_injection from memory / tools.storage ? agent.context_from_memory
+config-af21bc18.py             :1661  "context_from_memory",
+config-af21bc18.py             :1671  "context_from_memory",
+config-af21bc18.py             :1920  context_from_memory = true
+config.py                      :877   context_top_k: int = 5
+config.py                      :878   context_min_score: float = 0.0
+config.py                      :879   context_max_tokens: int = 2048
+config.py                      :950   context_from_memory: bool = True  # inject relevant memory context into prompts
+config.py                      :1683  # context_injection from memory / tools.storage ? agent.context_from_memory
+config.py                      :1688  "context_from_memory",
+config.py                      :1698  "context_from_memory",
+config.py                      :1947  context_from_memory = true
+created_at raw min/max: (2461252.3878826387, 2461304.278428021, 'real')

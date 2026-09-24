@@ -1,0 +1,9 @@
+W83 option A config patch 2026-09-24T10:21:49
+BACKUP C:\Users\Admin\.openjarvis\config.toml.bak-W83-A-20260924_102149  826 bytes
+AFTER  C:\Users\Admin\.openjarvis\config.toml  825 bytes  first3=5B 65 6E
+BEFORE :13 context_top_k = 3
+BEFORE :14 context_max_tokens = 1200
+BEFORE :15 context_min_score = 20.0
+AFTER  :13 context_top_k = 5
+AFTER  :14 context_max_tokens = 2048
+AFTER  :15 context_min_score = 0.0
