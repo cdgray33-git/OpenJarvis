@@ -1,0 +1,4 @@
+W83 P4 user_profile_manage config patch 2026-09-24T19:18:02
+BACKUP C:\Users\Admin\.openjarvis\config.toml.bak-W83-P4-20260924_191802
+AFTER first3=5B 65 6E  names_before=18  names_after=19
+AFTER tools = "code_interpreter,file_read,file_write,shell_exec,think,calculator,retrieval,web_search,mailbox_list_accounts,mailbox_usage_report,mailbox_find_messages,mailbox_move_to_trash,mailbox_empty_folder,memory_store,memory_retrieve,memory_search,memory_index,memory_manage,user_profile_manage"
