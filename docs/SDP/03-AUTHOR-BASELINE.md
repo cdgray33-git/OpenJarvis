@@ -342,3 +342,9 @@ Plain language: this table lists every place our Jarvis is set up differently fr
 items this window were left exactly as the author wrote them and written down instead of changed, because they only matter if
 Jarvis is rebuilt or a setting goes missing.
 
+
+### G.1 W82 H5 addition (appended 2026-09-23)
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-23 | Speech routes /transcribe, /health | author routes in api_routes.py (speech_backend driven) | Graystone speech_router.py duplicated both and was mounted first (app.py:294), shadowing the author; W82 H5 removed the duplicates so the AUTHOR routes serve again; Graystone keeps /synthesize (Kokoro, D4) and /stream (dead, POAM-38) | MATCH (restored) | [M W82 H5-live V1-V5] |
+

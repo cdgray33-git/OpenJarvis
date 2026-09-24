@@ -1,0 +1,33 @@
+CHANGE RECORD H5 (H-W81-5) - duplicate speech routes and mic dump - STATUS: APPLIED AND LIVE-VERIFIED W82 (commit pending)
+Date 2026-09-23. Change authority: owner (Gray), option A1 approved with risks accepted. Authoring assistant: Claude.
+1 IDENTIFICATION: src\openjarvis\server\speech_router.py (Graystone file, not in af21bc18). Removed @speech_router.post("/transcribe")
+  (with two copies of a TEMP DIAGNOSTIC mic dump) and @speech_router.get("/health"). Marker openjarvis-w82-h5-author-speech-routes-v1.
+  22109 -> 19778 bytes, BOM False, CRLF preserved (550 -> 493, 0 bare LF). Patch evidence\W82\patch_H-W81-5.py.
+  Backup evidence\W82\backup\speech_router.py.bak-W82-H5-20260923_213342.
+2 PURPOSE: remove Graystone duplicates that shadowed the author's routes (FastAPI serves the first-registered route; app.py:294 mounts
+  speech_router before include_all_routes :297) and stop writing every uploaded microphone clip to disk.
+3 PROVENANCE: author af21bc18 api_routes.py has transcribe_speech and speech_health on its own speech_router; unchanged locally.
+  speech_router.py absent from af21bc18. Frontend api.ts types TranscriptionResult/SpeechHealth match the AUTHOR shapes.
+4 PATHS: IF-06 upload transcription (useSpeech.ts -> transcribeAudio), IF-06b health (useSpeech.ts reads available only).
+  /synthesize (IF-03) and /stream (IF-06c) untouched.
+5 GATE: webview -> 127.0.0.1:8010 TCP, HTTP/1.1; transcribe multipart/form-data field file -> JSON {text, language, confidence,
+  duration_seconds}; health GET -> JSON {available, backend}; loopback, optional Bearer, no TLS. Backend -> app.state.speech_backend
+  (faster-whisper) in process.
+6 IMPACT: attack surface reduced (one fewer route set; no audio persisted). Error code on missing backend 501 (author) vs 503 (old);
+  frontend treats both as failure. Health no longer reports hardcoded tts_ok.
+7 RESIDUAL / POA&M: POAM-38 streaming STT dead (stub handler first, signature mismatch). POAM-39 18 existing clips 07/13-07/15 -
+  owner disposition pending. H-W81-7 synthesize timing logged at WARNING (unchanged).
+8 CONTROLS (assessment): CM-3/CM-4 change control and impact; CM-7 least functionality (duplicate removal); SC-28 / data
+  minimization (mic dump writer removed); SI-11 consistent error handling (author route).
+9 TEST EVIDENCE evidence\W82\H5-live.txt (non-interactive, discriminating): V1 PID 8908 START 21:35:58 > patch 21:33:42 PASS;
+  V2 health keys [available, backend] (old: stt/tts) PASS; V3 transcribe 1 s silence HTTP 200 with confidence 0.463 and
+  duration_seconds 1.0 (old: no such keys) PASS; V4 audio_debug 18 -> 18 (old: +1) PASS; V5 synthesize 33836 bytes PASS.
+  Static: 7/7 checks, py_compile OK, router route listing.
+10 NOT PROVEN: the console duplicate-operation-id warning's absence (console only; requires GET /openapi.json and a visual check).
+  Real speech (not silence) transcription accuracy.
+11 ROLLBACK: Copy-Item -LiteralPath 'C:\Users\Admin\OpenJarvis\evidence\W82\backup\speech_router.py.bak-W82-H5-20260923_213342'
+  -Destination 'C:\Users\Admin\OpenJarvis\src\openjarvis\server\speech_router.py' -Force ; restart; confirm START time. Or git revert.
+12 PLAIN LANGUAGE: two versions of the "listen to me" and "is hearing working" doors were built, and ours stood in front of the
+  author's, so the author's never opened. Ours also secretly kept a copy of every recording. We removed our copies; the author's
+  doors now open, the app gets the answers it was built to expect, and nothing you say is saved to disk anymore. The live-listening
+  door (streaming) is still broken and is the next repair.

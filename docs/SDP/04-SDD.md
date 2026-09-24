@@ -231,6 +231,15 @@ consumer, `pumping` guard, `generation` cancel token; W68 re-kick on queue depth
 (W66) -> keepalive source gain 0.0001 holds the endpoint awake (W67). Never rebuild the AudioContext (drops keepalive).
 Time to first audio = release gate 1.5-2.3 s + TTFB 1.0-1.5 s. No confirmation gate (non-destructive). An active audio
 session proves nothing about audibility.
+Voice in [R/M W82]: speech routes are split across two routers. Graystone `server\speech_router.py` is mounted FIRST (app.py:294) and
+now carries only POST /synthesize (Kokoro proxy) and the streaming sockets; the AUTHOR routes in api_routes.py (mounted by
+include_all_routes, app.py:297) serve POST /transcribe and GET /health since W82 H5 (marker openjarvis-w82-h5-author-speech-routes-v1).
+The frontend types (api.ts TranscriptionResult, SpeechHealth) were written for the author shapes. Upload transcription path:
+useSpeech.ts MediaRecorder -> transcribeAudio -> author route -> app.state.speech_backend (faster-whisper) - proven W82 V3.
+Streaming path (useSpeechStream.ts -> WS /v1/speech/stream) is DEAD: speech_router.py holds three stacked copies of the WS block;
+the first-registered /stream handler is a stub; the full handler calls _transcribe_and_send with 3 args while the final module-level
+definition takes 2 (POAM-38). A Graystone TEMP DIAGNOSTIC wrote every uploaded mic clip to %LOCALAPPDATA%\OpenJarvis\audio_debug
+(18 clips 07/13-07/15 remain; removed W82, disposition pending owner - POAM-39).
 Stop [M W69]: Square button -> ChatArea.stopStreaming -> AbortController (ChatArea.tsx:198) -> fetch aborts -> "(Generation
 stopped)". Capability gap: UI main thread starved during generation; stop does not cancel backend generation.
 

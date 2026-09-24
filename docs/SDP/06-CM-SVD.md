@@ -50,7 +50,8 @@ repo alone misses all of these (GAP-041, new).
 | 854b9c7 | W78 | single _build_agent_tools, CHANNEL_ASSERT (D-15) |
 | a0704c4 | W79 | engine turn-down list (D-16) |
 | 0da22e8 | W81 | cloud_router host order config > env > raise (F1a) |
-| (this) | W82 | SDP v0.2 harvest; no code change in W82 |
+| e79a11c | W82 | SDP v0.2 harvest of ARCHIVE-W42..W81 |
+| (this) | W82 | H5: remove Graystone /transcribe and /health from speech_router.py (author routes serve; mic dump removed); SDP rows updated. Backup evidence\W82\backup\speech_router.py.bak-W82-H5-20260923_213342 |
 Also recorded without hash in the harvest: W46 dispatch-outcome wrapper, W51-W52 test-execute argument guard, W54 toolkit bind,
 W56 ConfirmPolicy, W58 argument-aware gate, W59 prose-approval removal, W61 protected senders v2 and CLI gate, W63 CDP removal,
 W66-W68 audio fixes, W69 stop button. Hash each at GAP-018.

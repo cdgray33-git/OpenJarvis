@@ -42,5 +42,8 @@ the end-of-build security review, not changed piecemeal.
 | POAM-35 | Out-of-git configuration items not in any baseline | CM-2 | W80 H-W80-7 | Open (GAP-041) |
 | POAM-36 | Many .bak files inside src\; duplicate implementations (two OllamaEmbedder, server\serve.py 0-line shadow) | CM-7 | H-W80-6, W82, H-W74-TWOSERVE | Open (cleanup register) |
 | POAM-37 | First request after idle pays ~11.7 s model reload | - | W82 [M] | Open (record) |
+| POAM-38 | Streaming speech input dead: stub WS handler registered first; 3 stacked copies; _transcribe_and_send signature mismatch | - (Requirement One) | W82 [R/M] | Open - own change after H5 |
+| POAM-39 | 18 family mic clips (4.6 MB, 07/13-07/15) left in %LOCALAPPDATA%\OpenJarvis\audio_debug by a temp diagnostic | SC-28, data minimization | W82 [M] | Writer removed W82 (H5); clip disposition = owner decision |
+| CLOSED | Duplicate /v1/speech/health and /transcribe (Graystone shadowing author routes; mic dump in the live route) | CM-7, SI-11 | H-W81-5 | CLOSED W82 H5 (author routes serve; V1-V5 PASS) |
 | CLOSED | CDP port 9222 on production exe | AC-17 | W63 | CLOSED W63 |
 | CLOSED | Self-loop engines at port 8010 | SC-5 | W79 | CLOSED a0704c4 |

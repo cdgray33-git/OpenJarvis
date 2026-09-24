@@ -21,48 +21,8 @@ class SynthesizeRequest(BaseModel):
     output_format: str = "wav"
 
 
-@speech_router.post("/transcribe")
-async def transcribe(request: Request, file: UploadFile = File(...)):
-    """Transcribe uploaded audio to text using faster-whisper."""
-    backend = getattr(request.app.state, "speech_backend", None)
-    if backend is None:
-        raise HTTPException(status_code=503, detail="Speech backend not available")
-
-    audio_bytes = await file.read()
-    filename = file.filename or "audio.wav"
-
-    # TEMP DIAGNOSTIC: dump every uploaded clip so we can inspect it
-    try:
-        import os as _os, time as _time
-        _dbg = _os.path.join(_os.environ.get("LOCALAPPDATA", "."), "OpenJarvis", "audio_debug")
-        _os.makedirs(_dbg, exist_ok=True)
-        _p = _os.path.join(_dbg, "mic_%d_%s" % (int(_time.time()), filename))
-        with open(_p, "wb") as _fh:
-            _fh.write(audio_bytes)
-        logger.warning("MIC CAPTURE: %d bytes -> %s", len(audio_bytes), _p)
-    except Exception as _e:
-        logger.warning("mic capture dump failed: %s", _e)
-
-    # TEMP DIAGNOSTIC: dump every uploaded clip so we can inspect it
-    try:
-        import os as _os, time as _time
-        _dbg = _os.path.join(_os.environ.get("LOCALAPPDATA", "."), "OpenJarvis", "audio_debug")
-        _os.makedirs(_dbg, exist_ok=True)
-        _p = _os.path.join(_dbg, "mic_%d_%s" % (int(_time.time()), filename))
-        with open(_p, "wb") as _fh:
-            _fh.write(audio_bytes)
-        logger.warning("MIC CAPTURE: %d bytes -> %s", len(audio_bytes), _p)
-    except Exception as _e:
-        logger.warning("mic capture dump failed: %s", _e)
-    fmt = filename.rsplit(".", 1)[-1].lower() if "." in filename else "wav"
-
-    try:
-        result = backend.transcribe(audio_bytes, format=fmt)
-        return {"text": result.text, "language": result.language}
-    except Exception as exc:
-        logger.error("Transcription failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
-
+# openjarvis-w82-h5-author-speech-routes-v1: /transcribe and /health removed here (W82, owner-approved A1).
+# The author's routes in api_routes.py (speech_router, include_all_routes) now serve them.
 
 # --- Remote TTS Backend (Kokoro on R630 / Tesla P4) ---
 KOKORO_SERVER = "http://172.16.33.201:8880"
@@ -120,24 +80,7 @@ async def synthesize(request: Request, body: SynthesizeRequest):
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
-@speech_router.get("/health")
-async def speech_health(request: Request):
-    """Check speech backend health."""
-    backend = getattr(request.app.state, "speech_backend", None)
-    stt_ok = backend is not None and backend.health()
-
-    tts_ok = True  # Remote Kokoro service on R630 (P4)
-
-    return {
-        "available": stt_ok and tts_ok,
-        "stt": "ok" if stt_ok else "unavailable",
-        "tts": "ok" if tts_ok else "unavailable",
-        "stt_backend": "faster-whisper",
-        "tts_backend": "kokoro",
-        "voice": "am_adam",
-    }
-
-  # Silero VAD + Whisper Streaming WS
+# Silero VAD + Whisper Streaming WS
 import asyncio, json, logging, numpy as np, threading, time
 from fastapi import WebSocket, WebSocketDisconnect
 from faster_whisper.vad import VadOptions, get_speech_timestamps
