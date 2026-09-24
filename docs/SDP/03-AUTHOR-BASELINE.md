@@ -319,3 +319,26 @@ LOOPBACK and an API KEY IS SET. The LAN-exposure hazard is not live as configure
 destructive-toolkit half of that hazard (D-06: shell_exec, file_write, mailbox_move_to_trash,
 mailbox_empty_folder in the agent's toolkit, auto-approved on the server path) STANDS UNCHANGED.
 D-06 UPDATE: the toolkit is now 13 tools (web_search added W77).
+
+## G. DIVERGENCE AND DECISION REGISTER UPDATE - W78 TO W82 (appended 2026-09-23, W82)
+Supersedes section D rows where stated. Section D above is left as written for history.
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-03 UPDATE | Engine host | [engine.ollama] host; env OLLAMA_HOST; localhost | CLOSED W80: [engine.ollama] host = http://172.16.33.200:11434 in config.toml; OLLAMA_HOST (3 scopes) and OPENJARVIS_OLLAMA_HOST (no reader) KEPT by owner decision, option 2, after risk assessment | MATCH (author form) | [M W80] config out of git |
+| D-07 UPDATE | Server bind | 127.0.0.1:8000 | runtime 127.0.0.1:8010 (BIND_ASSERT), config says 0.0.0.0 - unmapped override (H-W80-4); api_key_set=True | CHOICE/OPEN | [M W77, W80] |
+| D-14 | file_write scope | allowed_dirs parameter never passed (writes anywhere) | confined to ~\.openjarvis\workspace via [tools] file_allowed_dirs + config.resolve_file_write_dirs (never empty); file_read NOT confined | CHOICE (security) | 829cea7 [M W78] |
+| D-15 | Tool builders | two inline loops in serve.py + ask._build_tools | one serve._build_agent_tools for chat and channel; ask._build_tools unchanged (injects llm, memory, channel) - an SDK PASS does not transfer to the server for llm or channel tools | CHOICE | 854b9c7 [M W78] |
+| D-16 | Engine turn-down | no off-switch; discovery probes every engine; get_engine falls back to any healthy one | [engine] disabled list -> EngineDisabled at _discovery._make_engine (single choke point); live "vllm,uzu,lemonade,litellm" | CHOICE (security, availability) | a0704c4 [M W79] |
+| D-17 | Server port | 8000 | 8010 because a Windows portproxy holds 0.0.0.0:8000 | CONSTRAINT | e0e3652 [M W79] |
+| D-18 | cloud_router Ollama host | env OLLAMA_HOST else localhost (local-inference design) | config > env > RAISE (Graystone f2fcb30 replaced localhost with a raise: remote host, localhost would self-loop; W81 adopted author config-first order) | CHOICE | 0da22e8 [M W81]; author comparison was against upstream MAIN, re-ground on af21bc18 (W82) |
+| D-19 | init download host (F1b) | env else localhost, ignores --host (author defect, identical to af21bc18) | NO CHANGE - ACCEPTED RISK; rebuild rule: set OLLAMA_HOST before jarvis init or run jarvis model pull after | MATCH (author) | [M W82] evidence\W82\F1b-record.txt |
+| D-20 | list_local_models error path (H-W81-3) | same placement; harmless because author host lookup never raises | NO CHANGE - DEFERRED to end security review (our raise makes it fail 500 instead of [] if both host sources are absent) | OPEN (Graystone deviation) | [R W82] evidence\W82\H-W81-3-record.txt |
+| D-21 | Embeddings host and model (F2) | localhost default, nomic-embed-text; both files identical to af21bc18; two OllamaEmbedder classes (connectors vs tools\storage) | NO CHANGE - DEFERRED; no live consumer (memory backend is sqlite; research path never run); model not pulled on .200 | MATCH (author) / OPEN | [M W82] evidence\W82\F2-record.txt |
+| D-22 | Agent text tool-call parsing | only native_openhands parsed text calls | shared parser on ToolUsingAgent (textparse v1-v3) + orchestrator fallback; one parser, 152 lines removed | CHOICE (fix) | 64b0660 [M W77] |
+Owner rulings recorded W82: (1) author baseline for intent = af21bc18 in the local upstream clone, not upstream main; upstream is
+a catalog of enhancements to borrow, not a sync target. (2) Dormant findings are recorded, not changed, until the full system is
+operational; security assessment is performed at the end (DD-14).
+Plain language: this table lists every place our Jarvis is set up differently from the author's, why, and who decided. Three new
+items this window were left exactly as the author wrote them and written down instead of changed, because they only matter if
+Jarvis is rebuilt or a setting goes missing.
+

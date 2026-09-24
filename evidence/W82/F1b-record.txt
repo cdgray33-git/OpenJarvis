@@ -1,0 +1,21 @@
+﻿CHANGE RECORD F1b - init_cmd.py _do_download ignores --host - DISPOSITION: ACCEPTED RISK (no code change)
+Date 2026-09-23, W82. Decision authority: owner (Gray). Assessment: Claude.
+1 IDENTIFICATION: src\openjarvis\cli\init_cmd.py :195-201 _do_download(); host = env OLLAMA_HOST else http://localhost:11434.
+2 PROVENANCE: file IDENTICAL to author base af21bc18 (2026-05-19, last author commit before 05/30 clone),
+  measured W82 by git diff --no-index --ignore-cr-at-eol (evidence\W82\init_cmd-vs-af21bc18.diff = 0 lines). Author defect.
+3 AUTHOR INTENT: --host is a documented remote-engine option; config writer honors it; download step never wired to it.
+  Author remote procedure (jarvis config set engine.ollama.host / export OLLAMA_HOST) unaffected.
+4 EXPOSURE: install-time CLI only (Path C). Server never executes it. Dormant while OLLAMA_HOST is kept (owner decision W80).
+  Fails LOUD ("Cannot connect to Ollama"), config still written correctly, no corruption. Recovery: jarvis model pull.
+5 GATE (when it fires): CLI -> host TCP 11434, HTTP/1.1 POST /api/pull, JSON UTF-8 request, NDJSON streamed response,
+  timeout 600 s, no TLS, no auth.
+6 COMPENSATING PROCEDURE (rebuild rule): set OLLAMA_HOST to the Ollama host BEFORE jarvis init, or run jarvis model pull after.
+7 POA&M: LOW. Revisit if OLLAMA_HOST is ever removed (action 6) or at the Ubuntu VM rebuild.
+8 CONTROLS (assessment): CM-2 baseline (af21bc18 pure author) | CM-3 change control (decision recorded, no change) |
+  CM-6 settings (env var required at rebuild) | RA-3 risk accepted by owner.
+9 NOT DONE: unused backup evidence\W82\backup\init_cmd.py.bak-W82-F1b-20260923_192841 (retain as provenance).
+10 PLAIN LANGUAGE: When you set Jarvis up, you can tell it where its brain server lives. It writes that address down
+  correctly, but when it goes to download a brain it looks at a sticky note instead. The sticky note is there, so it
+  works. If the note were ever gone, the download would say "cannot connect" and you would run one more command. We
+  chose to write this down instead of changing the author's code.
+ALSO FOUND W82: W81 s5.1 part 3 provenance compared against upstream MAIN, not base af21bc18 - re-ground at SDP write-up.

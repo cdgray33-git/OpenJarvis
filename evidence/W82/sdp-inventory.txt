@@ -1,0 +1,124 @@
+﻿=== docs\SDP, ALL file types ===
+docs\SDP\00-SDP-MASTER.md                                                   3996  9/21/2026 3:20:30 PM
+docs\SDP\01-SSDD.md                                                         4187  9/21/2026 3:20:30 PM
+docs\SDP\02-SRS-RTM.md                                                     11438  9/23/2026 8:55:05 AM
+docs\SDP\02-SRS-RTM.md.bak-W75-v01                                          1487  9/21/2026 3:20:30 PM
+docs\SDP\02-SRS-RTM.md.bak-W76-v03                                          7092  9/22/2026 10:17:19 AM
+docs\SDP\02-SRS-RTM.md.bak-W77-v04                                          8417  9/22/2026 11:01:52 AM
+docs\SDP\02-SRS-RTM.md.bak-W77-v05                                         10109  9/22/2026 3:36:13 PM
+docs\SDP\02-SRS-RTM.md.bak-W78-v06                                         10477  9/22/2026 4:45:50 PM
+docs\SDP\02-SRS-RTM.md.bak-W78-v07pre                                      10233  9/22/2026 5:04:32 PM
+docs\SDP\03-AUTHOR-BASELINE.md                                             26701  9/22/2026 4:45:50 PM
+docs\SDP\03-AUTHOR-BASELINE.md.bak-W76-v01                                  6464  9/22/2026 11:17:30 AM
+docs\SDP\03-AUTHOR-BASELINE.md.bak-W77-v02                                 12979  9/22/2026 11:35:31 AM
+docs\SDP\03-AUTHOR-BASELINE.md.bak-W77-v03                                 20523  9/22/2026 1:56:54 PM
+docs\SDP\03-IDD.md                                                          1661  9/21/2026 3:20:30 PM
+docs\SDP\04-SDD.md                                                          1895  9/21/2026 3:20:30 PM
+docs\SDP\05-DBDD.md                                                          396  9/21/2026 3:20:30 PM
+docs\SDP\06-CM-SVD.md                                                       1933  9/21/2026 3:20:30 PM
+docs\SDP\07-SSP.md                                                          1067  9/21/2026 3:20:30 PM
+docs\SDP\08-POAM.md                                                         1276  9/21/2026 3:20:30 PM
+docs\SDP\09-CP.md                                                            338  9/21/2026 3:20:30 PM
+docs\SDP\10-COVERAGE-GAPS.md                                                1420  9/21/2026 3:20:30 PM
+docs\SDP\evidence\W74\R06-W74-B1-RAW.json                                  12293  9/21/2026 10:42:50 PM
+docs\SDP\evidence\W74\R06-W74-B1.md                                       360624  9/21/2026 10:34:28 PM
+docs\SDP\evidence\W74\R06-W74-B2-RAW.json                                  21797  9/21/2026 10:44:16 PM
+docs\SDP\evidence\W74\R06-W74-B2.md                                       331729  9/21/2026 10:34:28 PM
+docs\SDP\evidence\W74\R06-W74-B3-RAW.json                                  11153  9/21/2026 10:44:24 PM
+docs\SDP\evidence\W74\R06-W74-B3.md                                       155595  9/21/2026 10:34:28 PM
+docs\SDP\evidence\W74\R06-W74-JUSTIFY-RAWPARSE.csv                         37372  9/21/2026 10:44:24 PM
+docs\SDP\evidence\W74\R06-W74-JUSTIFY.csv                                  34922  9/21/2026 10:48:06 PM
+docs\SDP\evidence\W74\R06-W74-PLAN.json                                     6044  9/21/2026 10:34:28 PM
+docs\SDP\evidence\W74\r06_normalize.py                                      1305  9/21/2026 10:48:06 PM
+docs\SDP\evidence\W74\r06_w74.py                                            7859  9/21/2026 10:48:06 PM
+docs\SDP\evidence\W76\author-capability-bundle.md                         213173  9/22/2026 11:24:08 AM
+docs\SDP\evidence\W76\author-docs-inventory.md                             10352  9/22/2026 11:35:55 AM
+docs\SDP\evidence\W76\fork-point.md                                         3737  9/22/2026 11:35:56 AM
+docs\SDP\evidence\W76\graystone-vs-author-install.md                        1513  9/22/2026 11:13:47 AM
+docs\SDP\evidence\W77\author-check-RQ-021.txt                                132  9/22/2026 12:08:08 PM
+docs\SDP\evidence\W77\author-check-RQ-022.txt                                 72  9/22/2026 12:07:10 PM
+docs\SDP\evidence\W77\author-check-RQ-025.txt                                466  9/22/2026 12:09:03 PM
+docs\SDP\evidence\W77\defect1-raw-payload.txt                                523  9/22/2026 1:56:54 PM
+docs\SDP\evidence\W77\model-list.txt                                       14906  9/22/2026 12:17:58 PM
+docs\SDP\evidence\W77\native-after-dedupe.json                              2451  9/22/2026 4:02:38 PM
+docs\SDP\evidence\W77\rtm-verify-after.json                                27099  9/22/2026 4:18:29 PM
+docs\SDP\evidence\W77\rtm-verify.json                                      26354  9/22/2026 11:54:05 AM
+docs\SDP\evidence\W77\sdk-verify-after.json                                 3201  9/22/2026 3:49:20 PM
+docs\SDP\evidence\W77\sdk-verify-dedupe.json                                3027  9/22/2026 4:02:23 PM
+docs\SDP\evidence\W77\sdk-verify.json                                       1287  9/22/2026 12:18:09 PM
+docs\SDP\evidence\W77\surface-probe.txt                                     4054  9/22/2026 11:50:24 AM
+docs\SDP\evidence\W77\surfaceA-gdp.json                                     1366  9/22/2026 4:40:44 PM
+=== files named Vol*3A* or *3A* anywhere in repo (excluding .git, node_modules) ===
+rust\crates\openjarvis-learning\src\agent_evolver.rs                        9003  5/19/2026 1:21:42 PM
+src\openjarvis\learning\agents\agent_evolver.py                            12735  5/19/2026 1:21:49 PM
+src\openjarvis\learning\agents\__pycache__\agent_evolver.cpython-312.pyc     14929  7/5/2026 2:00:15 PM
+src\openjarvis\server\static\assets\KaTeX_Main-Bold-Jm3AIy58.woff          29912  9/20/2026 3:05:16 PM
+src\openjarvis\server\static\assets\KaTeX_Main-BoldItalic-DxDJ3AOS.woff2     16780  9/20/2026 3:05:16 PM
+src\openjarvis\server\static\assets\KaTeX_Math-Italic-t53AETM-.woff2       16440  9/20/2026 3:05:16 PM
+tests\learning\test_agent_evolver.py                                        7961  5/19/2026 1:21:55 PM
+=== text mentions of "Vol 3A" outside archives/briefs (first 20) ===
+docs\SDP\02-SRS-RTM.md:115: | RQ-021 | web_search tool; shared ToolUsingAgent text parser (textparse-v3) + [agent] tools config - Vol 3A C, F8 | SDK ask_full AND live server 8010 | W77: SDK tool_results [web_search] turns 2 (sdk-verify-after.json); server sourced World Bank/Statista answer (surfaceA-gdp.json) | VERIFIED |
+docs\SDP\02-SRS-RTM.md:116: | RQ-022 | calculator tool (ast-based) - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results [calculator -> "5754.0" success], turns 2 - evidence\W77\sdk-verify.json | VERIFIED |
+docs\SDP\02-SRS-RTM.md:117: | RQ-025 | llm tool, any agent - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results EMPTY, turns 1, model answered directly - evidence\W77\sdk-verify.json | NOT VERIFIED (not delegated) |
+docs\SDP\02-SRS-RTM.md:118: | RQ-030 | Ollama engine, local-first default - Vol 3A C | engine gate, TCP 11434 | W77: engine=ollama telemetry 7118-7132; TCP peer 172.16.33.200:11434 (E3); jarvis model list - evidence\W77\model-list.txt, surface-probe.txt | VERIFIED |
+docs\SDP\02-SRS-RTM.md:125: QUALIFICATION RULE (W77, Vol 3A F7): a tool-backed row is VERIFIED only on a machine invocation
+docs\SDP\03-AUTHOR-BASELINE.md:1: # VOL 3A - AUTHOR BASELINE AND GRAYSTONE DIVERGENCE REGISTER
+=== git history of docs\SDP ===
+12a1f8f W78: RTM v0.6 section 7 - toolkit audit class table (28 rows vs tools_loaded; A4 B2 B2-1 C14 D6 E1). VERIFIED 3/28 unchanged.
+ docs/SDP/02-SRS-RTM.md | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+7fe51ac W78: restore RTM section 3.5 RQ-021 requirement row overwritten by W77 edit (line 71 only; section 5 row unchanged)
+ docs/SDP/02-SRS-RTM.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+64b0660 W77: shared text tool-call parser on ToolUsingAgent (textparse-v1/v2/v3), tagged-parameter fix, 152-line dedupe from native_openhands; RQ-021 VERIFIED on SDK and live server; config web_search gap found; RTM v0.5 3/28; Vol 3A F8/F9
+ docs/SDP/02-SRS-RTM.md                         |  18 ++-
+ docs/SDP/03-AUTHOR-BASELINE.md                 | 175 +++++++++++++++++++++-
+ docs/SDP/evidence/W77/native-after-dedupe.json |  36 +++++
+ docs/SDP/evidence/W77/rtm-verify-after.json    | 193 +++++++++++++++++++++++++
+ docs/SDP/evidence/W77/rtm-verify.json          | 153 ++++++++++++++++++++
+ docs/SDP/evidence/W77/sdk-verify-after.json    |  66 +++++++++
+ docs/SDP/evidence/W77/sdk-verify-dedupe.json   |  66 +++++++++
+ docs/SDP/evidence/W77/sdk-verify.json          |  60 ++++++++
+ docs/SDP/evidence/W77/surfaceA-gdp.json        |  28 ++++
+ 9 files changed, 788 insertions(+), 7 deletions(-)
+b6556ac W76: R1.3 Tier A mapped; RTM v0.4 (two-tier, baseline 0/28); Vol 3A author baseline v0.2 (R1.2 doc-level 4/12/12); evidence; handoff BRIEF+ARCHIVE
+ docs/SDP/02-SRS-RTM.md                             |   20 +-
+ docs/SDP/02-SRS-RTM.md.bak-W76-v03                 |  109 +
+ docs/SDP/03-AUTHOR-BASELINE.md                     |  152 +
+ docs/SDP/03-AUTHOR-BASELINE.md.bak-W76-v01         |   79 +
+ docs/SDP/evidence/W76/author-capability-bundle.md  | 5348 ++++++++++++++++++++
+ docs/SDP/evidence/W76/author-docs-inventory.md     |  105 +
+ docs/SDP/evidence/W76/fork-point.md                |   56 +
+ .../evidence/W76/graystone-vs-author-install.md    |   36 +
+ 8 files changed, 5903 insertions(+), 2 deletions(-)
+6a555c6 W75: R1.1 closed - RTM v0.3 ratified (28 core measured), Phase 2 deferrals, R1.2a added, handoff BRIEF+ARCHIVE
+ docs/SDP/02-SRS-RTM.md             | 110 ++++++++++++++++++++++++++++++++-----
+ docs/SDP/02-SRS-RTM.md.bak-W75-v01 |  25 +++++++++
+ 2 files changed, 122 insertions(+), 13 deletions(-)
+fb05108 W74 handoff: Track 0 closed - R0.7 ruled keep-all (Ubuntu rebuild), R0.4 closed, classifier fixed, R0.6 550B justification 133/133 with evidence
+ docs/SDP/evidence/W74/R06-W74-B1-RAW.json          |   29 +
+ docs/SDP/evidence/W74/R06-W74-B1.md                | 9385 ++++++++++++++++++++
+ docs/SDP/evidence/W74/R06-W74-B2-RAW.json          |   59 +
+ docs/SDP/evidence/W74/R06-W74-B2.md                | 8289 +++++++++++++++++
+ docs/SDP/evidence/W74/R06-W74-B3-RAW.json          |    7 +
+ docs/SDP/evidence/W74/R06-W74-B3.md                | 4073 +++++++++
+ docs/SDP/evidence/W74/R06-W74-JUSTIFY-RAWPARSE.csv |  134 +
+ docs/SDP/evidence/W74/R06-W74-JUSTIFY.csv          |  134 +
+ docs/SDP/evidence/W74/R06-W74-PLAN.json            |  154 +
+ docs/SDP/evidence/W74/r06_normalize.py             |   17 +
+ docs/SDP/evidence/W74/r06_w74.py                   |  100 +
+ 11 files changed, 22381 insertions(+)
+a72d2c6 SDP v0.1: 10-volume package (MIL-STD-498 DIDs + NIST RMF), evidence grades, gap register; W71 provenance claim withdrawn (root f2fcb30 is a Graystone commit)
+ docs/SDP/00-SDP-MASTER.md    | 73 ++++++++++++++++++++++++++++++++++++++++++++
+ docs/SDP/01-SSDD.md          | 71 ++++++++++++++++++++++++++++++++++++++++++
+ docs/SDP/02-SRS-RTM.md       | 25 +++++++++++++++
+ docs/SDP/03-IDD.md           | 21 +++++++++++++
+ docs/SDP/04-SDD.md           | 27 ++++++++++++++++
+ docs/SDP/05-DBDD.md          |  6 ++++
+ docs/SDP/06-CM-SVD.md        | 38 +++++++++++++++++++++++
+ docs/SDP/07-SSP.md           | 13 ++++++++
+ docs/SDP/08-POAM.md          | 14 +++++++++
+ docs/SDP/09-CP.md            |  6 ++++
+ docs/SDP/10-COVERAGE-GAPS.md | 25 +++++++++++++++
+ 11 files changed, 319 insertions(+)
+=== handoff source material: ARCHIVE/BRIEF in repo root and Downloads ===

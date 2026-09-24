@@ -1,0 +1,20 @@
+﻿RECORD F2 - embeddings host (and model) - DISPOSITION: DEFERRED, NO CHANGE (owner ruling W82 ex10: dormant findings recorded, not changed, until full system operational)
+Date 2026-09-23, W82. Assessment: Claude. Authority: owner (Gray).
+PROVENANCE: src\openjarvis\connectors\embeddings.py and src\openjarvis\tools\storage\embeddings.py IDENTICAL to af21bc18 (author code).
+DUPLICATE (cleanup register C-W82-1): two OllamaEmbedder classes. connectors (host=, DEFAULT_OLLAMA_HOST localhost:11434) used by
+  cli\ask.py:55/:85 and server\research_router.py:38/:308. storage (base_url= localhost:11434, model nomic-embed-text) used by
+  tools\storage\dense.py:33/:570. All three construct with NO host.
+MEASURED W82:
+- No embedding model on 172.16.33.200 (/api/tags OK, zero names matching embed|nomic|bge|minilm). Author default nomic-embed-text absent.
+- localhost:11434 on the Windows box: TIMED OUT (not refused) - recorded, not chased.
+- config.toml [memory] has no backend key -> author default_backend = "sqlite" (config.py:872 af21bc18). dense backend NOT in use.
+  "wired memory_backend" log lines refer to sqlite. Memory recall does NOT depend on embeddings (negative result).
+- backend.log (AppData\Local\OpenJarvis\logs): zero research_router "embedder unavailable" warnings -> server research path never run.
+EXPOSURE: dormant. Would degrade research to BM25-only (logged WARNING, fails soft). Dense memory unusable if ever selected.
+PREREQUISITE (functional, for any requirement needing semantic research or dense memory): (1) pull nomic-embed-text on the Ollama
+  host; (2) pass configured host to the embedder (config > env > localhost). Both halves required.
+GATE (when used): server -> Ollama host TCP 11434, HTTP/1.1 POST /api/embed (storage) or /api/embeddings (connectors - confirm at fix),
+  JSON UTF-8, no TLS, no auth.
+PLAIN LANGUAGE: Jarvis has an optional way to search by meaning instead of exact words. It needs a special dictionary model and the
+  right address. Neither is set up, and nothing Jarvis does today uses it, so nothing is broken now. Written down for when we need it.
+ALSO W82: my exchange-11 log search looked in the wrong folders; backend.log is at %LOCALAPPDATA%\OpenJarvis\logs (logging register).

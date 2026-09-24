@@ -1,0 +1,11 @@
+﻿RECORD H-W81-3 - cloud_router.list_local_models() calls _ollama_host() outside its try - DISPOSITION: DEFERRED, NO CHANGE
+Date 2026-09-23, W82. Decision authority: owner (Gray). Assessment: Claude.
+Author af21bc18: same line placement, harmless (author _ollama_host never raises: env > localhost). Contract: never fail, return [].
+Graystone f2fcb30 raise (kept by W81 F1a) makes the placement matter. Fires only on Path B2 (GET /v1/models, engine lists no
+local models, routes.py:480-483) AND no config host AND no OLLAMA_HOST. Both set today: dormant. If fired: HTTP 500, not [].
+OWNER RULING: security assessment is done at the end; until the full system is operational, dormant findings may be bugs or
+may not. Record, do not change. Revisit at the end-of-build security assessment.
+REGISTERED W82 (own window, cloud routing): H-W82-2 _stream_openai retry loop retries every HTTPStatusError, not only 429;
+a 401 waits 5+10+20 = 35 s before failing. W80 record already lists the 429 retry as not working.
+PLAIN LANGUAGE: The part of Jarvis that lists its brains is supposed to say "none found" when it cannot look. If both address
+notes were missing, it would crash instead. Both notes are there, so it does not happen. Written down for the final review.

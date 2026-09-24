@@ -1,0 +1,8 @@
+﻿LOADED qwen3-coder:30b  size_vram_GB=18.9  size_GB=18.9
+WARM   wall_ms=13390 tokens=64 eval_ms=1328 load_ms=11682
+SINGLE wall_ms=2149 tokens=64 eval_ms=1459 load_ms=499
+CONC1  wall_ms=2525 tokens=64 eval_ms=1542 load_ms=530
+CONC2  wall_ms=2376 tokens=64 eval_ms=1368 load_ms=560
+CONC3  wall_ms=5862 tokens=64 eval_ms=1577 load_ms=594
+CONC4  wall_ms=4080 tokens=64 eval_ms=1453 load_ms=576
+CONCURRENT x4 total wall_ms=11459 (includes about 1-2 s PowerShell job startup)

@@ -1,14 +1,46 @@
 # VOL 8 - PLAN OF ACTION AND MILESTONES (POA&M)
-v0.1 DRAFT. Populated from W70-W71; W1-W69 items pending harvest (GAP-003).
-| ID | Weakness | Source | Grade | Remediation | Status |
-|---|---|---|---|---|---|
-| POAM-01 | Agent replies buffered server-side (no live text on path 1b) | W70 | [M] | Option A | Open |
-| POAM-02 | Voice starts only after last word (F-W71-VOICE-LATE) | W71 | [M] | Locate synthesize route; test SYNCIO | Open |
-| POAM-03 | Ollama stream uses sync client in async code; blocks event loop | W71 | [R] | Async client or thread offload | Open |
-| POAM-04 | Telemetry lost on stream_full path | W71 | [R] | Add events to InstrumentedEngine.stream_full | Open |
-| POAM-05 | Input redaction bypassed on stream_full path; no RETRY400 log | W71 | [R] | Add input scan and log line | Open |
-| POAM-06 | Rollback points not backed up | W71 | [M] | Vol 9 | Open |
-| POAM-07 | No author baseline; provenance unprovable | W71 | [M] | GAP-019 | Open |
-| POAM-08 | No requirements baseline / RTM | standing | [S] | Vol 2 | Open |
-| POAM-09 | Frontend TTS debug logs unreadable in production build | W71 | [R] | Route to a readable sink | Open |
-| POAM-10 | Credential exposure 08/01 requiring rotation (status unverified) | 08/01 | [S] | Verify rotation | Verify |
+v0.2 DRAFT 2026-09-23 (W82). Harvest of W42-W82; v0.1 items kept with status updated. Control mapping is an engineering
+assessment; the assessor and AO make the determination. Owner ruling W82 (DD-14): dormant findings are recorded and assessed at
+the end-of-build security review, not changed piecemeal.
+
+| ID | Weakness | Controls | Source | Status |
+|---|---|---|---|---|
+| POAM-01 | Agent replies buffered server-side on path 1b | - | W70 [M] | Open (Option A not built) |
+| POAM-02 | Voice starts late (F-W71-VOICE-LATE) | - | W71 | Improved W67 (gate 5.0 s -> 1.5-2.3 s); open |
+| POAM-03 | Ollama stream uses sync client in async code | SC-5 | W71 [R] | Open |
+| POAM-04 | Telemetry lost on stream_full path | AU-2 | W71 [R] | Open |
+| POAM-05 | Input redaction bypassed on stream_full; no RETRY400 log | SI-4 | W71 [R] | Open |
+| POAM-06 | Rollback points and out-of-git config on one disk | CP-9 | W71 [M] | Open (GAP-040) |
+| POAM-07 | No author baseline | CM-2 | W71 | CLOSED W73 (af21bc18) |
+| POAM-08 | No requirements baseline | - | standing | CLOSED W75 (RTM ratified) |
+| POAM-09 | Frontend debug logs unreadable ([PUMPDBG], [STOP]) | AU-2 | W68-W69 | Open |
+| POAM-10 | Credential exposure 08/01 - rotation unverified | IA-5 | 08/01 [S] | Verify |
+| POAM-11 | Model and voice traffic plaintext on the lab segment (IF-02, IF-02a/b, IF-03a) | SC-8 | W81 | Open |
+| POAM-12 | Ollama and Kokoro APIs unauthenticated both ways | IA-9, IA-3 | W81 | Open |
+| POAM-13 | Confirmation WebSocket accepts unauthenticated clients (authed=False with api_key_set=True); any loopback client can answer a gate | AC-3, IA-2 | W50, W81 H-W81-6 | Open; owner deferred socket auth 08/29 |
+| POAM-14 | Config says [server] host 0.0.0.0; runtime binds 127.0.0.1 via an unmapped override | CM-6 | W77, H-W80-4 | Open (safe today) |
+| POAM-15 | Base predates upstream security fixes #415 RCE, #416 WS auth, #417 deploy auth | SI-2, RA-5 | H-W73-BEHIND | Open - assess each against our tree |
+| POAM-16 | AuthMiddleware possibly disabled in app.py (`if False`) - 550B claim, unverified | AC-3 | H-W74-AUTHOFF | Verify (BIND-ASSERT api_key_set=True observed) |
+| POAM-17 | Auto-approve on managed-agent tool loop (wizard selection = consent); live if shell_exec/apply_patch selected | AC-6, AU-12 | W52-W56 | Open - attributed by ConfirmPolicy; owner ruling needed |
+| POAM-18 | cli-ask auto-approves with a human present (TerminalConfirmGate designed W61) | AC-3 | W56-W61 | Verify build |
+| POAM-19 | Gate prompt lacks count/scope of mail affected | AC-3 (informed consent) | W60 | Open |
+| POAM-20 | Protected senders not applied on direct UID path | AC-3 | W61 | Open |
+| POAM-21 | file_read unconfined; workspace security unreviewed | AC-6 | H-W78 | Open (owner: after function) |
+| POAM-22 | Rust shell_exec bridge ignores sanitized env and timeout, always returncode 0 | SI-10 | H-W78-RUSTSHELL, H-W79-RUSTBUILD | Open (only if Rust build lands) |
+| POAM-23 | Analytics/PostHog code with hardcoded key present (disabled by config) | SC-7, SA-9 | H-W78-ANALYTICS | Open - owner ruled remove |
+| POAM-24 | Credentials stored plaintext (cloud-keys.env, imap_mail_*.json); no encryption at rest | SC-28, IA-5 | W43, W61 | Open |
+| POAM-25 | Git history may contain secrets (bundle_for_cloud_model.txt) | SC-28 | H-W79-E0E3652 | Open - history rewrite is an owner decision |
+| POAM-26 | Windows portproxy 0.0.0.0:8000 -> dead WSL target, LAN reachable | SC-7, CM-7 | H-W79-PORTPROXY | Open (lab item) |
+| POAM-27 | Cloud catch-all: any model name with "/" goes to OpenRouter | SC-7 | W43 | Open |
+| POAM-28 | Cloud retry loop retries every HTTP error (401 waits 35 s) | SI-11 | H-W82-2 | Open (own window) |
+| POAM-29 | list_local_models raises outside its try (500 not []) | SI-11 | H-W81-3 | Deferred W82 (dormant) |
+| POAM-30 | jarvis init --host ignored by model download | CM-6 | H-W81-1 / F1b | ACCEPTED RISK W82 (rebuild rule, Vol 9) |
+| POAM-31 | Embeddings default to localhost; nomic-embed-text absent on .200 | - | H-W80-5 / F2 | Deferred W82 (dormant; prerequisite for semantic research) |
+| POAM-32 | Trace modules deleted; traces.db empty; no durable invocation record on the server path (RQ-028) | AU-2, AU-12 | H-W73-TRACELOST, W77 F7 | Open |
+| POAM-33 | UI unresponsive during generation; stop does not cancel backend; no chat timeout | SC-5 | W68-W69 | Open |
+| POAM-34 | Mic permission auto-approved (--use-fake-ui-for-media-stream) | AC-3 | W63 | Open |
+| POAM-35 | Out-of-git configuration items not in any baseline | CM-2 | W80 H-W80-7 | Open (GAP-041) |
+| POAM-36 | Many .bak files inside src\; duplicate implementations (two OllamaEmbedder, server\serve.py 0-line shadow) | CM-7 | H-W80-6, W82, H-W74-TWOSERVE | Open (cleanup register) |
+| POAM-37 | First request after idle pays ~11.7 s model reload | - | W82 [M] | Open (record) |
+| CLOSED | CDP port 9222 on production exe | AC-17 | W63 | CLOSED W63 |
+| CLOSED | Self-loop engines at port 8010 | SC-5 | W79 | CLOSED a0704c4 |
