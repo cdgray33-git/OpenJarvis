@@ -1,5 +1,5 @@
 # VOL 8 - PLAN OF ACTION AND MILESTONES (POA&M)
-v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..46, CLOSED rows). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
+v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..49, CLOSED rows). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
 assessment; the assessor and AO make the determination. Owner ruling W82 (DD-14): dormant findings are recorded and assessed at
 the end-of-build security review, not changed piecemeal.
 
@@ -51,6 +51,10 @@ the end-of-build security review, not changed piecemeal.
 | POAM-44 | Upload route reports chunks_added as +1 per FILE, including refused files (measured 2 reported, 1 stored) | SI-11 | [M W83 decode-VV] | Open (record; author code not yet diffed for this line) |
 | POAM-45 | Upload chunker can leave a one-word tail chunk (owner EA notes chunk 2 = 'attached') | SI-10 (quality) | [M W83 memdb-selective-clear] | Open (record) |
 | POAM-46 | Walker drops any file or tail under 50 tokens (author min_chunk_size) - short notes via memory_index are silently not stored | SI-10 | [R W83 chunking.py] | Accepted by owner (keep author 50; short notes use memory_store) |
+| POAM-47 | memory_manage remove and user_profile_manage remove are ungated edits of the persona files | AC-6 | [R W83] | Open (record) |
+| POAM-48 | Notes list in the prompt is capped at 2,500 chars (head_tail truncation); a long notes list is cut in the prompt (memory_manage read still returns all) | SI-10 | [R builder.py] | Open (record) |
+| POAM-49 | Agent system-prompt override now read at startup, not per turn (D-36 side effect) | CM-3 | [R W83] | Accepted with D-36 |
+| CLOSED | Author persona layer never reached any tool agent (hook not forwarded, builder never built) | CM-2 | W83 [M] | CLOSED W83 6429769 (D-35, D-36) |
 | CLOSED | Ingest decode stored UTF-16 as char+NUL and accepted binaries (author defect, both paths) | SI-10 | W83 [M] | CLOSED W83 a457239 + 00edd61 (D-28, D-29) |
 | CLOSED | Author context injection never reached the model: min_score 20.0 above every score, and qwen3-coder template dropped the second system message | SI-11 | W83 [M] | CLOSED W83 (D-24 config, D-25 675cda6; V&V +1120 tokens) |
 | CLOSED | Duplicate /v1/speech/health and /transcribe (Graystone shadowing author routes; mic dump in the live route) | CM-7, SI-11 | H-W81-5 | CLOSED W82 H5 (author routes serve; V1-V5 PASS) |

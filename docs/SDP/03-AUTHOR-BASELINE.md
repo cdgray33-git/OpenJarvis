@@ -420,3 +420,25 @@ the model it has notes; D-33 is the author mechanism that would.
 Plain language: the author wrote Jarvis a name tag, a diary and a card about you, and a machine to read them to Jarvis before every
 conversation - but never plugged that machine in. We have now put the name tag, diary and card on the desk; plugging in the
 machine is next.
+
+### G.5 W83 additions - persona layer wired (appended 2026-09-24, fourth package)
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-35 | prompt_builder hook | BaseAgent accepts prompt_builder and _build_messages uses builder.build() in place of the agent prompt; ToolUsingAgent.__init__ does NOT accept or forward it, so no tool agent can receive it | ToolUsingAgent and NativeOpenHandsAgent accept and forward prompt_builder | AUTHOR DEFECT, fixed | 6429769; persona-patch.txt |
+| D-36 | Persona wiring (owner W3) | SystemPromptBuilder has no constructor anywhere; its prefix freezes on first build | serve.py builds SystemPromptBuilder for native_openhands (template = override or OPENHANDS_SYSTEM_PROMPT + tool descriptions, config.memory_files, config.system_prompt), logs "PERSONA prompt_builder wired"; builder rebuilds its prefix only when SOUL/MEMORY/USER.md change (mtime+size) | CHOICE enabling author intent | 6429769; persona-VV.txt |
+| D-37 | Notes routing (owner N1) | SOUL.md is installer content | one line: user notes are the Agent Memory entries, add with memory_manage (backup SOUL.md.bak-W83-N1-20260924_191528) | INSTALLER CONTENT, no code | e25b7c0; n1-notes-routing.txt |
+| D-38 | user_profile_manage (owner P4) | author tool, in no default toolkit | added to [agent] tools (19; backup config.toml.bak-W83-P4-20260924_191802) | CHOICE (installer) | f898da4; p4-VV.txt |
+Defect record D-35: SYMPTOM - the author's persona layer (SOUL/MEMORY/USER.md) never reaches the model on any tool-using agent;
+the model does not know its name, its notes or the user. TRIGGER - any tool agent (all chat agents). FIX - forward the hook
+(D-35) and construct the builder (D-36). EVIDENCE - "I am Jarvis, a helpful personal AI assistant" (SOUL text) after the fix.
+Effects of D-36: with the hook set, the author _build_messages ignores the per-turn prompt the agent formats; the template is built
+at startup with the same tool descriptions (8,609 chars measured). A system-prompt override is now read at startup, not per turn.
+Still ONE system message (sysmerge unaffected). Only native_openhands is wired; other agents unchanged.
+V&V results: W3 V4 undirected notes FAILED before N1 (model used memory_retrieve); after N1, undirected take -> memory_manage OK and
+undirected list names both notes (framing awkward, memory_search called first). P4: undirected "what do you know about me" answers
+from User Profile with no tool call. The live un-freeze was proven by the N1 SOUL edit taking effect with no restart.
+Negative result: the W3 V3 cost comparison against 6237 is invalid - that baseline was measured with 116 memory.db docs injected;
+after D-31 injection is far smaller (delta -811 is not a persona cost).
+Plain language: we plugged in the author's machine that reads Jarvis its name tag, its diary and the card about you before every
+conversation, and taught it (with one sentence in its name tag) that your notes live in its diary. It now knows its name, your
+notes and your preferred name without being told which tool to use.

@@ -340,7 +340,11 @@ CLEANUP REGISTER: memory_search, memory_retrieve and retrieval are three model-v
 injection - redundant access points; kept by owner decision (O3), logged for later consolidation.
 Plain language: Jarvis has four separate filing cabinets. Only one (memory.db) is in daily use, and everything that files or looks
 things up uses that same cabinet. The other three are either empty, unused, or not yet inspected.
-### 16.5 Persona layer (W83) - author-built, not wired
-SOUL.md / MEMORY.md / USER.md seeded by the author function (D-32). SystemPromptBuilder (prompt\builder.py) would place them in
-the system prompt as '## Agent Persona', '## Agent Memory', '## User Profile' (frozen prefix, 4000/2500/1500 chars) but nothing
-constructs it in the author tree or ours (D-33). Wiring it (P3) must keep ONE system message (sysmerge, 16.1 gate 7).
+### 16.5 Persona layer (W83) - WIRED since 6429769
+Gate flow: (1) serve.py at agent construction builds SystemPromptBuilder(agent_template = override or OPENHANDS_SYSTEM_PROMPT +
+tool descriptions, config.memory_files, config.system_prompt) and passes it as prompt_builder -> logs "PERSONA prompt_builder wired"
+(backend.log). (2) ToolUsingAgent forwards it to BaseAgent (D-35). (3) Every turn _build_messages calls builder.build(): template +
+"## Agent Persona" (SOUL.md <=4000) + "## Agent Memory" (MEMORY.md <=2500) + "## User Profile" (USER.md <=1500); the prefix is
+rebuilt only when one of the three files changes (mtime+size). (4) Context injection (16.1) adds its system message; (5) sysmerge
+joins them into ONE system message at the engine. Edits by memory_manage / user_profile_manage / the owner appear on the next turn
+with no restart. Notes routing is one owner line in SOUL.md (D-37). Scope: native_openhands only.
