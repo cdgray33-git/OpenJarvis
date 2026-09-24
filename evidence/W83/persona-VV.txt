@@ -1,0 +1,8 @@
+W83 P3/W3 persona live V&V 2026-09-24T19:06:45
+V1 PID 24752 START 2026-09-24T19:04:59  PASS=True
+V2 2026-09-24 19:05:36,232 INFO openjarvis.cli.serve: PERSONA prompt_builder wired agent=native_openhands template_chars=8609  PASS=True
+V3 email turn prompt_tokens_evaluated=5426,5719  baseline_first=6237  delta_first=-811  tools=memory_search
+V4 undirected notes turn tools=memory_retrieve  PASS=False
+   reply: Based on my search of your memory, I found one note with the title "workflow" that contains information about your N8N orchestration flow for scheduling meetings. The note includes details about:  - Your complete architecture involving Ollama, Function-api, Langchain agent, and N8N Workflow - The st
+V5 name turn tools=  PASS=True
+   reply: I am Jarvis, a helpful personal AI assistant.

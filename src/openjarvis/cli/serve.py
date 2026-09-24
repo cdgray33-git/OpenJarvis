@@ -361,6 +361,19 @@ def serve(
                             _server_confirm_callback
                         )
 
+                # openjarvis-w83-persona-v1 (P3/W3, owner): author SystemPromptBuilder through the author prompt_builder hook
+                if agent_key == "native_openhands" and getattr(agent_cls, "accepts_tools", False):
+                    try:
+                        from openjarvis.prompt.builder import SystemPromptBuilder
+                        from openjarvis.agents.native_openhands import OPENHANDS_SYSTEM_PROMPT
+                        from openjarvis.agents.prompt_loader import load_system_prompt_override
+                        from openjarvis.tools._stubs import build_tool_descriptions
+                        _oj_tmpl = (load_system_prompt_override("native_openhands") or OPENHANDS_SYSTEM_PROMPT).format(
+                            tool_descriptions=build_tool_descriptions(agent_kwargs.get("tools") or []))
+                        agent_kwargs["prompt_builder"] = SystemPromptBuilder(agent_template=_oj_tmpl, memory_files_config=config.memory_files, system_prompt_config=config.system_prompt)
+                        logger.info("PERSONA prompt_builder wired agent=%s template_chars=%d", agent_key, len(_oj_tmpl))
+                    except Exception:
+                        logger.warning("PERSONA prompt_builder not wired - agent runs without persona", exc_info=True)
                 agent = agent_cls(engine, model_name, **agent_kwargs)
         except Exception as exc:
             import traceback

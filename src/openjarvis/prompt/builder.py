@@ -36,8 +36,11 @@ class SystemPromptBuilder:
         self._frozen_prefix: Optional[str] = None
 
     def build(self) -> str:
-        if self._frozen_prefix is None:
+        # openjarvis-w83-persona-v1: rebuild only when a persona file changes (author cache stability kept, notes stay live)
+        _sig = self._files_sig()
+        if self._frozen_prefix is None or _sig != getattr(self, "_frozen_sig", None):
             self._frozen_prefix = self._build_frozen_prefix()
+            self._frozen_sig = _sig
         parts = [self._frozen_prefix]
         if self._session_context:
             parts.append(f"\n\n## Session Context\n\n{self._session_context}")
@@ -81,6 +84,17 @@ class SystemPromptBuilder:
             examples = "\n\n".join(self._skill_few_shot)
             sections.append("## Skill Examples\n\n" + examples)
         return "\n\n".join(sections)
+
+    def _files_sig(self):
+        out = []
+        for p in (self._mf_config.soul_path, self._mf_config.memory_path, self._mf_config.user_path):
+            q = Path(p).expanduser()
+            try:
+                st = q.stat()
+                out.append((str(q), st.st_mtime_ns, st.st_size))
+            except OSError:
+                out.append((str(q), None, None))
+        return tuple(out)
 
     def _load_file(self, path_str: str, max_chars: int) -> str:
         path = Path(path_str).expanduser()

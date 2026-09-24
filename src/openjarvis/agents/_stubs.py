@@ -308,6 +308,7 @@ class ToolUsingAgent(BaseAgent):
         interactive: bool = False,
         confirm_callback: Optional[Any] = None,
         skill_few_shot_examples: Optional[List[str]] = None,
+        prompt_builder: Optional[Any] = None,  # openjarvis-w83-persona-v1 (D-35: author hook was not forwarded)
     ) -> None:
         super().__init__(
             engine,
@@ -315,6 +316,7 @@ class ToolUsingAgent(BaseAgent):
             bus=bus,
             temperature=temperature,
             max_tokens=max_tokens,
+            prompt_builder=prompt_builder,
         )
         from openjarvis.tools._stubs import ToolExecutor
 

@@ -1,0 +1,10 @@
+W83 P3/W3 persona wiring patch 2026-09-24T19:04:01
+ANCHORS [1, 1, 1, 1, 1, 1] (want all 1)
+PATCHED _stubs.py            marker=1 sha=D9BE6A043F7B54C7
+PATCHED native_openhands.py  marker=1 sha=ABBB871F71F2484C
+PATCHED builder.py           marker=1 sha=E964C9DA54123A0D
+PATCHED serve.py             marker=1 sha=839D78AF6C5A9DA7
+BACKUP suffix .bak-W83-persona-20260924_190401
+T1 builder cache-stable=True live-after-change=True
+T2 system_msgs=1 template=True persona=True memory_live=True per_turn_ignored=True
+T3 serve.py compiled OK

@@ -74,6 +74,7 @@ class NativeOpenHandsAgent(ToolUsingAgent):
         max_tokens: Optional[int] = None,
         interactive: bool = False,
         confirm_callback=None,
+        prompt_builder=None,  # openjarvis-w83-persona-v1
     ) -> None:
         super().__init__(
             engine,
@@ -85,6 +86,7 @@ class NativeOpenHandsAgent(ToolUsingAgent):
             max_tokens=max_tokens,
             interactive=interactive,
             confirm_callback=confirm_callback,
+            prompt_builder=prompt_builder,
         )
 
     @staticmethod
