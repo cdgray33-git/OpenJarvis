@@ -1,0 +1,8 @@
+W83 O-a skipdirs patch 2026-09-24T17:52:41
+ANCHOR count=1 (want 1)
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\ingest.py.bak-W83-skipdirs-20260924_175241
+AFTER sha256=AEB183926792B264 bytes=7413 marker=1
+T1+T3 ingest_path sources=['keep.txt', 'target_notes.txt'] PASS=True
+T2 memory_index success=True count=2 content='Indexed 2 chunks from C:\\Users\\Admin\\AppData\\Local\\Temp\\tmpuat2ruuu\\docs'
+T2 PASS=True
+memory.db untouched: {"entries":3,"total_documents":3,"total_chunks":3,"backend":"sqlite"}

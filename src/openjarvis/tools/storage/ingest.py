@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 _SKIP_DIRS = frozenset(
     {
         "__pycache__",
+        # openjarvis-w83-skipdirs-v1 (owner O-a, W83): build output trees - likely route to the 21 GB corpus
+        "target",
+        "dist",
+        "build",
         ".git",
         ".hg",
         ".svn",
