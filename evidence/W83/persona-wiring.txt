@@ -1,0 +1,67 @@
+W83 persona wiring check 2026-09-24T18:16:24
+--- AUTHOR af21bc18 ---
+  [SystemPromptBuilder] af21bc18:src/openjarvis/prompt/builder.py:9:class SystemPromptBuilder:
+  [_seed_memory_files] af21bc18:src/openjarvis/cli/_bootstrap.py:165:    _seed_memory_files()
+  [_seed_memory_files] af21bc18:src/openjarvis/cli/_bootstrap.py:170:def _seed_memory_files() -> None:
+  [soul_path] af21bc18:src/openjarvis/cli/init_cmd.py:503:    soul_path = DEFAULT_CONFIG_DIR / "SOUL.md"
+  [soul_path] af21bc18:src/openjarvis/cli/init_cmd.py:504:    if not soul_path.exists():
+  [soul_path] af21bc18:src/openjarvis/cli/init_cmd.py:505:        soul_path.write_text(
+  [soul_path] af21bc18:src/openjarvis/core/config.py:1385:    soul_path: str = "~/.openjarvis/SOUL.md"
+  [soul_path] af21bc18:src/openjarvis/prompt/builder.py:52:            self._mf_config.soul_path,
+  [user_path] af21bc18:src/openjarvis/cli/init_cmd.py:513:    user_path = DEFAULT_CONFIG_DIR / "USER.md"
+  [user_path] af21bc18:src/openjarvis/cli/init_cmd.py:514:    if not user_path.exists():
+  [user_path] af21bc18:src/openjarvis/cli/init_cmd.py:515:        user_path.write_text("# User Profile\n\n")
+  [user_path] af21bc18:src/openjarvis/core/config.py:1387:    user_path: str = "~/.openjarvis/USER.md"
+  [user_path] af21bc18:src/openjarvis/prompt/builder.py:64:            self._mf_config.user_path,
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:17:    def __init__(self, user_path: Path | str = "~/.openjarvis/USER.md") -> None:
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:18:        self._user_path = Path(user_path).expanduser()
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:71:        if self._user_path.exists():
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:72:            content = self._user_path.read_text()
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:86:        self._user_path.parent.mkdir(parents=True, exist_ok=True)
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:87:        existing = self._user_path.read_text() if self._user_path.exists() else ""
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:88:        self._user_path.write_text(existing.rstrip() + f"\n- {entry}\n")
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:96:        if not self._user_path.exists():
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:102:        text = self._user_path.read_text()
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:109:        self._user_path.write_text(text.replace(old, new, 1))
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:117:        if not self._user_path.exists():
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:123:        text = self._user_path.read_text()
+  [user_path] af21bc18:src/openjarvis/tools/user_profile_manage.py:132:        self._user_path.write_text("\n".join(new_lines))
+  [memory_files] af21bc18:src/openjarvis/cli/_bootstrap.py:165:    _seed_memory_files()
+  [memory_files] af21bc18:src/openjarvis/cli/_bootstrap.py:170:def _seed_memory_files() -> None:
+  [memory_files] af21bc18:src/openjarvis/core/config.py:1508:    memory_files: MemoryFilesConfig = field(default_factory=MemoryFilesConfig)
+  [memory_files] af21bc18:src/openjarvis/prompt/builder.py:15:        memory_files_config: Optional[MemoryFilesConfig] = None,
+  [memory_files] af21bc18:src/openjarvis/prompt/builder.py:25:        self._mf_config = memory_files_config or MemoryFilesConfig()
+  [write_initial_config] af21bc18:src/openjarvis/cli/_bootstrap.py:104:def write_initial_config(
+  [write_initial_config] af21bc18:src/openjarvis/cli/_bootstrap.py:243:    write_initial_config(
+--- LOCAL src (excluding .bak) ---
+  src\openjarvis\cli\init_cmd.py:503 soul_path = DEFAULT_CONFIG_DIR / "SOUL.md"
+  src\openjarvis\cli\init_cmd.py:504 if not soul_path.exists():
+  src\openjarvis\cli\init_cmd.py:505 soul_path.write_text(
+  src\openjarvis\cli\init_cmd.py:513 user_path = DEFAULT_CONFIG_DIR / "USER.md"
+  src\openjarvis\cli\init_cmd.py:514 if not user_path.exists():
+  src\openjarvis\cli\init_cmd.py:515 user_path.write_text("# User Profile\n\n")
+  src\openjarvis\cli\_bootstrap.py:104 def write_initial_config(
+  src\openjarvis\cli\_bootstrap.py:165 _seed_memory_files()
+  src\openjarvis\cli\_bootstrap.py:170 def _seed_memory_files() -> None:
+  src\openjarvis\cli\_bootstrap.py:243 write_initial_config(
+  src\openjarvis\core\config.py:1412 soul_path: str = "~/.openjarvis/SOUL.md"
+  src\openjarvis\core\config.py:1414 user_path: str = "~/.openjarvis/USER.md"
+  src\openjarvis\core\config.py:1535 memory_files: MemoryFilesConfig = field(default_factory=MemoryFilesConfig)
+  src\openjarvis\prompt\builder.py:9 class SystemPromptBuilder:
+  src\openjarvis\prompt\builder.py:15 memory_files_config: Optional[MemoryFilesConfig] = None,
+  src\openjarvis\prompt\builder.py:25 self._mf_config = memory_files_config or MemoryFilesConfig()
+  src\openjarvis\prompt\builder.py:52 self._mf_config.soul_path,
+  src\openjarvis\prompt\builder.py:64 self._mf_config.user_path,
+  src\openjarvis\tools\user_profile_manage.py:17 def __init__(self, user_path: Path | str = "~/.openjarvis/USER.md") -> None:
+  src\openjarvis\tools\user_profile_manage.py:18 self._user_path = Path(user_path).expanduser()
+  src\openjarvis\tools\user_profile_manage.py:71 if self._user_path.exists():
+  src\openjarvis\tools\user_profile_manage.py:72 content = self._user_path.read_text()
+  src\openjarvis\tools\user_profile_manage.py:86 self._user_path.parent.mkdir(parents=True, exist_ok=True)
+  src\openjarvis\tools\user_profile_manage.py:87 existing = self._user_path.read_text() if self._user_path.exists() else ""
+  src\openjarvis\tools\user_profile_manage.py:88 self._user_path.write_text(existing.rstrip() + f"\n- {entry}\n")
+  src\openjarvis\tools\user_profile_manage.py:96 if not self._user_path.exists():
+  src\openjarvis\tools\user_profile_manage.py:102 text = self._user_path.read_text()
+  src\openjarvis\tools\user_profile_manage.py:109 self._user_path.write_text(text.replace(old, new, 1))
+  src\openjarvis\tools\user_profile_manage.py:117 if not self._user_path.exists():
+  src\openjarvis\tools\user_profile_manage.py:123 text = self._user_path.read_text()
+  src\openjarvis\tools\user_profile_manage.py:132 self._user_path.write_text("\n".join(new_lines))

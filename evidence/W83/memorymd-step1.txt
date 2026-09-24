@@ -1,0 +1,37 @@
+W83 MEMORY.md validation step 1 2026-09-24T18:11:25
+FILE MEMORY.md  ABSENT
+FILE SOUL.md    ABSENT
+FILE USER.md    ABSENT
+--- LOCAL src readers of MEMORY.md / memory_path ---
+  src\openjarvis\cli\init_cmd.py:509 memory_path = DEFAULT_CONFIG_DIR / "MEMORY.md"
+  src\openjarvis\cli\init_cmd.py:510 if not memory_path.exists():
+  src\openjarvis\cli\init_cmd.py:511 memory_path.write_text("# Agent Memory\n\n")
+  src\openjarvis\cli\_bootstrap.py:171 """Create SOUL.md / MEMORY.md / USER.md / skills/ if absent."""
+  src\openjarvis\cli\_bootstrap.py:175 if not (home / "MEMORY.md").exists():
+  src\openjarvis\cli\_bootstrap.py:176 (home / "MEMORY.md").write_text(_DEFAULT_MEMORY)
+  src\openjarvis\core\config.py:1413 memory_path: str = "~/.openjarvis/MEMORY.md"
+  src\openjarvis\prompt\builder.py:58 self._mf_config.memory_path,
+  src\openjarvis\tools\memory_manage.py:1 """Manage persistent agent memory (MEMORY.md)."""
+  src\openjarvis\tools\memory_manage.py:15 """Manage persistent agent memory (MEMORY.md)."""
+  src\openjarvis\tools\memory_manage.py:17 def __init__(self, memory_path: Path | str = "~/.openjarvis/MEMORY.md") -> None:
+  src\openjarvis\tools\memory_manage.py:18 self._memory_path = Path(memory_path).expanduser()
+  src\openjarvis\tools\memory_manage.py:73 if self._memory_path.exists():
+  src\openjarvis\tools\memory_manage.py:74 content = self._memory_path.read_text()
+  src\openjarvis\tools\memory_manage.py:88 self._memory_path.parent.mkdir(parents=True, exist_ok=True)
+  src\openjarvis\tools\memory_manage.py:89 existing = self._memory_path.read_text() if self._memory_path.exists() else ""
+  src\openjarvis\tools\memory_manage.py:90 self._memory_path.write_text(existing.rstrip() + f"\n- {entry}\n")
+  src\openjarvis\tools\memory_manage.py:98 if not self._memory_path.exists():
+  src\openjarvis\tools\memory_manage.py:104 text = self._memory_path.read_text()
+  src\openjarvis\tools\memory_manage.py:111 self._memory_path.write_text(text.replace(old, new, 1))
+  src\openjarvis\tools\memory_manage.py:119 if not self._memory_path.exists():
+  src\openjarvis\tools\memory_manage.py:125 text = self._memory_path.read_text()
+  src\openjarvis\tools\memory_manage.py:134 self._memory_path.write_text("\n".join(new_lines))
+--- AUTHOR af21bc18 readers of MEMORY.md ---
+  af21bc18:src/openjarvis/cli/_bootstrap.py:171:    """Create SOUL.md / MEMORY.md / USER.md / skills/ if absent."""
+  af21bc18:src/openjarvis/cli/_bootstrap.py:175:    if not (home / "MEMORY.md").exists():
+  af21bc18:src/openjarvis/cli/_bootstrap.py:176:        (home / "MEMORY.md").write_text(_DEFAULT_MEMORY)
+  af21bc18:src/openjarvis/cli/init_cmd.py:509:    memory_path = DEFAULT_CONFIG_DIR / "MEMORY.md"
+  af21bc18:src/openjarvis/core/config.py:1386:    memory_path: str = "~/.openjarvis/MEMORY.md"
+  af21bc18:src/openjarvis/tools/memory_manage.py:1:"""Manage persistent agent memory (MEMORY.md)."""
+  af21bc18:src/openjarvis/tools/memory_manage.py:15:    """Manage persistent agent memory (MEMORY.md)."""
+  af21bc18:src/openjarvis/tools/memory_manage.py:17:    def __init__(self, memory_path: Path | str = "~/.openjarvis/MEMORY.md") -> None:
