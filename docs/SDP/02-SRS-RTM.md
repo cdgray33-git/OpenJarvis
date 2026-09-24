@@ -1,5 +1,5 @@
 # VOL 2 - SOFTWARE REQUIREMENTS SPECIFICATION (SRS) AND TRACEABILITY MATRIX
-Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28. v0.5 (W77): first VERIFIED rows (RQ-022, RQ-030); requirements unchanged since W75. v0.7 (W83): R1 qualification ruling; RQ-024 and RQ-031 assessed.
+Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28. v0.5 (W77): first VERIFIED rows (RQ-022, RQ-030); requirements unchanged since W75. v0.7 (W83): R1 qualification ruling; RQ-024 and RQ-031 assessed. v0.8 (W83): RQ-024 VERIFIED by owner ruling, 4/28.
 v0.1 (W72) seeded RQ-001..004. v0.2 adds RQ-005..031 recovered from the pre-OpenJarvis
 executive-assistant artifacts (R1.1). Design mapping is R1.2; verification is R1.3.
 
@@ -114,7 +114,7 @@ A row is VERIFIED only when its full row text passes. Tier A evidence supplement
 | RQ-004 | Path 1b, stream_bridge, Option A | IF-01 | stream_probe_w70 | OPEN (POAM-01) |
 | RQ-021 | web_search tool; shared ToolUsingAgent text parser (textparse-v3) + [agent] tools config - Vol 3A C, F8 | SDK ask_full AND live server 8010 | W77: SDK tool_results [web_search] turns 2 (sdk-verify-after.json); server sourced World Bank/Statista answer (surfaceA-gdp.json) | VERIFIED |
 | RQ-022 | calculator tool (ast-based) - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results [calculator -> "5754.0" success], turns 2 - evidence\W77\sdk-verify.json | VERIFIED |
-| RQ-024 | memory_store / memory_search / memory_retrieve (author tools, D-26) + author context injection (D-24, D-25) | IF-18, dispatch.log | W83: TAKE PASS - memory_store dispatch OUTCOME reason=OK, memory.db 115->116; GET PASS - reply 'BLUEHERON-7731' via injection; LIST FAIL - memory backend has no list operation, memory_search('stored notes') returned other documents (rq024-list-test.txt); W83 P2: LIST via author memory_manage DIRECTED PASS (read lists AMBERFINCH-5520, dispatch OK); UNDIRECTED ask FAILED (model unaware of notes, D-33). P3 wired persona (D-36); N1 (e25b7c0): UNDIRECTED take -> memory_manage OUTCOME OK + MEMORY.md, UNDIRECTED list names every note (framing caveat: memory_search called first). EVIDENCE SUPPORTS VERIFIED; OWNER RULING PENDING | PARTIAL |
+| RQ-024 | memory_store / memory_search / memory_retrieve (author tools, D-26) + author context injection (D-24, D-25) | IF-18, dispatch.log | W83: TAKE PASS - memory_store dispatch OUTCOME reason=OK, memory.db 115->116; GET PASS - reply 'BLUEHERON-7731' via injection; LIST FAIL - memory backend has no list operation, memory_search('stored notes') returned other documents (rq024-list-test.txt); W83 P2: LIST via author memory_manage DIRECTED PASS (read lists AMBERFINCH-5520, dispatch OK); UNDIRECTED ask FAILED (model unaware of notes, D-33). P3 wired persona (D-36); N1 (e25b7c0): UNDIRECTED take -> memory_manage OUTCOME OK + MEMORY.md, UNDIRECTED list names every note (framing caveat: memory_search called first). OWNER RULED VERIFIED W83 2026-09-24 (framing caveat recorded) | VERIFIED |
 | RQ-031 | memory tools + context injection | IF-18 | W83: fact recall PASS (BLUEHERON); recall of prior conversations and actions NOT TESTED; lessons-learned loop NOT BUILT (enhancement list: self-learning, author learning package first) | PARTIAL |
 | RQ-025 | llm tool, any agent - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results EMPTY, turns 1, model answered directly - evidence\W77\sdk-verify.json | NOT VERIFIED (not delegated) |
 | RQ-030 | Ollama engine, local-first default - Vol 3A C | engine gate, TCP 11434 | W77: engine=ollama telemetry 7118-7132; TCP peer 172.16.33.200:11434 (E3); jarvis model list - evidence\W77\model-list.txt, surface-probe.txt | VERIFIED |
@@ -124,7 +124,8 @@ A row is VERIFIED only when its full row text passes. Tier A evidence supplement
 PROGRESS BASELINE (W76, 2026-09-22, before any test run): VERIFIED 0/28.
 PROGRESS (W77, 2026-09-22, after the parser + config fix): VERIFIED 3/28 - RQ-021, RQ-022, RQ-030.
 PARTIAL: RQ-001, RQ-002. OPEN: RQ-004. NOT VERIFIED (tested, failed): RQ-025 (model did not delegate to the llm tool; not a parse failure). NOT ASSESSED: 22.
-PROGRESS (W83, 2026-09-24): VERIFIED 3/28 unchanged. PARTIAL: RQ-001, RQ-002, RQ-024, RQ-031. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20.
+PROGRESS (W83, 2026-09-24): VERIFIED 3/28 unchanged. PARTIAL: RQ-001, RQ-002, RQ-024, RQ-031.
+PROGRESS (W83 owner ruling, 2026-09-24): VERIFIED 4/28 - RQ-021, RQ-022, RQ-024, RQ-030. PARTIAL: RQ-001, RQ-002, RQ-031. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20.
 QUALIFICATION RULE AMENDMENT (owner ruling R1, W83): dispatch.log ATTEMPT/OUTCOME lines (per call, turn id, reason code,
 %LOCALAPPDATA%\OpenJarvis\logs\dispatch.log) are ACCEPTED as the server-path machine invocation record, provided the pass
 criterion also checks the reply content. It records that a tool ran, not that the reply was faithful to it.
