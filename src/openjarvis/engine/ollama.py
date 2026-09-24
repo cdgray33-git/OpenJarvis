@@ -55,7 +55,7 @@ class OllamaEngine(InferenceEngine):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        msg_dicts = messages_to_dicts(messages)
+        msg_dicts = _oj_merge_system(messages_to_dicts(messages))  # openjarvis-w83-sysmerge-v1
         # Ollama expects tool_call arguments as dicts, not JSON strings
         for md in msg_dicts:
             for tc in md.get("tool_calls", []):
@@ -186,7 +186,7 @@ class OllamaEngine(InferenceEngine):
     ) -> AsyncIterator[str]:
         payload: Dict[str, Any] = {
             "model": model,
-            "messages": messages_to_dicts(messages),
+            "messages": _oj_merge_system(messages_to_dicts(messages)),  # openjarvis-w83-sysmerge-v1
             "stream": True,
             "options": {
                 "temperature": temperature,
@@ -252,7 +252,7 @@ class OllamaEngine(InferenceEngine):
         response. Falls back to a tools-less retry on 400 (mirrors
         ``generate()``'s behaviour for models that don't support tools).
         """
-        msg_dicts = messages_to_dicts(messages)
+        msg_dicts = _oj_merge_system(messages_to_dicts(messages))  # openjarvis-w83-sysmerge-v1
         for md in msg_dicts:
             for tc in md.get("tool_calls", []):
                 fn = tc.get("function", {})
@@ -536,3 +536,34 @@ def _oj_default_num_ctx():
     _OJ_NUM_CTX_CACHE = value
     return _OJ_NUM_CTX_CACHE
 # --- end openjarvis-num-ctx-config-v1 ---------------------------------------
+
+
+# --- openjarvis-w83-sysmerge-v1 ---
+# The qwen3-coder Ollama chat template renders only the FIRST system message;
+# later system messages are silently dropped (measured W83 H4: +1 token vs +180 merged).
+# The author's context injection prepends its own system message, so it never reached
+# the model on agent paths. Merge all system messages into one, at the first's position.
+def _oj_merge_system(msg_dicts):
+    try:
+        idx = [i for i, m in enumerate(msg_dicts) if isinstance(m, dict) and m.get("role") == "system"]
+        if len(idx) < 2:
+            return msg_dicts
+        parts = []
+        for i in idx:
+            c = msg_dicts[i].get("content")
+            if c is None:
+                c = ""
+            if not isinstance(c, str):
+                logger.info("SYSMERGE skipped non-text system content count=%d", len(idx))
+                return msg_dicts
+            if c.strip():
+                parts.append(c)
+        merged = dict(msg_dicts[idx[0]])
+        merged["content"] = "\n\n".join(parts)
+        drop = set(idx[1:])
+        out = [merged if i == idx[0] else m for i, m in enumerate(msg_dicts) if i not in drop]
+        logger.info("SYSMERGE merged=%d chars=%d", len(idx), len(merged["content"]))
+        return out
+    except Exception:
+        logger.warning("SYSMERGE error - messages unchanged", exc_info=True)
+        return msg_dicts
