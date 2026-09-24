@@ -278,10 +278,9 @@ async def _process_single_file(memory_backend, filename: str, data: bytes, ext: 
     doc_title = title or filename
 
     if ext in (".txt", ".md", ".csv"):
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            text = data.decode("latin-1")
+        text = _oj_decode_text(data, filename)  # openjarvis-w83-decode-v1
+        if text is None:
+            return
         text = text.strip()
         if not text:
             return
@@ -364,3 +363,29 @@ async def _process_single_file(memory_backend, filename: str, data: bytes, ext: 
             },
         )
         logger.info("Stored video metadata %s (doc_id=%s, %d bytes)", filename, doc_id, len(data))
+
+
+# --- openjarvis-w83-decode-v1 ---
+# Author defect (af21bc18 upload_router.py:182-184): utf-8 then latin-1. A UTF-16 file (PowerShell 5.1 '>' output,
+# many Windows exports) fails utf-8, and latin-1 never fails, so each char is stored followed by NUL: unsearchable.
+# Fix: BOM first, then utf-8, then latin-1; refuse text still >10% NUL (binary or BOM-less UTF-16).
+def _oj_decode_text(data, filename):
+    enc = None
+    try:
+        if data[:3] == b'\xef\xbb\xbf':
+            text, enc = data[3:].decode('utf-8', errors='replace'), 'utf-8-sig'
+        elif data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+            text, enc = data.decode('utf-16'), 'utf-16'
+    except UnicodeDecodeError:
+        enc = None
+    if enc is None:
+        try:
+            text, enc = data.decode('utf-8'), 'utf-8'
+        except UnicodeDecodeError:
+            text, enc = data.decode('latin-1'), 'latin-1'
+    nul = text.count('\x00')
+    if text and nul * 10 > len(text):
+        logger.warning('DECODE refused %s: %d of %d chars NUL after %s decode - not stored', filename, nul, len(text), enc)
+        return None
+    logger.info('DECODE %s as %s chars=%d', filename, enc, len(text))
+    return text

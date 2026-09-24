@@ -1,0 +1,8 @@
+W83 upload_router author check 2026-09-24T17:25:18
+AUTHOR bytes=6617
+NUMSTAT 194	46	evidence/W83/af21bc18-upload_router.py => src/openjarvis/server/upload_router.py
+AUTHOR :182 text = data.decode("utf-8")
+AUTHOR :184 text = data.decode("latin-1")
+LOCAL  :95 b64 = base64.b64encode(data).decode('ascii')
+LOCAL  :282 text = data.decode("utf-8")
+LOCAL  :284 text = data.decode("latin-1")

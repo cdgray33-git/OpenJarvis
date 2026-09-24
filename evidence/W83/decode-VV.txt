@@ -1,0 +1,10 @@
+W83 decode V&V 2026-09-24T17:34:49
+V1 PID 18520 START 2026-09-24T17:33:36  PASS=True
+V2 route status=200 body={"chunks_added":2,"source":"upload"}
+V2 stats 3 -> 4  PASS=True
+V3 hits=1 nul_in_top=0 top='W83 decode test ZEPHYRQUILL8842 remote host line'  PASS=True
+V5 cleanup deleted=1 of 1
+V5 count=3 rows_with_NUL=0  PASS=True
+V4 2026-09-24 17:34:54,464 INFO openjarvis.server.upload_router: DECODE w83_utf16.txt as utf-16 chars=50
+V4 2026-09-24 17:34:54,477 WARNING openjarvis.server.upload_router: DECODE refused w83_junk.txt: 87 of 174 chars NUL after utf-8 decode - not stored
+LIVE stats {"entries":3,"total_documents":3,"total_chunks":3,"backend":"sqlite"}

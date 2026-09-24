@@ -1,0 +1,11 @@
+W83 decode patch 2026-09-24T17:31:43
+DECODE refused u5: 25 of 50 chars NUL after utf-8 decode - not stored
+BEFORE sha256 51E880120B79F63D94378BE9C6D1A1FA10EE7E3E2903366D3706AACE2C41E17B 12638 bytes
+ANCHOR count=1 (want 1) newline='\n'
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\upload_router.py.bak-W83-decode-20260924_173143
+AFTER  sha256 F8C409F4DB1D5A181569B01D5B8A2CA5098D7B184792FBA4948158847597417C 13813 bytes  marker_count=2
+U1 utf16 True
+U2 utf8sig True
+U3 utf8 True
+U4 latin1 True
+U5 nul-junk refused True
