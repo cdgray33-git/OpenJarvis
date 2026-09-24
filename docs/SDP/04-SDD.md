@@ -183,6 +183,14 @@ Manual/UI runs: route calls start_tick then a daemon threading.Thread per run - 
 Author operators (OperatorManager -> TaskScheduler -> AgentExecutor -> OperativeAgent) have NEVER RUN here ([scheduler],
 [operators] disabled) [M W72]. Managed agents in agents.db are the owner's personal agents, not the Jarvis build [S W72].
 Defect class named (W54): consent granted against one set while a different set executes (W52 args {}, W53 toolkit, W54).
+Inventory W82 [M evidence\W82\agents-inventory.txt]: 19 agent types registered (10 accept tools: deep_research, monitor_operative,
+morning_digest, native_openhands, native_react/react, operative, orchestrator, rlm). Owner's 8 managed agents (agents.db): none has a
+schedule (scheduler active with nothing to run); Cody-Builder ERROR litellm "LLM Provider NOT provided" (model string lacks provider
+prefix); Cody-Coder ERROR "No module named 'litellm.responses.mcp'" (dependency); Cody max turns; agent_tasks and agent_checkpoints empty.
+R3.1 closed by record: both errors are configuration/dependency, not agent logic.
+DISPATCHER: the author ships agent_spawn / agent_send / agent_list / agent_kill (tools\agent_tools.py, registered by decorator) for an
+orchestrator to spawn and direct sub-agents by type. They are ABSENT from the live registry_keys (startup banner 09/23 21:35) - the
+dispatcher exists in code but is not loaded on this server [M W82]. Operators layer never run [M W72].
 
 ## 9. MODEL HOST RESOLUTION
 | Reader | Order | Grade |
@@ -273,3 +281,16 @@ install proof. CDP port 9222 removed W63; `--use-fake-ui-for-media-stream` auto-
 - Consent granted against one set while another executes is a recurring failure class (W52-W54).
 - Enforcement belongs where the work happens (SQLite authorizer, toolkit bind), not where the request is read (W55).
 - An instrument you cannot read is an instrument you do not have (09/06); register it and verify its output path at build time.
+
+## 16. RETRIEVAL-AUGMENTED GENERATION (RAG) - STATE AT W82 [M evidence\W82\rag-inventory.txt; R af21bc18]
+Author stack: MemoryRegistry backends sqlite (FTS5 keyword, default), bm25, dense (embeddings), faiss, colbert, hybrid (reciprocal rank
+fusion of two retrievers), knowledge_graph, knowledge (connectors KnowledgeStore); ingestion tools\storage\ingest.py + chunking.py,
+`jarvis memory index`, /v1/connectors/upload/ingest[/files]; use in answers by context injection on the chat path ([agent]
+context_from_memory), RetrievalTool, and deep_research over knowledge.db.
+Graystone state: backend sqlite; memory.db 115 documents in an FTS5 index (last write 2026-09-20); knowledge.db 0 chunks (untouched since
+05/19, so deep_research has nothing to search); config [memory] context_top_k 3, context_max_tokens 1200, context_min_score 20.0;
+[agent] context_from_memory true; chat toolkit includes retrieval but NOT memory_store / memory_retrieve / memory_search. Semantic
+retrieval impossible today (F2: no embedding model on .200, no host passed). Live routes /v1/memory/config, /index, /search, /stats,
+/store give a model-free test surface. Recall has never been observed working.
+Plain language: Jarvis has a notebook with 115 pages and can look words up in it, but only by exact words, not by meaning. A second
+notebook for research is empty. Whether Jarvis ever actually opens the notebook while answering you has never been checked.
