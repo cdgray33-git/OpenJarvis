@@ -1,0 +1,15 @@
+W83 memory.db snapshot + title inventory 2026-09-24T17:10:31
+SNAPSHOT C:\Users\Admin\OpenJarvis\evidence\W83\backup\memory.db.snap-20260924_171031  405504 bytes
+TOTAL docs=116 titles=12
+DOC src=upload  chunks= 50 bytes=      3  boot_backend_dump.txt
+DOC src=upload  chunks= 11 bytes=   9597  code-companion.md
+DOC src=upload  chunks= 11 bytes=   8783  README.md
+DOC src=upload  chunks=  9 bytes=   7380  deep-research.md
+DOC src=upload  chunks=  9 bytes=   7957  messaging-hub.md
+DOC src=upload  chunks=  9 bytes=   8196  scheduled-ops.md
+DOC src=upload  chunks=  9 bytes=   7974  skills-workflow.md
+DOC src=upload  chunks=  3 bytes=   2778  index.md
+DOC src=upload  chunks=  2 bytes=   1004  executive assistant notes.txt
+DOC src=upload  chunks=  1 bytes=    130  cutover_probe_OJPROBE-31A92CD53424.txt
+DOC src=upload  chunks=  1 bytes=     41  Screenshot 2026-09-03 151224.png
+DOC src=(empty) chunks=  1 bytes=     40  (no title)

@@ -1,0 +1,9 @@
+W83 memory.db selective clear 2026-09-24T17:17:27
+PLAN total=116 delete=113 keep=3
+DELETED ok=113 of 113
+COUNT after=3
+REMAIN src=upload  title=executive assistant notes.txt    content='ASSISTANT\r\n\r\nUpdated Understanding:\r\n\r\nYour Complete Archite'
+REMAIN src=upload  title=executive assistant notes.txt    content='attached'
+REMAIN src=(empty) title=                                 content='The W83 test code word is BLUEHERON-7731'
+RECALL BLUEHERON hits=1 top='The W83 test code word is BLUEHERON-7731'
+LIVE stats {"entries":3,"total_documents":3,"total_chunks":3,"backend":"sqlite"}
