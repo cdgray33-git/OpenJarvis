@@ -1,5 +1,5 @@
 # VOL 4 - SOFTWARE DESIGN DESCRIPTION (SDD)
-Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), harvested from ARCHIVE-W42..W81 plus W82 measurement.
+Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16), harvested from ARCHIVE-W42..W81 plus W82 measurement.
 Every fact carries a grade and the window that established it. Line numbers are as recorded in that window; files have since
 changed, so a line cite is a pointer to verify, not a guarantee (the gate moved from _stubs.py:265 to :390 in W58, for example).
 Interfaces (ports, protocols, encoding) are in Vol 3; this volume references them by IF number.
@@ -227,6 +227,7 @@ on a timer take turns strictly one at a time. After a quiet spell the brain has 
 | openjarvis.dispatch | tools\_stubs.py | dispatch.log | 2 MB x4 | propagate=False; ATTEMPT/OUTCOME/GATEPRED/POLICY/PROTECTED |
 | openjarvis.agent | agents\native_openhands.py | agent.log | 2.5 MiB x4 | propagate=False |
 | openjarvis.retry400 | engine\ollama.py | engine.log | 2 MiB x2 | propagate=False; never fired (W45) |
+| openjarvis.engine.ollama | module logger (propagates to root) | backend.log | root cap | INFO "SYSMERGE merged=N chars=M" (W83); openjarvis.server "Memory context injection failed" is DEBUG - invisible at INFO |
 Four gates a log line must pass: logging not print(); logger level; propagate; a handler. print() and the warnings module go to
 a detached console and produce zero readable bytes (FastAPI duplicate-route warning H-W81-5 is console-only). No log path crosses
 a network. Starting the server without start-openjarvis.ps1 drops the tree to WARNING (single point of darkness).
@@ -265,7 +266,7 @@ install proof. CDP port 9222 removed W63; `--use-fake-ui-for-media-stream` auto-
 | BaseAgent / ToolUsingAgent | agents\_stubs.py | agent contract; shared text tool-call parser (textparse v1-v3, W77) |
 | OrchestratorAgent | agents\orchestrator.py | W77 text-call fallback (64b0660) |
 | InferenceEngine | engine\_stubs.py | engine contract |
-| OllamaEngine | engine\ollama.py | live backend; stream_full retries without tools on HTTP 400 |
+| OllamaEngine | engine\ollama.py | live backend; stream_full retries without tools on HTTP 400; W83 _oj_merge_system (one system message per request) |
 | MultiEngine / InstrumentedEngine / GuardrailsEngine | engine\multi.py, telemetry\instrumented_engine.py, security\guardrails.py | routing, telemetry, secret/PII scan (stream_full gaps POAM-04/05) |
 | EventBus | core\events.py | pub/sub |
 | AgentStreamBridge | server\stream_bridge.py | path 1b SSE bridge |
@@ -282,15 +283,42 @@ install proof. CDP port 9222 removed W63; `--use-fake-ui-for-media-stream` auto-
 - Enforcement belongs where the work happens (SQLite authorizer, toolkit bind), not where the request is read (W55).
 - An instrument you cannot read is an instrument you do not have (09/06); register it and verify its output path at build time.
 
-## 16. RETRIEVAL-AUGMENTED GENERATION (RAG) - STATE AT W82 [M evidence\W82\rag-inventory.txt; R af21bc18]
+## 16. RETRIEVAL-AUGMENTED GENERATION (RAG) - STATE AT W83 [M evidence\W83\*; R af21bc18]
 Author stack: MemoryRegistry backends sqlite (FTS5 keyword, default), bm25, dense (embeddings), faiss, colbert, hybrid (reciprocal rank
 fusion of two retrievers), knowledge_graph, knowledge (connectors KnowledgeStore); ingestion tools\storage\ingest.py + chunking.py,
 `jarvis memory index`, /v1/connectors/upload/ingest[/files]; use in answers by context injection on the chat path ([agent]
 context_from_memory), RetrievalTool, and deep_research over knowledge.db.
-Graystone state: backend sqlite; memory.db 115 documents in an FTS5 index (last write 2026-09-20); knowledge.db 0 chunks (untouched since
-05/19, so deep_research has nothing to search); config [memory] context_top_k 3, context_max_tokens 1200, context_min_score 20.0;
-[agent] context_from_memory true; chat toolkit includes retrieval but NOT memory_store / memory_retrieve / memory_search. Semantic
-retrieval impossible today (F2: no embedding model on .200, no host passed). Live routes /v1/memory/config, /index, /search, /stats,
-/store give a model-free test surface. Recall has never been observed working.
-Plain language: Jarvis has a notebook with 115 pages and can look words up in it, but only by exact words, not by meaning. A second
-notebook for research is empty. Whether Jarvis ever actually opens the notebook while answering you has never been checked.
+Author intent [M W83, af21bc18 core\config.py:874-876, :923]: context injection ON by default - context_top_k 5, context_min_score 0.0,
+context_max_tokens 2048, context_from_memory True. tools\storage\context.py is byte-identical to af21bc18 [M W83].
+
+### 16.1 Context injection flow, gate by gate (all in-process, no network until gate 7)
+| Gate | Where | What happens | Record / silence |
+|---|---|---|---|
+| 1 | serve.py:2589-2613 | if context_from_memory: MemoryRegistry.create(default_backend, db_path) -> SQLiteMemory (Rust FTS5); console "Memory: active"; backfilled into retrieval tool | "[DEBUG] wired memory_backend into 1 agent tool(s)" in backend.log |
+| 2 | app.py:225-226 | app.state.config, app.state.memory_backend set | - |
+| 3 | routes.py chat_completions (before ANY dispatch branch: 1a/1b/1c/1d) | guard: config + backend + context_from_memory + messages; query = last user message | failure logged at DEBUG on openjarvis.server - INVISIBLE at INFO (H-W83-3) |
+| 4 | context.py inject_context | backend.retrieve(query, top_k) - FTS5 OR-of-terms, BM25 score (positive, small: 0.03-8.3 measured) | MEMORY_RETRIEVE {backend, num_results} on the GLOBAL bus - in-process only, NOT carried by WS /v1/agents/events [M W83] |
+| 5 | context.py | filter score >= min_score; truncate to max_context_tokens (whitespace words); prepend ONE SYSTEM message "The following context was retrieved..." | MEMORY_RETRIEVE {context_injection: True, num_results, total_tokens} - in-process only |
+| 6 | routes.py rebuild -> _handle_agent / stream_bridge._run_agent -> agents\_stubs.py _build_messages (author, unchanged) | injected system message rides in ctx.conversation; output = [agent system prompt, context system message, user] | - |
+| 7 | engine\ollama.py generate / stream / stream_full (Graystone W83 sysmerge, 675cda6) | _oj_merge_system joins all system messages, in order, blank-line separated, into ONE at the first's position | "SYSMERGE merged=N chars=M" INFO openjarvis.engine.ollama -> backend.log [M]; no line = one or zero system messages |
+| 8 | HTTP POST 172.16.33.200:11434 /api/chat, JSON UTF-8 (IF-02) | Ollama applies the model chat template | prompt_eval_count = prompt_tokens_evaluated in inference_end events |
+
+### 16.2 Why injection never worked before W83 (two stacked faults, both measured)
+- Fault A (Graystone config): context_min_score 20.0 (set against the old 21 GB corpus) vs measured scores max 8.32 -> nothing passed
+  the filter [M W83 memory-search-scores, inject-probe]. Restored to author defaults 5 / 0.0 / 2048 (owner ruling W83, config.toml
+  out of git, backup config.toml.bak-W83-A-20260924_102149).
+- Fault B (author code vs model template): qwen3-coder:30b's Ollama template renders ONLY THE FIRST system message; a second is
+  silently dropped (+1 token vs +180 merged, H4 test). The author's context arrives as the SECOND system message, so on the agent paths
+  it never reached the model at any threshold [M W83 optionA-VV: config live, prompt_tokens_evaluated unchanged at 4194].
+  Fixed at the engine (openjarvis-w83-sysmerge-v1). V&V: 4194 -> 5314 (+1120, predicted ~1100), SYSMERGE lines present [M sysmerge-VV].
+- Direct paths 1c/1d already had one system message (the injected one) - not affected by Fault B.
+
+### 16.3 State after W83
+memory.db: 115 chunks, 405 KB, all source=upload, test material (probe files, code-companion.md, README text); created_at stored as
+JULIAN DAY (2461252.39 = 2026-07-30), not epoch. memory.db.old 21.36 GB retained (condition: ingester fix + one real ingestion cycle).
+knowledge.db 0 chunks. Chat toolkit: retrieval only (memory_store/retrieve/search not loaded). Semantic retrieval impossible (F2).
+DELIVERY proven; RECALL QUALITY not proven - with only test content, the model declines to treat it as "your notes" (H-W83-1).
+Cost: about +1,100 prompt tokens per agent turn at current content.
+Plain language: Jarvis has a notebook and now actually opens it before answering - before today it opened the notebook and then a
+filter threw every page away, and even when a page got through, the brain's reading glasses only showed it the first note on the desk.
+Both are fixed. The notebook itself is still full of test scribbles, so what Jarvis reads is not yet useful to you.
