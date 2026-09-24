@@ -1,0 +1,12 @@
+W83 memory tools V&V 2026-09-24T11:55:20
+V1 PID 23900 START 2026-09-24T11:51:01  PASS=True
+V2 tools_loaded has all 5=True  | 2026-09-24 11:51:44,178 INFO openjarvis.cli.serve: [DEBUG] wired memory_backend into 5 agent tool(s)
+V3 email turn prompt_tokens_evaluated=6237,7225  baseline_first=5314  delta_first=923  tools=memory_search
+V4 store turn tools=memory_store  stats 115 -> 116  PASS=True
+   DISPATCH 2026-09-24 11:54:45,562 INFO ATTEMPT turn=2b17ef17-t1 tool=memory_search args={"query": "email"} thread=asyncio_0
+   DISPATCH 2026-09-24 11:54:45,567 INFO OUTCOME turn=2b17ef17-t1 tool=memory_search success=True latency=0.005 timed_out=False reason=OK
+   DISPATCH 2026-09-24 11:55:03,249 INFO ATTEMPT turn=41c3d074-t1 tool=memory_store args={"content": "The W83 test code word is BLUEHERON-7731"} thread=asyncio_0
+   DISPATCH 2026-09-24 11:55:03,272 INFO OUTCOME turn=41c3d074-t1 tool=memory_store success=True latency=0.023 timed_out=False reason=OK
+   store reply: I've stored the fact that "the W83 test code word is BLUEHERON-7731" in my memory. I'll remember this for future reference.
+V5 recall turn tools=  SYSMERGE lines this turn=1  PASS=True
+   recall reply: BLUEHERON-7731

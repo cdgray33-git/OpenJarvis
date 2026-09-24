@@ -1,0 +1,23 @@
+W83 toolkit author-vs-local 2026-09-24T11:31:39
+--- AUTHOR af21bc18: agent tools defaults (config.py) ---
+  :919 tools: str = ""  # comma-separated tool names
+  :1491 tools: ToolsConfig = field(default_factory=ToolsConfig)
+  :1834 [agent]
+  :1913 [agent]
+--- LOCAL config.py: same patterns ---
+  :946 tools: str = ""  # comma-separated tool names
+  :1518 tools: ToolsConfig = field(default_factory=ToolsConfig)
+  :1861 [agent]
+  :1940 [agent]
+--- LIVE config.toml [agent] tools ---
+  tools = "code_interpreter,file_read,file_write,shell_exec,think,calculator,retrieval,web_search,mailbox_list_accounts,mailbox_usage_report,mailbox_find_messages,mailbox_move_to_trash,mailbox_empty_folder"
+--- AUTHOR af21bc18: memory tool registrations and serve.py tool wiring ---
+  af21bc18:src/openjarvis/cli/serve.py:194:                    configured = config.agent.tools
+  af21bc18:src/openjarvis/cli/serve.py:272:                        configured = config.agent.tools
+--- LOCAL: memory tool registrations ---
+  src\openjarvis\tools\memory_manage.py:13 @ToolRegistry.register("memory_manage")
+  src\openjarvis\tools\retrieval.py:14 @ToolRegistry.register("retrieval")
+  src\openjarvis\tools\storage_tools.py:18 @ToolRegistry.register("memory_store")
+  src\openjarvis\tools\storage_tools.py:81 @ToolRegistry.register("memory_retrieve")
+  src\openjarvis\tools\storage_tools.py:149 @ToolRegistry.register("memory_search")
+  src\openjarvis\tools\storage_tools.py:223 @ToolRegistry.register("memory_index")

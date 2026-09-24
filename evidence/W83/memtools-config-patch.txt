@@ -1,0 +1,5 @@
+W83 memory tools config patch 2026-09-24T11:44:29
+BACKUP C:\Users\Admin\.openjarvis\config.toml.bak-W83-memtools-20260924_114429
+AFTER  first3=5B 65 6E  names_before=13  names_after=18
+BEFORE tools = "code_interpreter,file_read,file_write,shell_exec,think,calculator,retrieval,web_search,mailbox_list_accounts,mailbox_usage_report,mailbox_find_messages,mailbox_move_to_trash,mailbox_empty_folder"
+AFTER  tools = "code_interpreter,file_read,file_write,shell_exec,think,calculator,retrieval,web_search,mailbox_list_accounts,mailbox_usage_report,mailbox_find_messages,mailbox_move_to_trash,mailbox_empty_folder,memory_store,memory_retrieve,memory_search,memory_index,memory_manage"
