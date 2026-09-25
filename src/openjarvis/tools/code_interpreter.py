@@ -69,6 +69,7 @@ class CodeInterpreterTool(BaseTool):
             )
 
         code = _oj_strip_fence(code)  # openjarvis-w83-codefence-v1
+        _oj_before = _oj_snapshot()  # openjarvis-w87-codefiles-v1
         # Security check
         for pattern in _BLOCKED_PATTERNS:
             if pattern in code:
@@ -91,11 +92,20 @@ class CodeInterpreterTool(BaseTool):
                 output += ("\n" if output else "") + result.stderr
             if len(output) > self._max_output:
                 output = output[: self._max_output] + "\n... (output truncated)"
+            # openjarvis-w87-codefiles-v1 (W87 G-10): report files the run created or changed, FIRST in content
+            _oj_files = _oj_changed(_oj_before)
+            _oj_content = output or "(no output)"
+            if _oj_files:
+                _oj_content = (
+                    "Files created or changed in the workspace:\n"
+                    + "\n".join("%s (%d bytes)" % (f["path"], f["size_bytes"]) for f in _oj_files)
+                    + "\n\nOutput:\n" + _oj_content
+                )
             return ToolResult(
                 tool_name="code_interpreter",
-                content=output or "(no output)",
+                content=_oj_content,
                 success=result.returncode == 0,
-                metadata={"returncode": result.returncode},
+                metadata={"returncode": result.returncode, "files": _oj_files},
             )
         except subprocess.TimeoutExpired:
             return ToolResult(
@@ -134,5 +144,32 @@ def _oj_strip_fence(code):
     if s.endswith("```"):
         s = s[:-3].rstrip()
     return s
+
+# openjarvis-w87-codefiles-v1 (W87 G-10): the author returns stdout only, so a script that saves a document and prints
+# nothing gives the model "(no output)" and no proof the file exists (S3 R2: valid .docx made, model then tried shell_exec to
+# check, hit the confirmation gate, and told the user it failed). Snapshot the workspace top level before the run and
+# report what changed after it. Files written OUTSIDE the workspace by absolute path are not seen here (G-1, POAM-50).
+def _oj_snapshot():
+    try:
+        d = Path(_oj_workdir())
+        return {p.name: (p.stat().st_mtime_ns, p.stat().st_size) for p in d.iterdir() if p.is_file()}
+    except Exception:
+        return None
+
+def _oj_changed(before):
+    if before is None:
+        return []
+    try:
+        d = Path(_oj_workdir())
+        out = []
+        for p in sorted(d.iterdir()):
+            if not p.is_file():
+                continue
+            st = p.stat()
+            if before.get(p.name) != (st.st_mtime_ns, st.st_size):
+                out.append({"path": str(p.resolve()), "size_bytes": st.st_size})
+        return out
+    except Exception:
+        return []
 
 __all__ = ["CodeInterpreterTool"]
