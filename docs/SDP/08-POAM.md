@@ -1,5 +1,5 @@
 # VOL 8 - PLAN OF ACTION AND MILESTONES (POA&M)
-v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..49, CLOSED rows). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
+v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..56, CLOSED rows). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
 assessment; the assessor and AO make the determination. Owner ruling W82 (DD-14): dormant findings are recorded and assessed at
 the end-of-build security review, not changed piecemeal.
 
@@ -54,6 +54,14 @@ the end-of-build security review, not changed piecemeal.
 | POAM-47 | memory_manage remove and user_profile_manage remove are ungated edits of the persona files | AC-6 | [R W83] | Open (record) |
 | POAM-48 | Notes list in the prompt is capped at 2,500 chars (head_tail truncation); a long notes list is cut in the prompt (memory_manage read still returns all) | SI-10 | [R builder.py] | Open (record) |
 | POAM-49 | Agent system-prompt override now read at startup, not per turn (D-36 side effect) | CM-3 | [R W83] | Accepted with D-36 |
+| POAM-50 | code_interpreter can save to ANY absolute path (substring blocklist; library save() and pathlib writes pass) - bypasses the file_write confinement | AC-6, CM-7 | G-1 [R] | Open - assessment due (options: accept, author code_interpreter_docker, path guard) |
+| POAM-51 | No delivery path: a created document is never returned to the family member | SI-10 | G-3 [M] | Open |
+| POAM-52 | Skills catalog not passed to the persona builder - installed Hermes skills are invisible to the model | CM-8 | G-6 [R] | Open |
+| POAM-53 | No self-verification path: file_write success message lacks the full path, no file-created event; model self-check via shell_exec hits the gate -> false 'failed' reply (R2) | AU-2, SI-10 | G-10 [M] | Open |
+| POAM-54 | dispatch.log OUTCOME records a reason code but not the tool's error text; code_interpreter stdout/stderr/exit code not logged | AU-3 | G-11 [M] | Open - visibility gap (owner goal) |
+| POAM-55 | Model detail fidelity: Excel formulas requested but values written in 2 of 3 runs | SI-10 (quality) | S3 R3 [M] | Open (tuning) |
+| POAM-56 | grpcio 1.78.1 in uv.lock is YANKED upstream (outage); zeus-ml asked for a nonexistent extra | SI-2 | [M uv output] | Open (pre-existing lock) |
+| CLOSED | Office files: relative saves in repo root (G-2), fenced code failed (G-9), file_write relative names denied (G-7), text written into .docx/.pptx with false 'created' claims | CM-2, SI-10 | W83 [M] | CLOSED 5883f98, 5a6735d, 0507c8c (D-41..D-45) |
 | CLOSED | Author persona layer never reached any tool agent (hook not forwarded, builder never built) | CM-2 | W83 [M] | CLOSED W83 6429769 (D-35, D-36) |
 | CLOSED | Ingest decode stored UTF-16 as char+NUL and accepted binaries (author defect, both paths) | SI-10 | W83 [M] | CLOSED W83 a457239 + 00edd61 (D-28, D-29) |
 | CLOSED | Author context injection never reached the model: min_score 20.0 above every score, and qwen3-coder template dropped the second system message | SI-11 | W83 [M] | CLOSED W83 (D-24 config, D-25 675cda6; V&V +1120 tokens) |

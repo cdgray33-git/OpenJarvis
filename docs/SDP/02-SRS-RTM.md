@@ -5,7 +5,7 @@ executive-assistant artifacts (R1.1). Design mapping is R1.2; verification is R1
 
 STATUS: REQUIREMENTS BASELINE RATIFIED BY OWNER 2026-09-22 (W75). GAP-020 CLOSED.
 CORE (Phase 1): 29 rows. RQ-003 is a rollup, so 28 rows are measured.
-PHASE 2 (supporting roles, deferred by owner): RQ-023, RQ-027, RQ-032, RQ-033.
+PHASE 2 (supporting roles, deferred by owner): RQ-023, RQ-027, RQ-032, RQ-033. W83: PULLED FORWARD by owner (D-39) to test and tune the persona with MS Office.
 Owner ruling: document creation, diagrams, and similar output are supporting roles that
 enhance the assistant; they are not core and are built in a later phase.
 
@@ -119,13 +119,15 @@ A row is VERIFIED only when its full row text passes. Tier A evidence supplement
 | RQ-025 | llm tool, any agent - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results EMPTY, turns 1, model answered directly - evidence\W77\sdk-verify.json | NOT VERIFIED (not delegated) |
 | RQ-030 | Ollama engine, local-first default - Vol 3A C | engine gate, TCP 11434 | W77: engine=ollama telemetry 7118-7132; TCP peer 172.16.33.200:11434 (E3); jarvis model list - evidence\W77\model-list.txt, surface-probe.txt | VERIFIED |
 | RQ-005..RQ-031 core (remaining 22) | TBD (R1.2) | TBD | TBD (R1.3) | NOT ASSESSED |
-| RQ-023, 027, 032, 033 | - | - | - | DEFERRED (Phase 2) |
+| RQ-032 | code_interpreter + python-docx/python-pptx/openpyxl (D-40..D-45); SOUL Office line (D-44) | dispatch.log, workspace files | W83 S3 re-run 3: 6/6 real .docx/.pptx/.xlsx from undirected family requests, 33/34 requested details machine-checked; open: G-3 delivery, G-10 self-verification (R2 false negative) | PARTIAL - owner ruling pending |
+| RQ-023, 027, 033 | - | - | - | Phase 2, pulled forward W83 (D-39), not yet assessed |
 
 PROGRESS BASELINE (W76, 2026-09-22, before any test run): VERIFIED 0/28.
 PROGRESS (W77, 2026-09-22, after the parser + config fix): VERIFIED 3/28 - RQ-021, RQ-022, RQ-030.
 PARTIAL: RQ-001, RQ-002. OPEN: RQ-004. NOT VERIFIED (tested, failed): RQ-025 (model did not delegate to the llm tool; not a parse failure). NOT ASSESSED: 22.
 PROGRESS (W83, 2026-09-24): VERIFIED 3/28 unchanged. PARTIAL: RQ-001, RQ-002, RQ-024, RQ-031.
-PROGRESS (W83 owner ruling, 2026-09-24): VERIFIED 4/28 - RQ-021, RQ-022, RQ-024, RQ-030. PARTIAL: RQ-001, RQ-002, RQ-031. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20.
+PROGRESS (W83 owner ruling, 2026-09-24): VERIFIED 4/28 - RQ-021, RQ-022, RQ-024, RQ-030.
+PHASE 2 PROGRESS (W83): RQ-032 evidence 6/6 real documents (S3 re-run 3, 0507c8c), owner ruling pending; RQ-023/027/033 not assessed. PARTIAL: RQ-001, RQ-002, RQ-031. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20.
 QUALIFICATION RULE AMENDMENT (owner ruling R1, W83): dispatch.log ATTEMPT/OUTCOME lines (per call, turn id, reason code,
 %LOCALAPPDATA%\OpenJarvis\logs\dispatch.log) are ACCEPTED as the server-path machine invocation record, provided the pass
 criterion also checks the reply content. It records that a tool ran, not that the reply was faithful to it.

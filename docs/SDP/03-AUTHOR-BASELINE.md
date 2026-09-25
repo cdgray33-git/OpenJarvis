@@ -442,3 +442,30 @@ after D-31 injection is far smaller (delta -811 is not a persona cost).
 Plain language: we plugged in the author's machine that reads Jarvis its name tag, its diary and the card about you before every
 conversation, and taught it (with one sentence in its name tag) that your notes live in its diary. It now knows its name, your
 notes and your preferred name without being told which tool to use.
+
+### G.6 W83 additions - Office documents, Phase 2 pulled forward (appended 2026-09-24, fifth package)
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-39 | Phase 2 scope | RQ-023/027/032/033 deferred by owner 09/22 | OWNER RULING W83: Phase 2 pulled forward - MS Office is needed to test and tune the agent persona | SCOPE RULING | office-inventory.txt |
+| D-40 | Office libraries | python-docx 1.2.0 is an AUTHOR dependency (pyproject.toml:43); no pptx/xlsx/COM code anywhere; no document tool in the 43-tool registry | python-pptx 1.0.2 + openpyxl 3.1.5 via `uv add --no-sync` (pyproject +2, uv.lock +49/-0) then `uv pip install` of the locked versions (+et-xmlfile 2.0.0, xlsxwriter 3.2.9); nothing removed | CHOICE (installer) | 685947b; office-s1-measure, office-s1 |
+| D-41 | code_interpreter working dir | subprocess.run with no cwd | cwd = first file_write allowed dir (~\.openjarvis\workspace) | AUTHOR DEFECT, fixed | 5883f98; codecwd-patch, codecwd-VV |
+| D-42 | code_interpreter fenced code | code run verbatim | strip one leading ``` fence line and a trailing fence BEFORE the blocklist check | AUTHOR DEFECT, fixed | 5a6735d; codefence-patch |
+| D-43 | file_write relative paths | relative path resolved against the server cwd | anchored to the first allowed dir; absolute and ~ paths unchanged; confinement check still on the final path | AUTHOR x GRAYSTONE INTERACTION DEFECT, fixed | 5a6735d; fwanchor-patch, s3-failure-probe |
+| D-44 | Persona office guidance | none | SOUL.md line: Office files via code_interpreter + python-docx/python-pptx/openpyxl, plain filename, workspace; file_write is plain text only (backup SOUL.md.bak-W83-F8-20260924_202629) | INSTALLER CONTENT | s3-rerun2 |
+| D-45 | file_write Office guard | none | file_write refuses .docx/.pptx/.xlsx (any case) and steers to code_interpreter | CHOICE (owner F-11) | 0507c8c; fwoffice-patch, s3-rerun3 |
+Defect record D-41: SYMPTOM - a document Jarvis creates by a plain filename lands in whatever folder the server was started from (the
+repo root), mixed into git and hard to find. TRIGGER - any relative save inside code_interpreter. FIX - cwd set to the workspace.
+Defect record D-42: SYMPTOM - "Execution error", the document is never made, the model falls back to pasting text. TRIGGER - the
+model wraps its code in ```python fences (common). FIX - strip the fence lines before the security check (the blocklist still sees
+the real code; a fenced os.system is still blocked, tested).
+Defect record D-43: SYMPTOM - every file_write by the model fails with "Access denied ... outside allowed directories". TRIGGER - any
+relative filename once allowed_dirs is set (Graystone W78 confinement) - the model never knows the absolute workspace path. FIX -
+anchor relative names to the workspace; traversal (..\) and absolute outside paths are still denied (tested).
+Assessment behind D-45 (owner): persona guidance alone (D-44) reached 4/6 and left false "I've created a Word document" claims
+(text written into .docx names); a code guard makes it deterministic. Result 6/6, no false Office claims.
+S3 family-request test (6 requests, machine-checked): baseline 0/6 real files -> after D-42/D-43 2/6 -> after D-44 4/6 (23/34
+detail) -> after D-45 6/6 (33/34). Remaining: R3 formulas omitted in 2 of 3 runs (model detail-following); R2 false NEGATIVE (a
+valid .docx made, then a shell_exec self-check was held by the confirmation gate, GATE_TIMEOUT 120s, and the reply said it failed).
+Plain language: Jarvis can now make real Word, PowerPoint and Excel files for the family. We fixed four places where the author's
+tools tripped over each other or over our safety fence, told Jarvis in its name tag which tool to use, and put a lock on the wrong
+tool so it cannot pretend a text file is a Word document.

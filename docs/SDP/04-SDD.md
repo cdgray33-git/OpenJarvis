@@ -348,3 +348,20 @@ tool descriptions, config.memory_files, config.system_prompt) and passes it as p
 rebuilt only when one of the three files changes (mtime+size). (4) Context injection (16.1) adds its system message; (5) sysmerge
 joins them into ONE system message at the engine. Edits by memory_manage / user_profile_manage / the owner appear on the next turn
 with no restart. Notes routing is one owner line in SOUL.md (D-37). Scope: native_openhands only.
+
+## 17. OFFICE DOCUMENT PATH (W83) - gate by gate, and where it is VISIBLE [M evidence\W83\s3-*; R code]
+Owner ultimate goal (W83): a clear communications data flow of Jarvis that can be visualized with NO GAPS IN VISIBILITY. This section
+records the flow and marks each gate's record so gaps are explicit.
+| Gate | Hop | Port / protocol / encoding | Record produced | Visible? |
+|---|---|---|---|---|
+| 1 | Client -> backend POST /v1/chat/completions | TCP 127.0.0.1:8010, HTTP/1.1, JSON UTF-8 | uvicorn access line | yes (backend.log) |
+| 2 | Context injection + persona (16.1, 16.5; SOUL office line D-44) | in-process | SYSMERGE line | yes (backend.log) |
+| 3 | Engine -> Ollama /api/chat | TCP 172.16.33.200:11434, HTTP/1.1, JSON UTF-8 | inference_end event (prompt_tokens_evaluated) | yes (WS /v1/agents/events) |
+| 4 | Model tool call -> ToolExecutor | in-process | dispatch.log ATTEMPT (tool, args) / OUTCOME (success, reason) | PARTIAL - reason code only; the tool's error TEXT is not recorded (G-11: FAIL_OTHER had to be reproduced by replay) |
+| 5a | code_interpreter: fence strip (D-42) -> blocklist -> subprocess `python -c` | child process, same venv, cwd workspace (D-41), 30 s, stdout <=10,000 chars | none of its own | NO - stdout/stderr and exit code not logged (G-11) |
+| 5b | file_write: relative anchor (D-43) -> Office guard (D-45) -> confinement check | in-process, UTF-8 text | OUTCOME only | PARTIAL - success message shows the given name, not the full path (G-10) |
+| 6 | python-docx / python-pptx / openpyxl write the file | local disk, OOXML (zip + XML) | the file itself in ~\.openjarvis\workspace | NO event records that a file was created (G-10) |
+| 7 | Tool result -> model -> reply | in-process -> gate 1 response | reply text | yes, but the reply's claim is not reconciled with the file (R2 false negative, earlier false positives) |
+| 8 | Delivery to the family member | none | none | NO path exists (G-3) |
+Gaps named here feed the POA&M (POAM-50..56). The downloadable architecture artifact (ports, protocols, encoding at each gate) is a
+queued owner deliverable built from sections 16 and 17.
