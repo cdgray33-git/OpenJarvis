@@ -450,6 +450,57 @@ The author's own tests for the package (tests\traces, 7 files from af21bc18 - lo
 restored and run with the author's locked pytest 9.0.2: 52 passed. Four FTS tests raised teardown errors on Windows only (an
 author test-fixture defect, D-48, still present upstream); fixed by closing the store in the fixture: 52 passed, 0 errors.
 The author documented the gitignore cause as fix #372 (CHANGELOG v1.0.2), which confirms 18.4 cause (1).
+### 18.10 POAM-58 double-save - reachability analysis (W89) [R code, ours = af21bc18 + Graystone as built; M static inventory]
+PLAIN LANGUAGE: the trace recorder writes a finished job into the notebook itself, and then also announces "job done!" on a
+loudspeaker. The notebook keeper (the server's trace store) listens to one loudspeaker and writes down whatever it hears. If the
+recorder announces on the SAME loudspeaker the keeper listens to, the job is written twice - and the notebook refuses a
+duplicate page, so an error is raised after Jarvis has already answered. We checked every loudspeaker in the server. The keeper
+listens only to the server's own loudspeaker; the only recorder that can run in the server announces on a different one. So it
+cannot happen today. It WILL happen if someone later puts a recorder on the server's loudspeaker without first telling the
+keeper to stop listening - which is exactly what the author changed upstream.
+MECHANISM: TraceCollector.run saves the trace (traces\collector.py:103) and then publishes TRACE_COMPLETE {trace}
+(collector.py:106). A TraceStore subscribed to TRACE_COMPLETE on the same bus (store.py:225-232) saves it again. The second
+INSERT violates traces.trace_id UNIQUE -> sqlite3.IntegrityError raised inside the publisher's call stack (EventBus handlers run
+synchronously), i.e. out of collector.run after the agent has already produced its answer. Requires BOTH on ONE bus.
+INVENTORY (git grep over src, W89):
+| Item | Where | Count |
+|---|---|---|
+| TRACE_COMPLETE publishers | traces\collector.py:106 | 1 (only the collector) |
+| TraceStore subscribed to a bus | server\app.py:239-240 (on app.state.bus) | 1 (builder.py never subscribes a trace store - only telemetry, builder.py:336) |
+| TraceCollector constructions | system\orchestrator.py:218 (JarvisSystem.ask, only when s.trace_store is set) | 1 |
+| Trace writers that NEVER publish | agents\executor.py:660 (AgentExecutor, managed agents: store = app.state.trace_store via agent_manager_routes.py:1483 and :1852, or serve.py:492-499 for the scheduler); learning\spec_search\external_adapter.py:65 | 2 |
+BUS TOPOLOGY (who creates which EventBus):
+| Bus | Created at | Used by |
+|---|---|---|
+| SERVER bus | cli\serve.py:176 EventBus(record_history=False) -> create_app -> app.state.bus (app.py:215) | app trace store subscription (app.py:239-240); channel _wire_system (serve.py:428-430); ChannelBridge wrappers (serve.py:608-612); SendBlue restore (app.py:94-106 uses app.state.bus, or a NEW EventBus() if it is None) |
+| GLOBAL bus | core\events.py:178 get_event_bus() - module singleton; only reset_event_bus() (events.py:187); NO setter anywhere in src | SystemBuilder when no bus is given (builder.py:100) - the scheduler JarvisSystem (serve.py:503) |
+| SDK bus | sdk.py:172 - every Jarvis() creates its own EventBus() | the digest route (digest_routes.py:77-79) |
+EVERY SERVER-SIDE JarvisSystem.ask() CALLER:
+| Caller | System / bus | Trace store | Double save? |
+|---|---|---|---|
+| POST digest generate (digest_routes.py:73-81): `with Jarvis() as j: j.ask(..., agent="morning_digest")` | SDK system / SDK bus (sdk.py:172) | not established (sdk.py has no trace wiring by grep; whether its build creates one is unread) | NO - whatever it records, it announces on the SDK bus, where no store listens |
+| Channel messages (serve.py:410-437): `_wire_system = JarvisSystem(bus=bus, ...)`; `wire_channel(channel_bridge)` | JarvisSystem / SERVER bus | NONE (no trace_store argument) -> orchestrator.py:216 skips the collector | NO - untraced; inactive while config channel.enabled=False (startup CHANNEL_ASSERT enabled=False) |
+| ChannelBridge wrapper (serve.py:596-612) | ChannelBridge(system=None) / SERVER bus | none | NO - _handle_chat calls ask() only when system is not None (channel_bridge.py:266-268) |
+| SendBlue restore (app.py:83-106) | ChannelBridge (no system argument) / SERVER bus | none | NO |
+VERDICT: POAM-58 is NOT reachable in the system as built (af21bc18 + Graystone, W89). The only collector that can run in the
+server process (the digest's SDK system) publishes on its own bus; the only subscribed store listens on the server bus; the
+systems on the server bus carry no trace store. REACHABLE IF: (1) a JarvisSystem WITH a trace_store is built on app.state.bus
+and runs ask() - e.g. adding trace_store to the channel _wire_system (serve.py:428); or (2) the author's chat-path collector
+(#513) is ported on app.state.bus while app.py:239-240 still subscribes the store. The author's own resolution (upstream
+ef005703, app.py comment): do NOT subscribe the store; the collector is the single writer. That removal is a precondition of
+POAM-57.
+NEGATIVE RESULTS: no code installs a bus globally (no setter; only reset); the SDK never shares the server bus; the channel
+system has no trace store; managed-agent traces are saved directly by AgentExecutor and never announced on TRACE_COMPLETE.
+SIDE FINDING (POAM-62): the trace read-back routes open a NEW TraceStore per request and never close it -
+agent_manager_routes.py:1961-1965 (list_traces) and :1986-1990 (get_trace); api_routes.py:813-820 (feedback, which also
+hard-codes DEFAULT_CONFIG_DIR/traces.db instead of config.traces.db_path). /v1/traces uses app.state.trace_store correctly
+(api_routes.py:307-331). Effect: one SQLite connection left open per call (Windows file handles accumulate until garbage
+collection). Origin (author vs Graystone) not yet established - both files differ from af21bc18.
+EXECUTION PATH REGISTER additions: (d) managed agents - AgentExecutor saves its own trace (executor.py:660) with the app store;
+(e) digest route - SDK Jarvis() with its own bus, trace recording not established; (f) channel messages - JarvisSystem on the
+server bus with no trace store: UNTRACED.
+HAZARDS: H-W89-1 a TRACE_COMPLETE-subscribed store and a collector on the same bus = every trace saved twice (IntegrityError).
+H-W89-2 long git grep output pasted from the console can lose its first section header - write such output into a bundle file.
 
 ## 19. SKILLS (W89) - author design, which paths get skills, the startup warning [R af21bc18 + a6dcf846; M probe_skills_w89]
 ### 19.1 Plain language
