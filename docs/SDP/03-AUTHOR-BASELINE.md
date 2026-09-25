@@ -453,6 +453,7 @@ notes and your preferred name without being told which tool to use.
 | D-43 | file_write relative paths | relative path resolved against the server cwd | anchored to the first allowed dir; absolute and ~ paths unchanged; confinement check still on the final path | AUTHOR x GRAYSTONE INTERACTION DEFECT, fixed | 5a6735d; fwanchor-patch, s3-failure-probe |
 | D-44 | Persona office guidance | none | SOUL.md line: Office files via code_interpreter + python-docx/python-pptx/openpyxl, plain filename, workspace; file_write is plain text only (backup SOUL.md.bak-W83-F8-20260924_202629) | INSTALLER CONTENT | s3-rerun2 |
 | D-45 | file_write Office guard | none | file_write refuses .docx/.pptx/.xlsx (any case) and steers to code_interpreter | CHOICE (owner F-11) | 0507c8c; fwoffice-patch, s3-rerun3 |
+| D-46 | code_interpreter file report | returns stdout only; a script that saves a file and prints nothing returns "(no output)" | workspace top level snapshotted before and after the run; files created/changed listed FIRST in content (survives the 4000-char cut) and in metadata files[path, size_bytes] on TOOL_CALL_END (same shape file_write/file_read use) | AUTHOR DEFECT, fixed | c85fcf9; patch_codefiles, s3-rerun4 |
 Defect record D-41: SYMPTOM - a document Jarvis creates by a plain filename lands in whatever folder the server was started from (the
 repo root), mixed into git and hard to find. TRIGGER - any relative save inside code_interpreter. FIX - cwd set to the workspace.
 Defect record D-42: SYMPTOM - "Execution error", the document is never made, the model falls back to pasting text. TRIGGER - the
@@ -469,3 +470,15 @@ valid .docx made, then a shell_exec self-check was held by the confirmation gate
 Plain language: Jarvis can now make real Word, PowerPoint and Excel files for the family. We fixed four places where the author's
 tools tripped over each other or over our safety fence, told Jarvis in its name tag which tool to use, and put a lock on the wrong
 tool so it cannot pretend a text file is a Word document.
+G.6 addendum (appended 2026-09-25, W88; D-46 made in W87):
+Defect record D-46: AUTHOR INTENT - ToolResult content is what the model reads; metadata is the machine record on the author's
+TOOL_CALL_END event (file_write/file_read already carry {path, size_bytes}). The author's code_interpreter returns stdout only.
+SYMPTOM - a document is created but the reply says it failed, or the model detours to shell_exec to check and waits 120 s on the
+confirmation gate (R2 false negative). TRIGGER - the model's script saves a file and prints nothing ("(no output)"). FIX - snapshot
+the workspace top level before and after the run; list changed files FIRST in content and in metadata files[path, size_bytes].
+LIMIT - workspace top level only; subfolders and absolute-path writes (G-1) are not listed (H-W83-28).
+Result, S3 re-run 4 (s3_family_office_w87.py): files 5/6, replies honest 6/6 vs the filesystem, shell_exec 0, 32/40. R2 false
+negative GONE. R1 = model code error (no pptx made anywhere). R3 formulas still omitted. RQ-032 criterion (6/6 real files AND 6/6
+honest replies in ONE run) NOT MET - PARTIAL.
+Plain language: after Jarvis runs its little program, it now looks in its own folder and says "these files are new", so it does
+not have to guess whether it worked.

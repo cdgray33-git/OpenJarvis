@@ -358,10 +358,14 @@ records the flow and marks each gate's record so gaps are explicit.
 | 2 | Context injection + persona (16.1, 16.5; SOUL office line D-44) | in-process | SYSMERGE line | yes (backend.log) |
 | 3 | Engine -> Ollama /api/chat | TCP 172.16.33.200:11434, HTTP/1.1, JSON UTF-8 | inference_end event (prompt_tokens_evaluated) | yes (WS /v1/agents/events) |
 | 4 | Model tool call -> ToolExecutor | in-process | dispatch.log ATTEMPT (tool, args) / OUTCOME (success, reason) | PARTIAL - reason code only; the tool's error TEXT is not recorded (G-11: FAIL_OTHER had to be reproduced by replay) |
-| 5a | code_interpreter: fence strip (D-42) -> blocklist -> subprocess `python -c` | child process, same venv, cwd workspace (D-41), 30 s, stdout <=10,000 chars | none of its own | NO - stdout/stderr and exit code not logged (G-11) |
+| 5a | code_interpreter: fence strip (D-42) -> blocklist -> subprocess `python -c` -> workspace snapshot diff (D-46) | child process, same venv, cwd workspace (D-41), 30 s, stdout <=10,000 chars | content: Files line FIRST, then stdout; metadata files[path, size_bytes] on TOOL_CALL_END (D-46) | PARTIAL - file creation VISIBLE; stdout/stderr and exit code not recorded durably (G-11) |
 | 5b | file_write: relative anchor (D-43) -> Office guard (D-45) -> confinement check | in-process, UTF-8 text | OUTCOME only | PARTIAL - success message shows the given name, not the full path (G-10) |
-| 6 | python-docx / python-pptx / openpyxl write the file | local disk, OOXML (zip + XML) | the file itself in ~\.openjarvis\workspace | NO event records that a file was created (G-10) |
-| 7 | Tool result -> model -> reply | in-process -> gate 1 response | reply text | yes, but the reply's claim is not reconciled with the file (R2 false negative, earlier false positives) |
+| 6 | python-docx / python-pptx / openpyxl write the file | local disk, OOXML (zip + XML) | the file itself in ~\.openjarvis\workspace; code_interpreter writes at the workspace top level are listed in content and TOOL_CALL_END metadata (D-46) | PARTIAL - top level only; subfolders and absolute-path writes (G-1) are not listed (H-W83-28) |
+| 7 | Tool result -> model -> reply | in-process -> gate 1 response | reply text | yes; the model reads CONTENT only (4000-char cut). Re-run 4: replies honest 6/6 vs the filesystem (R2 class closed). The Files line reaching the model is INFERRED from outcomes, not observed (G-11) |
 | 8 | Delivery to the family member | none | none | NO path exists (G-3) |
 Gaps named here feed the POA&M (POAM-50..56). The downloadable architecture artifact (ports, protocols, encoding at each gate) is a
 queued owner deliverable built from sections 16 and 17.
+W87 delta (D-46, c85fcf9; recorded W88): at the code_interpreter gate, file creation is now VISIBLE - in content (what the model
+reads) and in TOOL_CALL_END metadata (the author's machine record on the event bus). Still NOT visible: tool content text is not
+recorded durably (G-11, POAM-54) and dispatch.log OUTCOME remains a reason code. Plain language: Jarvis now checks its own folder
+after running a program and says which files are new; what we still cannot see afterward is the exact words each tool sent back.
