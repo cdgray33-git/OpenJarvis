@@ -525,3 +525,8 @@ never closes it; Windows cannot delete an open SQLite file (Linux and macOS can,
 Still present upstream: the only author change to the file since the baseline is ruff formatting (928776a7). FIX - close the
 store in the fixture teardown. Plain language: we ran the author's own checklist for the recorder and all 52 checks pass. One
 check tripped over a Windows rule - you cannot throw away a file that is still open - so the check now closes the file first.
+
+### G.8 W89 - skills: NO divergence (recorded 2026-09-25)
+All 18 files in src\openjarvis\skills are byte-identical to af21bc18 (git hash-object = author blob). The startup warning
+"Unmapped frontmatter field 'title' / 'dependencies' in skill 'research-paper-writing'" is the author's parser working as
+designed (parser.py:196, tolerant pass) and is unchanged at upstream a6dcf846. No change made. Details: SDD section 19.

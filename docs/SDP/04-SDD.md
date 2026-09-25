@@ -450,3 +450,63 @@ The author's own tests for the package (tests\traces, 7 files from af21bc18 - lo
 restored and run with the author's locked pytest 9.0.2: 52 passed. Four FTS tests raised teardown errors on Windows only (an
 author test-fixture defect, D-48, still present upstream); fixed by closing the store in the fixture: 52 passed, 0 errors.
 The author documented the gitignore cause as fix #372 (CHANGELOG v1.0.2), which confirms 18.4 cause (1).
+
+## 19. SKILLS (W89) - author design, which paths get skills, the startup warning [R af21bc18 + a6dcf846; M probe_skills_w89]
+### 19.1 Plain language
+A skill is a folder with a SKILL.md file: a short name, a one-line description, and written instructions for a kind of job
+("search arXiv", "write a research paper"). OpenJarvis turns each skill into a tool the agent can call; calling it hands the
+agent the instructions (or runs the skill's steps). Some skills come from other projects (Hermes) and carry extra labels
+OpenJarvis does not use; it keeps them and prints a warning. The warning is harmless. Today the main planner and background
+agents get the skills; the chat window does not - that is how the author built it, and still builds it.
+### 19.2 Author design, gate by gate (all in-process in the backend python process; files are UTF-8 on local disk)
+| Gate | Component (file) | What it does | Record |
+|---|---|---|---|
+| 1 | Skill on disk | ~\.openjarvis\skills\<source>\<name>\SKILL.md (YAML frontmatter + markdown) and .source (TOML: source, commit, category, installed_at, translated_tools, missing_tools, scripts_imported) | the files |
+| 2 | SkillParser (skills\parser.py) | strict pass: name and description required, length and naming rules (a failure rejects the skill); tolerant pass: FIELD_MAPPING maps version/author/tags/depends/required_capabilities/user_invocable/disable_model_invocation onto the manifest and platforms/prerequisites under metadata.openjarvis; any other field -> WARNING, value kept in metadata.openjarvis.original_frontmatter | backend.log WARNING (logger openjarvis.skills.parser) |
+| 3 | SkillManager.discover (skills\manager.py) | scans config.skills.skills_dir (~/.openjarvis/skills/) and .\skills (relative to the server cwd; absent here); first-seen name wins; loads overlays (few_shot) | in-memory registry |
+| 4 | SkillManager.get_skill_tools | wraps each skill as a SkillTool (skills\tool_adapter.py): tool name skill_<name>, description = skill description, parameters = one optional `task` string for instruction-only skills or the {placeholders} of pipeline steps; category skill | tool list |
+| 5 | SystemBuilder.build (system\builder.py:171-194) | adds the SkillTools to the tool list, rebuilds the ToolExecutor, collects few-shot examples | JarvisSystem.tools, skill_manager |
+| 6 | SkillTool.execute | pipeline skill: runs its steps through SkillExecutor; instruction-only skill: returns the markdown instructions as ToolResult.content; metadata {skill, skill_source, skill_kind, steps} rides TOOL_CALL_END into traces | trace step (orchestrator path) |
+get_catalog_xml() (an <available_skills> prompt catalog, 553 chars for 5 skills) exists but NOTHING calls it at af21bc18 or a6dcf846.
+No platform filtering: platforms [linux, macos] is stored, never checked - a Windows host does not exclude the skill.
+### 19.3 Which execution paths get skills (measured W89)
+| Path | Skills? | Evidence |
+|---|---|---|
+| JarvisSystem.ask() (orchestrator) | YES - 5 SkillTools among 24 tools | probe_skills_w89 section D |
+| Scheduler / managed agents (serve.py builds a JarvisSystem with SystemBuilder for the AgentExecutor) | YES (same builder; the startup warnings come from this build) | serve.py SystemBuilder(config).build(); startup console |
+| Server chat route (native_openhands, the family path) | NO - tools come from config [agent] tools (19 names); no skill code in serve.py, routes.py or app.py | startup tools_loaded list; git grep; SAME at upstream a6dcf846 (probe section E: NONE) |
+| CLI jarvis ask | NO at af21bc18 (the author wired skills and traces into ask later: #920) | delta report s7 |
+### 19.4 Installed skills (5, all imported from Hermes - none is an author built-in)
+arxiv, blogwatcher, llm-wiki, polymarket, research-paper-writing (~\.openjarvis\skills\hermes\). research-paper-writing was
+installed 2026-06-05 (commit 6f6eb871 of the Hermes source); its .source lists translated_tools Task->delegate_agent and 25
+missing_tools (mostly false positives: LaTeX, NeurIPS, GitHub, PowerPoint). Few-shot examples: 0.
+### 19.5 The startup warning
+Only research-paper-writing warns: fields `title` (a display name) and `dependencies` (in Hermes, a list of PYTHON PACKAGES:
+semanticscholar, arxiv, habanero, requests, scipy, numpy, matplotlib, SciencePlots). It must NOT be mapped to OpenJarvis
+`depends`, which lists other SKILLS - the dependency resolver would look for skills named numpy. Leaving it unmapped is correct.
+The skill loads. Decision: no change (author design; parser unchanged upstream).
+### 19.6 Negative results
+- The warning is not a load failure (strict pass passed; skill discovered and wrapped as skill_research-paper-writing).
+- Not a Graystone divergence: skills modules 18/18 identical to af21bc18; parser.py unchanged at a6dcf846 (empty diff).
+- Platform is not a filter: a linux/macos skill still loads on Windows.
+- The chat window having no skills is not a Graystone regression: the author's current upstream does not wire skills there either.
+### 19.7 Chat-path skills - options and OWNER RULING W89 (2026-09-25): A
+AUTHOR INTENT: skills are tools on the SystemBuilder paths (planner and managed agents); the author has not put them on the
+server chat route as of a6dcf846, and built a prompt catalog (get_catalog_xml) that nothing uses yet.
+A. Keep the author design. Effect: skills are testable today through the planner and managed agents. Risk: none new; the family
+   chat cannot use skills.
+B. Add SkillTools to the chat agent (serve.py, mirroring builder.py:171-194). Effect: chat can call skills. Risks: divergence the
+   author has not made; one tool schema per skill (200 skills = 200 schemas in every chat request - prompt size and model choice
+   quality); instruction-only skills return long markdown cut at 4000 chars (research-paper-writing SKILL.md is ~2400 lines);
+   skills reference tools we lack; shell-based skills hit the confirmation gate (120 s wait unattended).
+C. Use the author's catalog (get_catalog_xml) in the chat prompt plus one loader tool. Effect: scales better (one line per skill).
+   Risks: still a divergence (no author caller); prompt grows about 110 chars per skill (200 skills ~ 22,000 chars).
+OWNER RULING W89: "we will do A for now." Skills stay on the author design (planner and managed agents). Section 19 and
+POAM-60 are WHERE the skills will be added; B or C is decided at that time, with this assessment.
+### 19.8 Skills install placeholder (POAM-60)
+Owner W89: several repos give over 200 skills; they will be installed LATER, not now. Before installing: decide 19.7; use the
+author's importer (jarvis skill ... with the github / hermes / openclaw sources); note the author's later safeguards not in our
+baseline - #639 capability and trust-tier checks at install and run time, #961 reject symlinks in imported skills, #781 prune
+cyclic skills, #780 log discovery failures; import a small batch first and measure prompt size and tool choice.
+SEQUENCE (owner W89): first the owner approves the author's baseline against the Graystone baseline, to his satisfaction on
+services offered; THEN the skills install. Not far off - possibly the same window if this version is close to final.
