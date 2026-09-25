@@ -105,6 +105,18 @@ class FileWriteTool(BaseTool):
         # absolute and ~ paths are unchanged and _is_path_allowed still checks the final path.
         if self._allowed_dirs and not path.is_absolute() and not str(file_path).startswith("~"):
             path = self._allowed_dirs[0] / path
+        # openjarvis-w83-fwoffice-v1 (W83 F-11, owner): writing plain text into an Office file name produced files Office cannot open,
+        # and the model then claimed it had created a document. Refuse and steer to the right tool.
+        if path.suffix.lower() in (".docx", ".pptx", ".xlsx"):
+            return ToolResult(
+                tool_name="file_write",
+                content=(
+                    f"file_write writes plain text only and cannot create a real {path.suffix.lower()} file. "
+                    "To create Word, PowerPoint or Excel files use the code_interpreter tool with python-docx, "
+                    "python-pptx or openpyxl and save with a plain filename."
+                ),
+                success=False,
+            )
 
         # Block sensitive files (secrets, credentials, keys)
         from openjarvis.security.file_policy import is_sensitive_file

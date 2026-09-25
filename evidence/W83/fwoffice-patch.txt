@@ -1,0 +1,9 @@
+W83 F-11 file_write Office guard patch 2026-09-24T20:35:30
+ANCHOR count=1 (want 1)
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\file_write.py.bak-W83-fwoffice-20260924_203530
+AFTER sha=3F828EA0320A8B3D marker=1
+T1 w83_f11.docx   refused=True file_created=False steers=True
+T2 w83_f11.pptx   refused=True file_created=False steers=True
+T3 w83_f11.xlsx   refused=True file_created=False steers=True
+T4 W83_F11.DOCX   refused=True file_created=False steers=True
+T5 w83_f11.txt success=True in_workspace=True
