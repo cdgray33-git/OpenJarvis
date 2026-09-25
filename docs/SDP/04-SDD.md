@@ -631,3 +631,30 @@ prefixed /v1/speech/v1/speech/stream. F2 (POAM-64) POST /v1/tools/test-execute i
 it may bypass the confirmation gate - read in the Chat/Tools repair. F3 (POAM-65) live config.toml carries [analytics] (owner
 09/22: remove that path as dead code) and lacks [traces], [telemetry], [learning*], [tools.storage], [tools.mcp] (author
 defaults apply).
+### 20.7 Trial merge results and the OWNER-APPROVED upgrade plan (W89) [M trial_merge_w89 -> evidence\W89\trial-merge-report.md]
+MEASURED (git merge-tree --merge-base af21bc18, in the object database only; HEAD and tracked files verified unchanged):
+author changed 811 files; Graystone changed 725 with real content (537 of them build/scripts/handoff/evidence files, 39 docs,
+91 frontend - none conflict); changed by BOTH 67; applied or auto-merged with no hand work 768 of 811; CONFLICTED 43 files,
+380 hunks; line-ending-only conflicts 0 (plain and EOL-ignoring merges identical).
+THE 43 CONFLICTS BY KIND: (1) GENERATED - no hand work: frontend\package-lock.json 100, uv.lock 94, frontend\src-tauri\Cargo.lock
+30, frontend\tsconfig.tsbuildinfo (modify/delete) -> take the author's, regenerate (uv lock re-adds python-pptx and openpyxl);
+(2) SMALL CONFIG: pyproject.toml 6, core\config.py 4, .gitignore 2, configs\openjarvis\config.toml 1, frontend\package.json 2;
+(3) REAL CODE: Python 18 files / 51 hunks - Chat 8/25 (agent_manager_routes 11, serve 6, api_routes 3, routes 1, ask 1,
+auth_middleware 1, connectors_router 1, stream_bridge 1), Managed agents 3/9 (_stubs, morning_digest, native_openhands),
+Tools 4/7 (code_interpreter 3, knowledge_sql 2, tools\_stubs 1, tools\__init__ 1), speech faster_whisper 3, engine ollama 3,
+telemetry gpu_monitor 1; Frontend about 16 files / about 95 hunks (api.ts 46, lib.rs 8, DataSourcesPage 7, InputArea 5,
+SettingsPage 5, SetupScreen 4, others 1-3). CAREFUL MERGES: tools\_stubs.py (our dispatch log + Defect 6 confirm emit vs the
+author's taint work), code_interpreter.py (our D-41/D-42/D-46 vs the author's AST validation #1002), native_openhands.py.
+Where the author superseded a Graystone change, the author's side is taken (sysmerge #823, persona wiring, WS auth, #513).
+OWNER APPROVED W89 ("I approve and it makes sense") - METHOD: (1) TEMPORARY LOCAL GRAFT: git replace --graft <our root commit>
+af21bc18, so git sees the author's baseline as our common history (replace refs are local; never pushed); (2) an upgrade branch
+in a SEPARATE git worktree; git merge of the author's current main (expect exactly these 43 conflicts); resolve service by
+service; (3) remove the graft - the merge commit keeps the author's main as a real parent, so every FUTURE author update is a
+normal git merge; (4) the worktree gets its own venv by the author's install procedure (the production venv is never touched),
+the Rust extension rebuilt, its own port 8011; V&V = the author's test suite first, then live checks, then the 4 VERIFIED
+requirements; the #549 state-path check; then the switch, pushed to both remotes. ORDER: dependencies + config -> Chat ->
+Tools and Office -> Managed agents -> speech / engine / telemetry -> Frontend (production build) -> V&V -> switch.
+ESTIMATE: 3-4 windows. PLAIN LANGUAGE: git lined our copy up against the author's latest and found that almost everything
+slots in by itself; 43 files need a person to choose between two edits of the same lines, and a third of those are machine
+lists that are simply rebuilt. We will do it on a spare copy while the working Jarvis keeps running, and swap only when the
+spare copy passes every check.
