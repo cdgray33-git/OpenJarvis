@@ -491,11 +491,20 @@ ef005703, app.py comment): do NOT subscribe the store; the collector is the sing
 POAM-57.
 NEGATIVE RESULTS: no code installs a bus globally (no setter; only reset); the SDK never shares the server bus; the channel
 system has no trace store; managed-agent traces are saved directly by AgentExecutor and never announced on TRACE_COMPLETE.
-SIDE FINDING (POAM-62): the trace read-back routes open a NEW TraceStore per request and never close it -
-agent_manager_routes.py:1961-1965 (list_traces) and :1986-1990 (get_trace); api_routes.py:813-820 (feedback, which also
-hard-codes DEFAULT_CONFIG_DIR/traces.db instead of config.traces.db_path). /v1/traces uses app.state.trace_store correctly
-(api_routes.py:307-331). Effect: one SQLite connection left open per call (Windows file handles accumulate until garbage
-collection). Origin (author vs Graystone) not yet established - both files differ from af21bc18.
+SIDE FINDING (POAM-62, CORRECTED and MEASURED W89): the managed-agent trace read-back routes open a NEW TraceStore per request
+and do not call close() - agent_manager_routes.py list_traces (:1964) and get_trace (:1989), routes GET
+/v1/managed-agents/{agent_id}/traces and .../traces/{trace_id}. AUTHOR CODE: identical lines at af21bc18 (:1877, :1902) and still
+present at upstream a6dcf846 (:2260, :2288; only the fallback path changed to get_config_dir()). CORRECTION: the feedback route
+api_routes.py DOES close its store (:821; author :804; upstream :1065) - the earlier text said it did not; that was wrong. Its
+hard-coded DEFAULT_CONFIG_DIR/traces.db is author code, unchanged upstream, and only matters if traces.db_path is moved.
+MEASURED (server PID 27988, Windows HandleCount): baseline 468; after 50 get_trace calls (50 x 200) 503; after 50 list_traces calls
+on agent 52c9e6ad6aa1 (50 x 200) 493. A per-call leak would add at least 1-3 handles per call (db, -wal, -shm) in BOTH batches;
+the count FELL in the second batch. VERDICT: NOT a live leak - CPython closes each sqlite3 connection when the route returns
+(TraceStore holds no reference cycle). The +35 / -10 movement is thread-pool and socket churn.
+OWNER RULING W89: "we will work this when we get to fixing the upstream code. That should be done as one complete service
+we are repairing." The explicit close() is DEFERRED to the upstream-code repair of the managed-agents service, done as one
+complete service - not patched piecemeal now. Until then the author code stays byte-identical (no live leak measured).
+H-W89-3 A missing close() is not proof of a leak in CPython - measure the process handle count across repeated calls first.
 EXECUTION PATH REGISTER additions: (d) managed agents - AgentExecutor saves its own trace (executor.py:660) with the app store;
 (e) digest route - SDK Jarvis() with its own bus, trace recording not established; (f) channel messages - JarvisSystem on the
 server bus with no trace store: UNTRACED.
