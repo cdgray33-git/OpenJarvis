@@ -570,3 +570,64 @@ baseline - #639 capability and trust-tier checks at install and run time, #961 r
 cyclic skills, #780 log discovery failures; import a small batch first and measure prompt size and tool choice.
 SEQUENCE (owner W89): first the owner approves the author's baseline against the Graystone baseline, to his satisfaction on
 services offered; THEN the skills install. Not far off - possibly the same window if this version is close to final.
+
+## 20. SERVICES BASELINE APPROVAL AND THE UPSTREAM-LEVEL DIRECTIVE (W89, 2026-09-25)
+### 20.1 Plain language
+We lined up three versions of OpenJarvis side by side: what the author published when we started (af21bc18), what the author
+has now (a6dcf846), and ours. Ours turned out to be the author's original almost untouched, plus a small layer of our own
+work. The owner approved that picture for every service, and directed that Jarvis be brought up to the author's current
+version, keeping only the parts we built that the author does not already provide.
+### 20.2 Evidence
+evidence\W89\services-catalog-af21bc18-a6dcf846-HEAD.md (services_catalog_w89.py, read-only; 735 lines; owner wiki copy).
+Measured: 33 packages; 0 author baseline files absent in ours; 23 of 33 packages untouched by Graystone (line-ending-only
+differences ignored); Graystone layer = 41 changed author files (server 14, tools 9, agents 4, cli 4, core 3, engine 3,
+prompt 1, speech 1, telemetry 1) + 5 Graystone files (connectors\imap_mail.py, core\confirm_registry.py,
+server\speech_router.py, server\serve.py 0-line shadow, and the mailbox tools inside tools). Routes A0 107 / A1 111 / G 112;
+12 registries; 74 CLI commands. Author since the baseline: agents proactive, opencode, baseline_cloud, baseline_local (+
+skillorchestra); connectors imap, apple_calendar; engines nim, afm; new memory package (FactStore local); tools queue_action,
+get_pending_actions, execute_pending_actions, check_permission, record_decision, get_weather, calendar_search,
+calendar_upcoming; routes /v1/approvals/* (3) and a credentials DELETE; CLI path, run-task, trust; config classes Afm,
+DeepResearch, Proactive, WeatherTool. Graystone-only services: 5 mailbox tools + imap_mail; POST /v1/tools/confirm (Defect 6);
+POST /v1/speech/synthesize and the speech WebSocket; POST /v1/tools/test-execute.
+### 20.3 The 13 services - OWNER APPROVED ALL 13 (W89): "I approve them all"
+| # | Service | Graystone layer vs af21bc18 | Author since af21bc18 | Overlap to settle in the repair |
+|---|---|---|---|---|
+| 1 | Chat (server, prompt, system, cli) | server 14, cli 4, prompt 1; speech_router, confirm route, test-execute | server 20 changed + 3 new (approvals, daemon, model capabilities); WS auth, CORS, chat-path traces #513, persona wiring | 11 server files changed by both |
+| 2 | Managed agents | agents 4 | agents 64 + 21 new | POAM-62 |
+| 3 | Tools and Office | tools 9 + 5 mailbox tools | tools 29 + 4 new; code_interpreter AST validation #1002 | Patch B, G-1 |
+| 4 | Memory and RAG | tools\storage | new memory package (facts, cross-session recall, provenance) | vs W83 context work |
+| 5 | Speech | speech 1 + speech_router | speech 5 + voice_io | POAM-38 |
+| 6 | Connectors and mailbox | + imap_mail | 25 changed + imap (any provider) + apple_calendar | author imap vs our imap_mail |
+| 7 | Channels | none | 7 fixes | - |
+| 8 | Skills | none | 9 fixes (#639, #961, #781, #780) | ruling A; install (POAM-60) |
+| 9 | Traces, telemetry, learning | traces restored (D-47); telemetry 1 | traces 3, telemetry 9, learning 9 | POAM-57 |
+| 10 | Security | none | 12 + 2 new (taint, SSRF, symlink, audit chain, CORS) | - |
+| 11 | Engine and models | engine 3 | 16 + 5 new (NIM, AFM, async HTTP) | - |
+| 12 | MCP | none | 4 + loader (external JSON config) | remote MCP |
+| 13 | Frontend (desktop) | outside src; many files changed by both (W88 delta s8) | heavy (Tauri lib.rs +2920) | production build only |
+| - | Approvals vs confirmation | confirm_registry + /v1/tools/confirm (Defect 6) | approvals queue (approval_routes, approval_store, 5 tools) | same problem solved two ways |
+### 20.4 OWNER DIRECTIVE W89
+"I want the Author's original and updated services placed on OpenJarvis ... we should get our Jarvis to the same level as the
+current GitHub OpenJarvis project is at. We added a small portion of code and I do not believe in re-creating the wheel if it
+suits our needs." -> Target: the author's current build (upstream main) + the Graystone layer. Where the author solved what we
+patched, the author's version replaces ours (D-25 -> #823; D-35/D-36 -> #546/#637/ef28e5f8; POAM-57 -> #513/#930; G-1 -> #1002;
+H-W81-6 -> subprotocol WS auth). Graystone code is kept only where the author has no equivalent.
+### 20.5 Feasibility assessment (W89) - possible; size to be MEASURED by a trial merge
+WHY POSSIBLE: 0 author files missing; git holds the common ancestor af21bc18, the author's current build and ours, so this is a
+standard three-way merge in which only lines changed by BOTH sides conflict. METHOD (recommended): a separate git worktree built
+from the author's current build, the Graystone layer re-applied service by service in the approved order, its own venv built by
+the author's install procedure, its own port (e.g. 8011); production (8010) untouched until V&V passes; V&V = the author's test
+suite first, then live checks, then the 4 VERIFIED requirements re-verified; then the switch, pushed to both remotes.
+RISKS: conflicts in files changed by both (33 in src, 11 in server; frontend incl. Tauri lib.rs; pyproject.toml +127/-21 and
+uv.lock) - resolved per service; DEPENDENCIES - never in the production venv; the worktree venv follows the author's procedure;
+the Rust extension (rust\, 38 files changed upstream) must be rebuilt; STATE LOCATION - author #549 consolidated state under one
+env-aware home directory: memory.db, traces.db, agents.db, config.toml paths must be checked before the switch; FRONTEND - the
+Graystone changes (TTS player, CSP, VitePWA removal) re-applied, production build only; SKILLS - installing after the upgrade
+brings the author's safeguards (#639 trust tiers, #961 symlinks, #781 cycles) - recommended order: upgrade, then skills.
+NEXT: trial merge in a temporary worktree (%TEMP%), conflict count per service, then deleted - main and production untouched.
+### 20.6 Findings from the catalog (recorded; worked in their service repair)
+F1 (POAM-63) duplicate access point: speech_router.py exposes the speech WebSocket twice - /v1/speech/stream and a double-
+prefixed /v1/speech/v1/speech/stream. F2 (POAM-64) POST /v1/tools/test-execute is Graystone-only; if it executes tools directly
+it may bypass the confirmation gate - read in the Chat/Tools repair. F3 (POAM-65) live config.toml carries [analytics] (owner
+09/22: remove that path as dead code) and lacks [traces], [telemetry], [learning*], [tools.storage], [tools.mcp] (author
+defaults apply).
