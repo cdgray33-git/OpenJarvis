@@ -100,6 +100,11 @@ class FileWriteTool(BaseTool):
         create_dirs = params.get("create_dirs", False)
 
         path = Path(file_path)
+        # openjarvis-w83-fwanchor-v1 (W83 G-7): the author resolves a relative path against the server's working directory, so with
+        # allowed_dirs set (Graystone W78) every relative name was denied. Anchor it to the first allowed dir;
+        # absolute and ~ paths are unchanged and _is_path_allowed still checks the final path.
+        if self._allowed_dirs and not path.is_absolute() and not str(file_path).startswith("~"):
+            path = self._allowed_dirs[0] / path
 
         # Block sensitive files (secrets, credentials, keys)
         from openjarvis.security.file_policy import is_sensitive_file

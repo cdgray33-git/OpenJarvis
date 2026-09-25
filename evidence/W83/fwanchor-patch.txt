@@ -1,0 +1,13 @@
+W83 F-7 file_write relative anchor patch 2026-09-24T20:17:41
+ANCHOR count=1 (want 1)
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\file_write.py.bak-W83-fwanchor-20260924_201741
+AFTER sha=61E8DA05AFA634A7 marker=1
+T1 relative path='w83_f7.txt' success=True PASS=True msg='Successfully wrote to w83_f7.txt'
+   T1 in_workspace=True
+T2 absolute ws path='C:\\Users\\Admin\\.openjarvis\\workspace\\w83_f7b.txt' success=True PASS=True msg='Successfully wrote to C:\\Users\\Admin\\.openjarvis\\workspace\\w83_f7b.txt'
+T3 traversal path='..\\w83_f7_escape.txt' success=False PASS=True msg='Access denied: ..\\w83_f7_escape.txt is outside allowed directories.'
+   T3 escaped_file_exists=False (want False)
+T4 absolute outside path='C:\\Users\\Admin\\OpenJarvis\\w83_f7_out.txt' success=False PASS=True msg='Access denied: C:\\Users\\Admin\\OpenJarvis\\w83_f7_out.txt is outside allowed directories.'
+   T4 repo_file_exists=False (want False)
+T5 relative subdir path='sub\\w83_f7.txt' success=True PASS=True msg='Successfully wrote to sub\\w83_f7.txt'
+   T5 in_workspace_sub=True

@@ -1,0 +1,8 @@
+W83 F-9 code fence patch 2026-09-24T20:16:30
+ANCHORS security=1 all=1 (want 1 1)
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\code_interpreter.py.bak-W83-codefence-20260924_201630
+AFTER sha=7E2402E041229895 marker=2
+U1 fenced runs=True out='4'
+U2 plain unchanged=True out='4'
+U3 fenced blocked still blocked=True msg="Blocked: code contains prohibited pattern 'os.system'"
+U4 fenced openpyxl success=True file_in_workspace=True

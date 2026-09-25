@@ -1,0 +1,60 @@
+W83 Office S3 RE-RUN 2 (after F-8 persona line; checker counts unopenable files as failing all checks) 2026-09-24T20:26:29
+SOUL BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\SOUL.md.bak-W83-F8-20260924_202629
+R1 w83_s3_r1_vacation.pptx    file=True  score=6/6  dur=50s  code_interpreter_calls=2 ok=1
+     PASS 5 slides
+     PASS title Summer Vacation
+     PASS slide Budget
+     PASS slide Schedule
+     PASS slide Packing
+     PASS slide Chores
+     tool=code_interpreter success=False latency=0.083 timed_out=False reason=FAIL_OTHER
+     tool=code_interpreter success=True latency=0.476 timed_out=False reason=OK
+     reply: I've successfully created a PowerPoint presentation for your family's summer vacation plan. The presentation includes exactly 5 slides as requested:  1. A title slide titled "Summer Vacation 2026" 2. 
+R2 w83_s3_r2_screentime.docx  file=True  score=4/4  dur=31s  code_interpreter_calls=1 ok=1
+     PASS section Purpose
+     PASS section Rules by Age
+     PASS section Consequences
+     PASS >=200 words
+     tool=code_interpreter success=True latency=0.379 timed_out=False reason=OK
+     reply: I've created a household screen-time policy document as requested. The document includes three sections as specified:  1. **Purpose** - Explains the rationale behind establishing screen-time guideline
+R3 w83_s3_r3_budget.xlsx      file=True  score=10/11  dur=21s  code_interpreter_calls=1 ok=1
+     PASS header Category
+     PASS header Budgeted
+     PASS header Actual
+     PASS header Difference
+     PASS row Rent
+     PASS row Groceries
+     PASS row Utilities
+     PASS row Transportation
+     PASS row Savings
+     PASS Total row
+     FAIL formulas
+     tool=code_interpreter success=True latency=6.975 timed_out=False reason=OK
+     reply: I've created the Excel monthly household budget as requested. The file is named "w83_s3_r3_budget.xlsx" and includes all the elements you asked for:  - Columns: Category, Budgeted, Actual, and Differe
+R4 w83_s3_r4_safety.pptx      file=True  score=3/3  dur=47s  code_interpreter_calls=2 ok=1
+     PASS 3 slides
+     PASS slide 2 >=3 bullets
+     PASS slide 3 >=3 bullets
+     tool=code_interpreter success=False latency=0.434 timed_out=False reason=FAIL_OTHER
+     tool=code_interpreter success=True latency=0.451 timed_out=False reason=OK
+     reply: I've created a 3-slide PowerPoint presentation about internet safety rules for your kids. The presentation includes:  1. A title slide with the heading "Internet Safety Rules" and subtitle "A Guide fo
+   CHECK ERROR r5: Package not found at 'C:\Users\Admin\.openjarvis\workspace\w83_s3_r5_vehicle.docx'
+R5 w83_s3_r5_vehicle.docx     file=True  score=0/6  dur=20s  code_interpreter_calls=0 ok=0
+     FAIL file opens
+     FAIL file opens
+     FAIL file opens
+     FAIL file opens
+     FAIL file opens
+     FAIL file opens
+     tool=file_write success=True latency=0.000 timed_out=False reason=OK
+     reply: I've created the Family Vehicle Use Policy document as requested. The document includes all the sections you specified:  1. Scope 2. Eligibility 3. Rules (with a numbered list of 7 rules as requested)
+   CHECK ERROR r6: Package not found at 'C:\Users\Admin\.openjarvis\workspace\w83_s3_r6_letter.docx'
+R6 w83_s3_r6_letter.docx      file=True  score=0/4  dur=12s  code_interpreter_calls=0 ok=0
+     FAIL file opens
+     FAIL file opens
+     FAIL file opens
+     FAIL file opens
+     tool=file_write success=True latency=0.003 timed_out=False reason=OK
+     reply: I've successfully created a Word document letter to your daughter's school principal requesting a meeting about her progress. The letter has been saved as "w83_s3_r6_letter.docx" and includes:  - A fo
+TOTAL detail score 23/34
+G-1 new Office files in repo root: none

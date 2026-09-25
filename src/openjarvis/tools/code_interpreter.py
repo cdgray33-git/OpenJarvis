@@ -68,6 +68,7 @@ class CodeInterpreterTool(BaseTool):
                 success=False,
             )
 
+        code = _oj_strip_fence(code)  # openjarvis-w83-codefence-v1
         # Security check
         for pattern in _BLOCKED_PATTERNS:
             if pattern in code:
@@ -120,5 +121,18 @@ def _oj_workdir():
         d = str(Path.home() / ".openjarvis" / "workspace")
     Path(d).mkdir(parents=True, exist_ok=True)
     return d
+
+# openjarvis-w83-codefence-v1 (W83 G-9): models often wrap the code argument in a markdown fence (```python ... ```);
+# the author tool ran it verbatim, so line 1 was a SyntaxError. Strip one leading fence line and a trailing fence.
+def _oj_strip_fence(code):
+    s = code.strip()
+    if not s.startswith("```"):
+        return code
+    i = s.find("\n")
+    s = s[i + 1:] if i != -1 else ""
+    s = s.rstrip()
+    if s.endswith("```"):
+        s = s[:-3].rstrip()
+    return s
 
 __all__ = ["CodeInterpreterTool"]
