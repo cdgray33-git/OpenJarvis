@@ -1,5 +1,5 @@
 # VOL 2 - SOFTWARE REQUIREMENTS SPECIFICATION (SRS) AND TRACEABILITY MATRIX
-Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28. v0.5 (W77): first VERIFIED rows (RQ-022, RQ-030); requirements unchanged since W75. v0.7 (W83): R1 qualification ruling; RQ-024 and RQ-031 assessed. v0.8 (W83): RQ-024 VERIFIED by owner ruling, 4/28.
+Governing DID: DI-IPSC-81433 (verify, GAP-002). v0.3 RATIFIED (W75, 2026-09-22). v0.4 (W76): section 4 two-tier, section 5 baseline 0/28. v0.5 (W77): first VERIFIED rows (RQ-022, RQ-030); requirements unchanged since W75. v0.7 (W83): R1 qualification ruling; RQ-024 and RQ-031 assessed. v0.8 (W83): RQ-024 VERIFIED by owner ruling, 4/28. v0.9 (W87): RQ-032 re-run 4 evidence after D-46; duplicate progress text removed.
 v0.1 (W72) seeded RQ-001..004. v0.2 adds RQ-005..031 recovered from the pre-OpenJarvis
 executive-assistant artifacts (R1.1). Design mapping is R1.2; verification is R1.3.
 
@@ -119,7 +119,7 @@ A row is VERIFIED only when its full row text passes. Tier A evidence supplement
 | RQ-025 | llm tool, any agent - Vol 3A C | SDK ask_full (Surface C) | W77 run 3: tool_results EMPTY, turns 1, model answered directly - evidence\W77\sdk-verify.json | NOT VERIFIED (not delegated) |
 | RQ-030 | Ollama engine, local-first default - Vol 3A C | engine gate, TCP 11434 | W77: engine=ollama telemetry 7118-7132; TCP peer 172.16.33.200:11434 (E3); jarvis model list - evidence\W77\model-list.txt, surface-probe.txt | VERIFIED |
 | RQ-005..RQ-031 core (remaining 22) | TBD (R1.2) | TBD | TBD (R1.3) | NOT ASSESSED |
-| RQ-032 | code_interpreter + python-docx/python-pptx/openpyxl (D-40..D-45); SOUL Office line (D-44) | dispatch.log, workspace files | W83 S3 re-run 3: 6/6 real .docx/.pptx/.xlsx from undirected family requests, 33/34 requested details machine-checked; open: G-3 delivery, G-10 self-verification (R2 false negative) | PARTIAL - owner ruling pending |
+| RQ-032 | code_interpreter + python-docx/python-pptx/openpyxl (D-40..D-46); SOUL Office line (D-44) | dispatch.log, workspace files, TOOL_CALL_END metadata (D-46) | W83 S3 re-run 3: 6/6 real .docx/.pptx/.xlsx from undirected family requests, 33/34 details; R2 false negative (G-10). W87 D-46 (c85fcf9, code_interpreter reports files created): S3 re-run 4 (40 checks incl. reply honesty, evidence\W83\s3-rerun4.txt): files 5/6 (R1 model code error, no file anywhere), honest replies 6/6 vs filesystem, shell_exec 0, 32/40, R3 formulas omitted. Criterion proposed W87: 6/6 real files AND 6/6 honest replies in one run - NOT MET. Open: G-3 delivery, file_write path echo (patch B) | PARTIAL |
 | RQ-023, 027, 033 | - | - | - | Phase 2, pulled forward W83 (D-39), not yet assessed |
 
 PROGRESS BASELINE (W76, 2026-09-22, before any test run): VERIFIED 0/28.
@@ -127,7 +127,8 @@ PROGRESS (W77, 2026-09-22, after the parser + config fix): VERIFIED 3/28 - RQ-02
 PARTIAL: RQ-001, RQ-002. OPEN: RQ-004. NOT VERIFIED (tested, failed): RQ-025 (model did not delegate to the llm tool; not a parse failure). NOT ASSESSED: 22.
 PROGRESS (W83, 2026-09-24): VERIFIED 3/28 unchanged. PARTIAL: RQ-001, RQ-002, RQ-024, RQ-031.
 PROGRESS (W83 owner ruling, 2026-09-24): VERIFIED 4/28 - RQ-021, RQ-022, RQ-024, RQ-030.
-PHASE 2 PROGRESS (W83): RQ-032 evidence 6/6 real documents (S3 re-run 3, 0507c8c), owner ruling pending; RQ-023/027/033 not assessed. PARTIAL: RQ-001, RQ-002, RQ-031. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20.
+PHASE 2 PROGRESS (W83): RQ-032 evidence 6/6 real documents (S3 re-run 3, 0507c8c), owner ruling pending; RQ-023/027/033 not assessed. PARTIAL: RQ-001, RQ-002, RQ-031. OPEN: RQ-004. NOT VERIFIED: RQ-025. NOT ASSESSED: 20.
+PHASE 2 PROGRESS (W87): RQ-032 re-run 4 after D-46 - files 5/6, honest replies 6/6, criterion NOT MET; PARTIAL. VERIFIED 4/28 core unchanged.
 QUALIFICATION RULE AMENDMENT (owner ruling R1, W83): dispatch.log ATTEMPT/OUTCOME lines (per call, turn id, reason code,
 %LOCALAPPDATA%\OpenJarvis\logs\dispatch.log) are ACCEPTED as the server-path machine invocation record, provided the pass
 criterion also checks the reply content. It records that a tool ran, not that the reply was faithful to it.
