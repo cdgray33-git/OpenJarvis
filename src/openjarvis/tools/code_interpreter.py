@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 import sys
 from typing import Any
 
@@ -82,6 +83,7 @@ class CodeInterpreterTool(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=self._timeout,
+                cwd=_oj_workdir(),  # openjarvis-w83-codecwd-v1
             )
             output = result.stdout
             if result.stderr:
@@ -107,5 +109,16 @@ class CodeInterpreterTool(BaseTool):
                 success=False,
             )
 
+
+# openjarvis-w83-codecwd-v1 (W83 G-2): author runs the subprocess with no cwd, so relative saves (a .docx, a .pptx) land
+# wherever the server started - usually the repo root. Use the same folder file_write is confined to.
+def _oj_workdir():
+    try:
+        from openjarvis.core.config import load_config, resolve_file_write_dirs
+        d = resolve_file_write_dirs(load_config())[0]
+    except Exception:
+        d = str(Path.home() / ".openjarvis" / "workspace")
+    Path(d).mkdir(parents=True, exist_ok=True)
+    return d
 
 __all__ = ["CodeInterpreterTool"]

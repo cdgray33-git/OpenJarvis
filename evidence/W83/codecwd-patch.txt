@@ -1,0 +1,7 @@
+W83 Office S2 code_interpreter cwd patch 2026-09-24T20:01:05
+ANCHOR count=1 (want 1)
+BACKUP C:\Users\Admin\OpenJarvis\evidence\W83\backup\code_interpreter.py.bak-W83-codecwd-20260924_200105
+AFTER sha=8C1236B01E13DD94 marker=2
+T1 success=True cwd_reported='C:\\Users\\Admin\\.openjarvis\\workspace' workspace='C:\\Users\\Admin\\.openjarvis\\workspace' PASS=True
+T2 file_in_workspace=True
+T3 file_in_repo_root=False (want False)
