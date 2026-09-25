@@ -487,6 +487,7 @@ not have to guess whether it worked.
 | ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
 |---|---|---|---|---|---|
 | D-47 | Trace system (src\openjarvis\traces) | full package: store.py (SQLite traces / trace_steps / FTS5, subscribe_to_bus), collector.py (wraps an agent run, records every inference, tool, memory and respond step), analyzer.py, __init__.py; TracesConfig enabled=True by default | restored BYTE-EXACT from af21bc18 (git hash-object = author blob, all 4 files); replaces a Graystone 18-line Rust-stub store.py and 1-line __init__.py (no collector, no analyzer, no subscribe_to_bus); the stub's traces.db (0 rows, incompatible schema) moved to evidence\W88\backup\tracesdb-ruststub-20260925_112010 | AUTHOR x GRAYSTONE INTERACTION DEFECT, fixed | 1d4b3ae4; probe_trace_restore_w88, vv_traces_w88, tb_since_start_w88, vv_orch_trace_w88 |
+| D-48 | Trace test fixture (tests\traces\test_store_fts.py) | store fixture yields a TraceStore inside tempfile.TemporaryDirectory and never closes it | fixture closes the store in teardown (try/finally, s.close() - the author's own method); test code only | AUTHOR TEST DEFECT (Windows), fixed | W88 tests commit; patch_fts_fixture_w88, pytest tests/traces 52 passed |
 Defect record D-47: AUTHOR INTENT - traces are the author's full interaction record and the input to the learning system
 (traces\__init__.py: "Traces are the primary input to the learning system"). SYMPTOMS - traces.db stays empty (POAM-32);
 no durable record of what a tool returned or why it failed (G-11); any JarvisSystem.ask() agent turn with traces enabled
@@ -506,3 +507,21 @@ cli\ask.py record no trace. The author wired the chat endpoints later (upstream 
 Plain language: Jarvis came with a flight recorder that writes down every step of every job. When our copy of the project was
 set up, a rule in the author's own file list hid the recorder's folder, and the part that does the recording went missing. We put
 the author's recorder back exactly as written. It now records jobs run through Jarvis's main planner; the chat window is next.
+G.7 addendum (W88, same day) - the cause is AUTHOR-DOCUMENTED: the author's CHANGELOG v1.0.2 (2026-05-24), fix #372, records
+that the unanchored `traces/` .gitignore line made hatchling drop src/openjarvis/traces/ from the v1.0.1 PyPI wheel, so every
+fresh install failed with ModuleNotFoundError: No module named 'openjarvis.traces' on the first jarvis ask, learning or server
+call; the author anchored it to `/traces/`. Our baseline af21bc18 (2026-05-19) predates that fix. The same bare pattern also
+matched tests/traces/, so the author's 7 trace test files were never in our repo (collision matrix: tests/traces/* = D on our
+side). Most likely origin of the Rust stub - still inference, now supported by the author's record: the 05-30 Graystone setup
+hit that ModuleNotFoundError and a stand-in was written to satisfy the import.
+AUTHOR TESTS: tests/traces restored from af21bc18 (git checkout af21bc18 -- tests/traces, 7 files) and run with the author's
+LOCKED test tooling (pytest 9.0.2, pytest-asyncio 1.3.0, pytest-cov 7.0.0 from uv.lock, installed with uv pip install; pyproject
+and uv.lock unchanged; deps resolved coverage 7.16.1, iniconfig 2.3.0, pluggy 1.6.0). First run: 52 passed, 4 errors - all four
+ERROR at teardown of TestFTS5Search tests that had PASSED. After D-48: 52 passed, 0 errors. Rollback of the tooling:
+uv pip uninstall --python .venv\Scripts\python.exe pytest pytest-asyncio pytest-cov iniconfig pluggy coverage.
+Defect record D-48: SYMPTOM - on Windows the 4 TestFTS5Search tests pass, then ERROR at teardown with PermissionError
+[WinError 32] on the temp traces.db. TRIGGER - the store fixture yields a TraceStore inside tempfile.TemporaryDirectory and
+never closes it; Windows cannot delete an open SQLite file (Linux and macOS can, so it passes in the author's usual lanes).
+Still present upstream: the only author change to the file since the baseline is ruff formatting (928776a7). FIX - close the
+store in the fixture teardown. Plain language: we ran the author's own checklist for the recorder and all 52 checks pass. One
+check tripped over a Windows rule - you cannot throw away a file that is still open - so the check now closes the file first.

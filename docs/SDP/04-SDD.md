@@ -443,3 +443,10 @@ H-W88-3 The author's .gitignore bare `traces/` line hides the traces SOURCE pack
 H-W88-4 Un-timestamped log lines (tracebacks) defeat time-based filters; anchor on the last start marker instead.
 H-W88-5 "Newest file by timestamp" pickers select backups (evidence\*\backup\pre-handoff-*); pin the live path.
 H-W88-6 jarvis ask does not exercise the orchestrator; the traced entry point is JarvisSystem.ask() (vv_orch_trace_w88).
+H-W88-7 git diff / git log with long output opens the pager in PowerShell and waits at ':' - use git --no-pager in blocks.
+H-W88-8 The venv has no test tooling by default; install the author's LOCKED dev versions with uv pip install (never uv sync).
+### 18.9 Author test verification (W88)
+The author's own tests for the package (tests\traces, 7 files from af21bc18 - lost to the same `traces/` gitignore trap) were
+restored and run with the author's locked pytest 9.0.2: 52 passed. Four FTS tests raised teardown errors on Windows only (an
+author test-fixture defect, D-48, still present upstream); fixed by closing the store in the fixture: 52 passed, 0 errors.
+The author documented the gitignore cause as fix #372 (CHANGELOG v1.0.2), which confirms 18.4 cause (1).
