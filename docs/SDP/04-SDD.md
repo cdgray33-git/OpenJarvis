@@ -369,3 +369,77 @@ W87 delta (D-46, c85fcf9; recorded W88): at the code_interpreter gate, file crea
 reads) and in TOOL_CALL_END metadata (the author's machine record on the event bus). Still NOT visible: tool content text is not
 recorded durably (G-11, POAM-54) and dispatch.log OUTCOME remains a reason code. Plain language: Jarvis now checks its own folder
 after running a program and says which files are new; what we still cannot see afterward is the exact words each tool sent back.
+
+## 18. TRACE SYSTEM (W88) - author design, how it was lost, restore, and what it records [M evidence\W88\*; R af21bc18]
+### 18.1 Plain language
+A trace is Jarvis's flight recorder for one job: what was asked, what the model said, which tools it used, what each tool sent
+back (including the exact error words), what memory it looked up, and the final answer, each with a time. The author built
+this so the system can be checked afterward and so the learning system can improve from real jobs. In our copy the recorder
+was missing and a do-nothing stand-in sat in its place, so nothing was ever written down. W88 put the author's recorder back.
+### 18.2 Author design, gate by gate (af21bc18; all in-process in the backend python process unless stated)
+| Gate | Component (file) | What it does | Transport / encoding | Record |
+|---|---|---|---|---|
+| 1 | ToolExecutor (tools\_stubs.py:574-590 ours) | publishes TOOL_CALL_START {tool, arguments} and TOOL_CALL_END {tool, success, latency, result = tool CONTENT cut at 10240 chars, metadata = JSON-safe ToolResult.metadata incl. D-46 files[]} | in-process EventBus, python dicts | event only (not durable by itself) |
+| 2 | InstrumentedEngine | publishes INFERENCE_START {model, engine} and INFERENCE_END {usage, content, tool_calls, finish_reason, ttft, energy} | in-process EventBus | event only |
+| 3 | TraceCollector (traces\collector.py) | wraps ONE agent.run(): subscribes to INFERENCE_START/END, TOOL_CALL_START/END, MEMORY_RETRIEVE for the run only; converts each into a TraceStep (generate / tool_call / retrieve), adds a respond step, builds a Trace (query, agent, model, engine, steps, result, messages, timing, tokens) | in-process objects | Trace object; collector.last_trace |
+| 4 | TraceStore.save (traces\store.py) | persists the Trace and every step | local file ~\.openjarvis\traces.db, SQLite WAL mode, check_same_thread=False; JSON (UTF-8) in TEXT columns | tables traces (trace_id UNIQUE), trace_steps (input/output/metadata JSON per step), traces_fts (FTS5 over query/result/agent, trigger traces_fts_ai) |
+| 5 | TRACE_COMPLETE | collector publishes {trace}; TraceStore.subscribe_to_bus listens and also saves (server: app.py:227-241) | in-process EventBus | second save path (see 18.6 double-save risk) |
+| 6 | TraceAnalyzer (traces\analyzer.py) | summaries, per-route and per-tool stats, export - input to the learning system | reads traces.db | reports |
+### 18.3 Where the collector is wired (entry points)
+| Entry point | Traced at af21bc18? | Evidence |
+|---|---|---|
+| JarvisSystem.ask() (system\core.py:133) -> QueryOrchestrator.ask() -> _run_agent() (orchestrator.py:212-225) | YES, when SystemBuilder built a trace_store (builder.py:204-209, traces enabled) | vv_orch_trace_w88: 1 trace, steps generate + respond |
+| Server chat route POST /v1/chat/completions (server\routes.py, native_openhands) | NO - no trace code at af21bc18 (git grep: no match) | vv_traces_w88 gate B: HTTP 200, 0 new traces |
+| CLI jarvis ask (cli\ask.py) | NO - calls engine.generate() directly, or with --agent builds the agent itself (own _run_agent, TerminalConfirmGate W61); no trace code, same as the author's ask.py | W88 read of ask.py whole; jarvis ask returned PONG with 0 traces |
+| Upstream after the baseline (ef005703) | the author wired a TraceCollector into the chat endpoints (store.save() directly) and REMOVED the app.py bus subscription to prevent double saves | upstream app.py comment, W88 diff |
+builder.py subscribes ONLY the telemetry store to the bus (builder.py:336), never the trace store: JarvisSystem.ask() cannot double-save.
+### 18.4 How the package was lost (measured W88)
+| Fact | How established |
+|---|---|
+| The author's repo is complete at af21bc18 (__init__ 638 B, analyzer 11552, collector 8264, store 10185) and at current upstream main a6dcf846 (collector 10069, store 11363 - still developed) | git ls-tree -l in the upstream clone |
+| Graystone's repo is not a clone: first commit f2fcb30 2026-05-30 "Graystone Lab: remote MCP/Ollama integration, Rust extension, UI fixes" | git log --reverse |
+| The author's .gitignore has a bare `traces/` line that matches src\openjarvis\traces\ | git show af21bc18:.gitignore |
+| The package was untracked until 08-05; 58c05e2 (2026-08-05) un-ignored it and committed a 1-line __init__ and an 18-line store.py | git log --diff-filter=A; no deletion commit exists (--diff-filter=D empty) |
+| The 18-line store.py wraps openjarvis_rust.TraceStore (importable, has TraceStore) or falls back to a class that does nothing; it has no subscribe_to_bus | W88 bundle read; import probe |
+| The author never wrote it: no RustTraceStore anywhere in the author's history (all branches) | git log --all -S RustTraceStore (empty) |
+| The Rust store created traces.db (2026-06-09) with an incompatible schema: trace_id PRIMARY KEY, steps_json, metadata_json; no trace_steps; 0 rows | read-only sqlite_master probe |
+| The server built the stub at every start (traces.db-shm touched at start) and app.py:240 subscribe_to_bus raised AttributeError, swallowed by the author's except/pass | code read + file times |
+| collector.py and analyzer.py absent -> the orchestrator path would raise ModuleNotFoundError whenever a trace store was set | import probe: collector FAIL |
+### 18.5 Restore (D-47, commit 1d4b3ae4) and V&V
+Pre-restore probe (probe_trace_restore_w88, read-only): every dependency present (core.events, core.types StepType/Trace/TraceStep,
+agents._stubs, security.file_utils; all six EventTypes); the author's store/collector/analyzer loaded from git into memory and ran
+a synthetic turn against in-memory SQLite: 1 trace, 3 steps; the tool step held "Tool execution error: PROBE-ERROR-TEXT" and the
+files[] metadata. Patch (patch_traces_restore_w88): server stopped (PID 20320); stub files backed up; traces.db/-shm/-wal moved to
+evidence\W88\backup\tracesdb-ruststub-20260925_112010; four files written from git cat-file blobs, every hash = author blob;
+fresh import OK. Live V&V after restart (PID 27988, 11:21:39): A - the author's store created traces, trace_steps, traces_fts and
+triggers; B - chat path HTTP 200 "PONG" in 10.0 s, 0 new traces (baseline behaviour); C - 0 tracebacks after the last start marker;
+D - JarvisSystem.ask("Reply with the single word PONG.") built in 4.7 s, answered in 9.9 s, TraceCollector recorded 1 trace
+(98f48c8c1a194968, native_openhands, qwen3-coder:30b) with steps generate (prompt_tokens 6183, completion 3) and respond.
+### 18.6 Visibility now (feeds section 17 and the data-flow artifact)
+| Path | Tool content / error text durable? | Where |
+|---|---|---|
+| JarvisSystem.ask() (orchestrator) | YES - every step, tool result up to 10240 chars, error text, files[] metadata, model content, tokens | traces.db trace_steps |
+| Chat route (what the family uses) | NO - not traced (author baseline); dispatch.log OUTCOME is a reason code only | G-11 remainder, POAM-57 |
+Open risk (unmeasured): in the server, app.py subscribes its store to TRACE_COMPLETE on app.state.bus. If an orchestrator turn runs
+inside the server on that same bus, the collector saves the trace AND publishes TRACE_COMPLETE, so it is saved twice; the second
+INSERT violates UNIQUE(trace_id). SYMPTOM would be an IntegrityError after the answer. The author found and fixed this upstream
+(ef005703). Measure before porting chat-path tracing (POAM-58).
+### 18.7 Negative results (what things turned out NOT to be)
+- POAM-32 said "trace modules deleted": no deletion commit exists; the package was never tracked before 08-05 (git log -D empty).
+- The config was not the cause: config.toml has no [traces] section; the author default enabled=True applies, as in the author's template.
+- jarvis ask producing 0 traces is NOT a restore failure: cli\ask.py never reaches the orchestrator (author baseline behaviour).
+- vv_traces_w88 gate C reported 151 Traceback lines: all historical. Its timestamp filter let un-timestamped lines through;
+  tb_since_start_w88 (anchored on the last start marker) found 0.
+- The first author diff was against the upstream clone HEAD ef005703, NOT the baseline af21bc18 - it mixed the author's later work
+  with Graystone changes (evidence\W88\trace-wiring-diff-vs-author.txt is labelled accordingly). The byte-identity checks named
+  af21bc18 explicitly and stand.
+- The W88 SDP-owed patch v1 inserted CRLF lines into LF files: the bundle written by PowerShell Set-Content had rewritten every line
+  as CRLF. Restored from backup and redone (v2) with line endings read per anchor from the real file.
+- The newest-by-timestamp ARCHIVE picker chose evidence\W83\backup\pre-handoff-d, which lacks PART 5; the live file is the repo-root copy.
+### 18.8 Hazards
+H-W88-1 The upstream clone's checked-out HEAD is NOT the author baseline (it is ef005703). Always name af21bc18 explicitly.
+H-W88-2 A PowerShell Set-Content bundle rewrites line endings (CRLF); never infer a file's EOL from a bundle.
+H-W88-3 The author's .gitignore bare `traces/` line hides the traces SOURCE package in any copy-not-clone install.
+H-W88-4 Un-timestamped log lines (tracebacks) defeat time-based filters; anchor on the last start marker instead.
+H-W88-5 "Newest file by timestamp" pickers select backups (evidence\*\backup\pre-handoff-*); pin the live path.
+H-W88-6 jarvis ask does not exercise the orchestrator; the traced entry point is JarvisSystem.ask() (vv_orch_trace_w88).

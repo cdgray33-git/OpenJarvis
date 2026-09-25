@@ -482,3 +482,27 @@ negative GONE. R1 = model code error (no pptx made anywhere). R3 formulas still 
 honest replies in ONE run) NOT MET - PARTIAL.
 Plain language: after Jarvis runs its little program, it now looks in its own folder and says "these files are new", so it does
 not have to guess whether it worked.
+
+### G.7 W88 additions - trace system restored (appended 2026-09-25)
+| ID | Area | Author (af21bc18) | Graystone | Class | Evidence / commit |
+|---|---|---|---|---|---|
+| D-47 | Trace system (src\openjarvis\traces) | full package: store.py (SQLite traces / trace_steps / FTS5, subscribe_to_bus), collector.py (wraps an agent run, records every inference, tool, memory and respond step), analyzer.py, __init__.py; TracesConfig enabled=True by default | restored BYTE-EXACT from af21bc18 (git hash-object = author blob, all 4 files); replaces a Graystone 18-line Rust-stub store.py and 1-line __init__.py (no collector, no analyzer, no subscribe_to_bus); the stub's traces.db (0 rows, incompatible schema) moved to evidence\W88\backup\tracesdb-ruststub-20260925_112010 | AUTHOR x GRAYSTONE INTERACTION DEFECT, fixed | 1d4b3ae4; probe_trace_restore_w88, vv_traces_w88, tb_since_start_w88, vv_orch_trace_w88 |
+Defect record D-47: AUTHOR INTENT - traces are the author's full interaction record and the input to the learning system
+(traces\__init__.py: "Traces are the primary input to the learning system"). SYMPTOMS - traces.db stays empty (POAM-32);
+no durable record of what a tool returned or why it failed (G-11); any JarvisSystem.ask() agent turn with traces enabled
+raises ModuleNotFoundError: openjarvis.traces.collector (orchestrator.py:216-217, author code, byte-identical to af21bc18);
+the server builds a store that silently never subscribes (app.py:240 AttributeError swallowed by the author's except/pass).
+TRIGGER - two causes stacked: (1) the AUTHOR's .gitignore carries a bare `traces/` line (meant for trace output folders) that
+also matches the source package src\openjarvis\traces\; Graystone's repo is not a clone (first commit f2fcb30, 2026-05-30,
+built from copied files), so the package was left untracked from 05-30 to 08-05; (2) while untracked, the author's store was
+replaced by a Graystone stub wrapping openjarvis_rust.TraceStore and the collector and analyzer were absent; commit 58c05e2
+(08-05, "stop ignoring traces package source") then committed the stub as found. FIX - restore the four author files
+byte-exact from af21bc18; move the stub's traces.db aside so the author's store creates its own schema. Config unchanged: no
+[traces] section in config.toml, author default enabled=True applies (same effect as the author's shipped template).
+NOT ESTABLISHED - when the stub replaced the author's store (git holds nothing before 08-05; the 05-30 Rust-extension work
+is the likely context - inference only). The author's full history contains no RustTraceStore: the Python stub is Graystone's.
+LIMIT - at af21bc18 the author wires the collector ONLY on JarvisSystem.ask() (QueryOrchestrator); the server chat route and
+cli\ask.py record no trace. The author wired the chat endpoints later (upstream ef005703) - POAM-57. Details: SDD section 18.
+Plain language: Jarvis came with a flight recorder that writes down every step of every job. When our copy of the project was
+set up, a rule in the author's own file list hid the recorder's folder, and the part that does the recording went missing. We put
+the author's recorder back exactly as written. It now records jobs run through Jarvis's main planner; the chat window is next.

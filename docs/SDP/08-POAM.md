@@ -36,7 +36,7 @@ the end-of-build security review, not changed piecemeal.
 | POAM-29 | list_local_models raises outside its try (500 not []) | SI-11 | H-W81-3 | Deferred W82 (dormant) |
 | POAM-30 | jarvis init --host ignored by model download | CM-6 | H-W81-1 / F1b | ACCEPTED RISK W82 (rebuild rule, Vol 9) |
 | POAM-31 | Embeddings default to localhost; nomic-embed-text absent on .200 | - | H-W80-5 / F2 | Deferred W82 (dormant; prerequisite for semantic research) |
-| POAM-32 | Trace modules deleted; traces.db empty; no durable invocation record on the server path (RQ-028) | AU-2, AU-12 | H-W73-TRACELOST, W77 F7 | Open |
+| POAM-32 | Trace system: the author package was never tracked (author .gitignore `traces/` + copy-not-clone repo) and a Graystone stub replaced the store. RESTORED byte-exact from af21bc18 (D-47, 1d4b3ae4): the orchestrator path (JarvisSystem.ask) now records every step durably in traces.db. The chat path is still untraced (POAM-57) (RQ-028) | AU-2, AU-12 | H-W73-TRACELOST, W77 F7, W88 SDD 18 | Partially closed (W88) |
 | POAM-33 | UI unresponsive during generation; stop does not cancel backend; no chat timeout | SC-5 | W68-W69 | Open |
 | POAM-34 | Mic permission auto-approved (--use-fake-ui-for-media-stream) | AC-3 | W63 | Open |
 | POAM-35 | Out-of-git configuration items not in any baseline | CM-2 | W80 H-W80-7 | Open (GAP-041) |
@@ -61,6 +61,9 @@ the end-of-build security review, not changed piecemeal.
 | POAM-54 | dispatch.log OUTCOME records a reason code but not the tool's error text; code_interpreter stdout/stderr/exit code not logged | AU-3 | G-11 [M] | Open - visibility gap (owner goal). W87: blocked measurement twice (R2 tool content; R1 t2/t3 exit 0 with no file) and leaves D-46's Files line unobserved live |
 | POAM-55 | Model detail fidelity: Excel formulas requested but values written in 2 of 3 runs | SI-10 (quality) | S3 R3 [M] | Open (tuning) |
 | POAM-56 | grpcio 1.78.1 in uv.lock is YANKED upstream (outage); zeus-ml asked for a nonexistent extra | SI-2 | [M uv output] | Open (pre-existing lock) |
+| POAM-57 | Chat path (server routes.py, native_openhands - the family path) records no trace: tool content and error text are not durable (G-11 remainder). Author wired chat-path tracing after the baseline (upstream ef005703) | AU-2, AU-12 | W88 SDD 18.3, 18.6 | Open |
+| POAM-58 | Possible double save of a trace inside the server (app.py store subscribed to TRACE_COMPLETE + collector save -> UNIQUE violation). Unmeasured; author fix upstream ef005703. Measure before porting POAM-57 | SI-11 | W88 SDD 18.6 | Open (measure) |
+| POAM-59 | Author .gitignore bare `traces/` matches the traces source package (copy-not-clone installs lose it); untracked Engineering_Wiki doc inside src\openjarvis\traces (gitignored at .gitignore:65) | CM-2, CM-7 | W88 H-W88-3 | Open (cleanup register) |
 | CLOSED | Office files: relative saves in repo root (G-2), fenced code failed (G-9), file_write relative names denied (G-7), text written into .docx/.pptx with false 'created' claims | CM-2, SI-10 | W83 [M] | CLOSED 5883f98, 5a6735d, 0507c8c (D-41..D-45) |
 | CLOSED | Author persona layer never reached any tool agent (hook not forwarded, builder never built) | CM-2 | W83 [M] | CLOSED W83 6429769 (D-35, D-36) |
 | CLOSED | Ingest decode stored UTF-16 as char+NUL and accepted binaries (author defect, both paths) | SI-10 | W83 [M] | CLOSED W83 a457239 + 00edd61 (D-28, D-29) |
