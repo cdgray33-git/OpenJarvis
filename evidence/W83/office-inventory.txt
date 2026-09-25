@@ -1,0 +1,46 @@
+W83 office capability inventory 2026-09-24T19:42:49
+REGISTRY ['calculator', 'think', 'retrieval', 'llm', 'file_read', 'web_search', 'code_interpreter', 'code_interpreter_docker', 'repl', 'memory_store', 'memory_retrieve', 'memory_search', 'memory_index', 'channel_send', 'channel_list', 'channel_status', 'http_request', 'docker_shell_exec', 'shell_exec', 'memory_manage', 'user_profile_manage', 'skill_manage', 'file_write', 'apply_patch', 'git_status', 'git_diff', 'git_commit', 'git_log', 'db_query', 'pdf_extract', 'image_generate', 'audio_transcribe', 'kg_add_entity', 'kg_add_relation', 'kg_query', 'kg_neighbors', 'text_to_speech', 'digest_collect', 'mailbox_list_accounts', 'mailbox_usage_report', 'mailbox_find_messages', 'mailbox_move_to_trash', 'mailbox_empty_folder'] builder=chat
+--- AUTHOR af21bc18 tool/skill files matching office terms ---
+--- AUTHOR af21bc18 code references ---
+  python-docx files=1
+  python-pptx files=0
+  openpyxl files=0
+  pptx files=0
+  docx files=2
+  win32com files=0
+--- LOCAL venv packages ---
+--- MS Office on this box ---
+  WINWORD.EXE C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE  16.0.10417.20051
+  POWERPNT.EXE C:\Program Files\Microsoft Office\root\Office16\POWERPNT.EXE  16.0.10417.20051
+  EXCEL.EXE C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE  16.0.10417.20051
+--- ~\.openjarvis\skills ---
+  \hermes
+  \hermes\arxiv
+  \hermes\blogwatcher
+  \hermes\llm-wiki
+  \hermes\polymarket
+  \hermes\research-paper-writing
+  \hermes\arxiv\.source
+  \hermes\arxiv\SKILL.md
+  \hermes\blogwatcher\.source
+  \hermes\blogwatcher\SKILL.md
+  \hermes\llm-wiki\.source
+  \hermes\llm-wiki\SKILL.md
+  \hermes\polymarket\references
+  \hermes\polymarket\.source
+  \hermes\polymarket\SKILL.md
+  \hermes\polymarket\references\api-endpoints.md
+  \hermes\research-paper-writing\references
+  \hermes\research-paper-writing\templates
+  \hermes\research-paper-writing\.source
+  \hermes\research-paper-writing\SKILL.md
+  \hermes\research-paper-writing\references\autoreason-methodology.md
+  \hermes\research-paper-writing\references\checklists.md
+  \hermes\research-paper-writing\references\citation-workflow.md
+  \hermes\research-paper-writing\references\experiment-patterns.md
+  \hermes\research-paper-writing\references\human-evaluation.md
+  \hermes\research-paper-writing\references\paper-types.md
+  \hermes\research-paper-writing\references\reviewer-guidelines.md
+  \hermes\research-paper-writing\references\sources.md
+  \hermes\research-paper-writing\references\writing-guide.md
+  \hermes\research-paper-writing\templates\aaai2026

@@ -1,0 +1,12 @@
+W83 Office S1 measure - how this venv is managed 2026-09-24T19:52:53
+UV C:\Users\Admin\.local\bin\uv.exe  uv 0.11.11 (ed7b06001 2026-05-06 x86_64-pc-windows-msvc)
+MOD docx       1.2.0
+MOD pptx       MISSING
+MOD openpyxl   MISSING
+MOD lxml       6.0.2
+MOD PIL        12.1.1
+FILE pyproject.toml present 6680 bytes
+FILE uv.lock present 1657094 bytes
+PYPROJECT :43 "python-docx>=1.2.0",
+PYPROJECT :46 [project.optional-dependencies]
+UVLOCK :6570 name = "python-docx" version = "1.2.0"

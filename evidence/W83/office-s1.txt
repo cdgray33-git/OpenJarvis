@@ -1,0 +1,25 @@
+W83 Office S1 - uv add --no-sync + uv pip install exact locked versions 2026-09-24T19:58:15
+UV ADD tail:
+   warning: The package `zeus-ml==0.11.0.post1` does not have an extra named `apple`
+   warning: `grpcio==1.78.1` is yanked (reason: "Caused major outage with gcloud serveless environments: https://github.com/grpc/grpc/issues/41725")
+   warning: The package `zeus-ml==0.11.0.post1` does not have an extra named `apple`
+LOCK/PYPROJECT numstat:
+   2	0	pyproject.toml
+   49	0	uv.lock
+LOCKED versions: python-pptx=1.0.2 openpyxl=3.1.5
+UV PIP INSTALL tail:
+    + et-xmlfile==2.0.0
+    + openpyxl==3.1.5
+    + python-pptx==1.0.2
+    + xlsxwriter==3.2.9
+FREEZE DIFF:
+   => et-xmlfile==2.0.0
+   => openpyxl==3.1.5
+   => python-pptx==1.0.2
+   => xlsxwriter==3.2.9
+VERIFY:
+   RT docx heading='W83 Test Policy' paras=2
+   RT pptx slides=2 titles=['Family Budget 2026', 'Savings Goals']
+   RT xlsx A1='Groceries' B1=450
+   G-4 author docx reader returns text=True content='W83 Test Policy\n\nHousehold quiet hours are 10pm to 7am.'
+   VERSIONS python-docx=1.2.0 python-pptx=1.0.2 openpyxl=3.1.5
