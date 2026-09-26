@@ -52,6 +52,13 @@ repo alone misses all of these (GAP-041, new).
 | 0da22e8 | W81 | cloud_router host order config > env > raise (F1a) |
 | e79a11c | W82 | SDP v0.2 harvest of ARCHIVE-W42..W81 |
 | (this) | W82 | H5: remove Graystone /transcribe and /health from speech_router.py (author routes serve; mic dump removed); SDP rows updated. Backup evidence\W82\backup\speech_router.py.bak-W82-H5-20260923_213342 |
+| 955fe451 | W91 | main: W91 closeout (frontend decisions, BRIEF-W92) |
+| 533f9bfe | W90-W92 | upgrade/a6dcf846: MERGE author a6dcf846 (parents 3df27c53, a6dcf846); backend W90, frontend Method B W92 (SDD 20.8) |
+| ac33e27f | W92 | upgrade/a6dcf846: remove 36 tracked frontend backup copies (C-W91-3, C-W92-2) |
+| 8eda697d | W92 | upgrade/a6dcf846: uv.lock re-lock; STT pins ctranslate2 4.8.0, av 17.1.0 (W92-D5) |
+| 0dd22107 | W92 | upgrade/a6dcf846: .python-version 3.12 + labeled .gitignore exception (W92-D6) |
+| 6c9a2bc3 | W92 | upgrade/a6dcf846: fix author defect AD-W92-1 (Tauri plugin crates aligned with npm) |
+| 93f96395 | W92 | upgrade/a6dcf846: tauri.conf Graystone values restored - frontendDist, updater off (W92-D7) |
 Also recorded without hash in the harvest: W46 dispatch-outcome wrapper, W51-W52 test-execute argument guard, W54 toolkit bind,
 W56 ConfirmPolicy, W58 argument-aware gate, W59 prose-approval removal, W61 protected senders v2 and CLI gate, W63 CDP removal,
 W66-W68 audio fixes, W69 stop button. Hash each at GAP-018.
@@ -61,3 +68,7 @@ F1a: `git revert 0da22e8` or copy evidence\W81\backup\cloud_router.py.bak-W81-F1
 src\openjarvis\server\cloud_router.py, restart, confirm START time. D-16: `git revert a0704c4` (+ .bak_w79disable files).
 Config: config.toml.bak-W80-D03-20260923_110839. Unused W82 backup: evidence\W82\backup\init_cmd.py.bak-W82-F1b-20260923_192841.
 Older points: openjarvis-rollback registers (W56-W80 valid per BRIEF W82).
+W92 upgrade branch (not pushed; production untouched). Abandon the upgrade: git worktree remove --force
+C:\Users\Admin\OpenJarvis-upgrade, then git branch -D upgrade/a6dcf846 (the replace ref was already deleted at 533f9bfe).
+Undo one commit on the branch: git -C C:\Users\Admin\OpenJarvis-upgrade revert <hash>. Method B result and tooling:
+evidence\W92\W92-methodB-sandbox-result.zip (DB38CD7E...61C5C3). Author tags are local refs only (git tag -d to remove).

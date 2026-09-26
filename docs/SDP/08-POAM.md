@@ -1,5 +1,6 @@
 # VOL 8 - PLAN OF ACTION AND MILESTONES (POA&M)
 v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (POAM-40..56, CLOSED rows), W87 update 2026-09-24 (POAM-53 partial, POAM-54 note). Harvest of W42-W83; v0.1 items kept with status updated. Control mapping is an engineering
+W92 update 2026-09-26: POAM-67..79 added (upgrade execution, SDD 20.8); POAM-66 status updated.
 assessment; the assessor and AO make the determination. Owner ruling W82 (DD-14): dormant findings are recorded and assessed at
 the end-of-build security review, not changed piecemeal.
 
@@ -70,7 +71,20 @@ the end-of-build security review, not changed piecemeal.
 | POAM-63 | Duplicate speech WebSocket: /v1/speech/stream and a double-prefixed /v1/speech/v1/speech/stream (server\speech_router.py, Graystone) - cleanup register: back up and remove the duplicate | CM-7 | W89 SDD 20.6 F1 | Open (speech service repair) |
 | POAM-64 | POST /v1/tools/test-execute (Graystone-only): confirm whether it executes tools directly and whether it bypasses the confirmation gate | AC-3, AC-6 | W89 SDD 20.6 F2 | Open (chat/tools service repair) |
 | POAM-65 | Live config.toml: [analytics] present (owner 09/22: remove the analytics path as dead code); [traces], [telemetry], [learning*], [tools.storage], [tools.mcp] absent (author defaults) | CM-6 | W89 SDD 20.6 F3 | Open (upgrade config review) |
-| POAM-66 | Upstream upgrade (OWNER DIRECTIVE + APPROVAL W89): author main a6dcf846 + the Graystone layer by three-way merge in a separate worktree (graft, merge, service-by-service resolution of 43 conflicts, author tests, switch). Plan and measurements SDD 20.7 | CM-2, CM-3, SA-10 | W89 SDD 20.5, 20.7; trial-merge-report.md | Planned (starts W90) |
+| POAM-66 | Upstream upgrade (OWNER DIRECTIVE + APPROVAL W89): author main a6dcf846 + the Graystone layer by three-way merge in a separate worktree (graft, merge, service-by-service resolution of 43 conflicts, author tests, switch). Plan and measurements SDD 20.7 | CM-2, CM-3, SA-10 | W89 SDD 20.5, 20.7; trial-merge-report.md | In progress: merge committed 533f9bfe on upgrade/a6dcf846 (W92), desktop exe builds; V&V and switch remain (SDD 20.8) |
+| POAM-67 | ConfirmPolicy (Defect 6 gate) absent at the author's new bare-lambda tool-executor sites: cli\ask.py skills pipeline executor, deep-research agent, stream_tool_executor and two more sites in agent_manager_routes - skills and those agents bypass the confirmation gate | AC-3, AC-6 | W92 (ARCHIVE s37 a) [R] | Open (before serving 8011) |
+| POAM-68 | Production and the upgrade instance share C:\Users\Admin\.openjarvis (config, skills, memory.db); author code could migrate shared state under production (H-W92-16) | CM-2, CM-3, SC-39 | W92 [M] | Open (before serving 8011) |
+| POAM-69 | Author InputArea features absent from the Graystone rewrite: Deep Research toggle and research send path (research display restored but not triggerable), no-model toast, speech-error toast | CM-2 | W92 SDD 20.8 [M] | Open (accepted W92-D4) |
+| POAM-70 | DataSources Reconnect button (bc498a16 feature) removed; author Disconnect then connect flow used instead | CM-2 | W92-D4 [M] | Open (accepted) |
+| POAM-71 | Author analytics module restored in main.tsx and store.ts; App calls removed (Option B); confirm posthog init and opt-in behaviour; egress blocked by CSP (see POAM-65) | AC-4, SI-4 | W92 [R] | Open |
+| POAM-72 | sse.ts fail-fast guard throws when getBase() is empty (author web mode serves same-origin); desktop-only today | CM-2 | W92 [R] | Open |
+| POAM-73 | Desktop updater disabled (W92-D7); future: Graystone-signed release endpoint and key | CM-14, SI-2 | W92 [M] | Open |
+| POAM-74 | Author .github\workflows arrive with the merge; check and disable before pushing the upgrade branch | CM-5, SA-10 | W92 [R] | Open (before push) |
+| POAM-75 | Author tracks frontend\tsconfig.tsbuildinfo; every tsc -b dirties it (H-W92-8) | CM-2 | W92 [M] | Open (cleanup register) |
+| POAM-76 | onnxruntime 1.24.2 in the upgrade venv vs 1.26.0 in production (CPU-only VAD); a pin needs a pyproject constraint scoped to python >= 3.11 | CM-2 | W92-D5 [M] | Open (accepted) |
+| POAM-77 | SDP provenance register (W73/W74 CSV, BACKUP-IN-GIT rows) lists the 36 backup files removed at ac33e27f; rows need a REMOVED note | CM-8 | W92 [M] | Open |
+| POAM-78 | Third-party skills import (owner request W92, 200+ public SKILL.md repositories): untrusted instructions and scripts; prerequisite POAM-67; pinned commit hashes, static scan of bundled scripts, prompt-injection review, batch enablement | SI-7, SA-12, CM-11 | W92 [S] | Open (own window) |
+| POAM-79 | Author boot runs uv sync in the project root on every start; a test exe outside the worktree would sync production's venv (H-W92-3); procedural control OPENJARVIS_ROOT at 8011 | CM-2, CM-3 | W92 [R] | Open |
 | CLOSED | Office files: relative saves in repo root (G-2), fenced code failed (G-9), file_write relative names denied (G-7), text written into .docx/.pptx with false 'created' claims | CM-2, SI-10 | W83 [M] | CLOSED 5883f98, 5a6735d, 0507c8c (D-41..D-45) |
 | CLOSED | Author persona layer never reached any tool agent (hook not forwarded, builder never built) | CM-2 | W83 [M] | CLOSED W83 6429769 (D-35, D-36) |
 | CLOSED | Ingest decode stored UTF-16 as char+NUL and accepted binaries (author defect, both paths) | SI-10 | W83 [M] | CLOSED W83 a457239 + 00edd61 (D-28, D-29) |

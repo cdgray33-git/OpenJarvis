@@ -530,3 +530,41 @@ check tripped over a Windows rule - you cannot throw away a file that is still o
 All 18 files in src\openjarvis\skills are byte-identical to af21bc18 (git hash-object = author blob). The startup warning
 "Unmapped frontmatter field 'title' / 'dependencies' in skill 'research-paper-writing'" is the author's parser working as
 designed (parser.py:196, tolerant pass) and is unchanged at upstream a6dcf846. No change made. Details: SDD section 19.
+
+### G.9 W90-W92 divergence re-baseline to author a6dcf846 (appended 2026-09-26, W92)
+Method: every row was decided with the author's intent, the options and the risks (owner rule 09/23). Evidence: SDD 20.8.
+Row group "backend" (W90, full per-file text ARCHIVE-W83 s36): pyproject.toml author dynamic version (hatch-vcs), author
+python range, KEPT Office and speech extras; core/config.py KEPT qwen3.5:9b fallback, STT compute_type auto, template port 8010
++ native_openhands; config.toml author loopback host, KEPT port 8010; cli/ask.py KEPT TerminalConfirmGate; cli/serve.py KEPT
+Defect 6 live confirm callback, BIND_ASSERT, _build_agent_tools, memory backfill, W83 persona block; server/routes.py KEPT the
+cloud bypass as one condition; agent_manager_routes KEPT ConfirmPolicy import; auth_middleware KEPT bind records; tools/_stubs
+dispatch log + Defect 6 emit + ConfirmPolicy merged with the author's taint; code_interpreter KEPT fence strip before the
+author's AST check; knowledge_sql author keyword check THEN our SQLite authorizer.
+Row group "frontend and desktop" (W91-W92):
+| Item | Author a6dcf846 | Graystone as built | Reason | Decision |
+|---|---|---|---|---|
+| Web CSP (tauri.conf) | connect-src http: https: ws: wss: | explicit allowlist incl. 172.16.33.200, ipc.localhost, media-src blob: data: | least privilege | OWNER OPTION B (W91) |
+| App analytics calls | setup_completed, model_changed, app_opened | removed; analytics module left in main.tsx/store.ts, egress blocked by CSP | owner 09/22 analytics is dead code | OPTION B; POAM-71 |
+| Backend port | 8000 | 8010 (lib.rs JARVIS_PORT, vite proxy) | 8000 held by iphlpsvc portproxy -> 172.21.134.21:8000 (measured W92) | required |
+| lib.rs | full file | author file byte-for-byte except JARVIS_PORT 8010 | author SourceKind::Custom supports a remote Ollama natively (launch_ollama false, host written to config.toml); ~100 lines of our remote-mode Rust retired | W92-D3 |
+| frontendDist + build:tauri | ../dist + vite build --outDir dist | ../../src/openjarvis/server/static + vite build | one delivery path for exe and backend (fixes two-path drift / white screen) | W92-D7 B |
+| Desktop updater | active, endpoint open-jarvis desktop-latest | active false, endpoints [] | upstream binaries would replace the Graystone fork; updater runs in Rust outside the CSP | W92-D7 B; POAM-73 |
+| Python interpreter | 3.10-3.13, .python-version git-ignored (line 103) | .python-version 3.12 tracked via labeled exception | inference layer requires 3.12; author boot sync could rebuild a venv on another interpreter | W92-D6 |
+| STT stack lock | ctranslate2 4.7.1, av 16.1.0, onnxruntime 1.24.2 | ctranslate2 4.8.0, av 17.1.0 (= production), onnxruntime 1.24.2 | keep the proven decode path | W92-D5 P2; POAM-76 |
+| ThinkingCircle | absent | removed | owner rebuilding later; author code supersedes | W92-D1 |
+| Reconnect button, SetupScreen remote text | absent | removed (bc498a16 features) | author Disconnect flow and inference-source setup cover them | W92-D4; POAM-70 |
+| InputArea | author component (Deep Research toggle, send path, toasts) | Graystone whole-file rewrite (useSpeechStream, attachments; send in ChatArea) | voice and attachments requirement | kept; gap POAM-69 |
+| MessageBubble / ChatArea | isLive, ResearchTimeline, citations | author features restored + Graystone option buttons, attachment chips, TTS driver, probe, conversationId set on send | Option 1 extended by Method B | W92-D2 |
+| sse.ts | top-level POST | fail-fast guard + single POST inside try with author authHeaders | avoids double POST (H-W91-4) | kept; POAM-72 |
+| store updateLastAssistant | research traces/sources at 7-8 | same + persist at 9 | author positional contract kept | kept |
+| confirmTool / ConfirmPrompt | absent | present (Defect 6 inbound), path-only apiFetch | confirmation gate | kept |
+| useTauriApi fallback | author value | http://127.0.0.1:8010 | avoids localhost resolving to IPv6 | kept |
+AUTHOR DEFECT AD-W92-1 (fixed 6c9a2bc3). SYMPTOM: tauri build aborts before compiling with "Found version mismatched Tauri
+packages". CONDITIONS: author a6dcf846 ships package-lock with @tauri-apps/plugin-updater 2.11.0 and plugin-notification 2.4.0
+but Cargo.lock with tauri-plugin-updater 2.10.1 and tauri-plugin-notification 2.3.3; the Tauri CLI requires matching
+major.minor. Any build of the author's own tree fails the same way. FIX: cargo update -p tauri-plugin-notification (-> 2.4.0) and
+cargo update -p tauri-plugin-updater --precise 2.11.0 (a plain update overshot to 2.12.0; a guard stopped the build); Cargo.lock
+only, 2 crates moved, 155 unchanged. VERIFIED: the version gate passes and the release exe builds. Candidate upstream report.
+OBSERVATION (not a defect): the author tracks frontend\tsconfig.tsbuildinfo, a build cache (POAM-75).
+Upstream tags: the author's 235 release tags were fetched into local refs so hatch-vcs stamps the author's version
+(1.0.5.dev...); they are never pushed (push.followTags unset; push commands never use --tags).

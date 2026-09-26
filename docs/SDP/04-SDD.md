@@ -658,3 +658,128 @@ ESTIMATE: 3-4 windows. PLAIN LANGUAGE: git lined our copy up against the author'
 slots in by itself; 43 files need a person to choose between two edits of the same lines, and a third of those are machine
 lists that are simply rebuilt. We will do it on a spare copy while the working Jarvis keeps running, and swap only when the
 spare copy passes every check.
+
+### 20.8 Upgrade execution record W90-W92: merge committed, frontend by Method B, desktop build verified [M evidence\W90..W92; R git history]
+#### 20.8.1 Plain language
+We put the author's newest Jarvis and our Graystone changes together on a spare copy, not on the working Jarvis. W90 and W91
+settled the Python side and made a careful plan for the screen side. In W92 we found that the plan would have quietly thrown
+away about 860 lines of the author's screen code, because one bad save in our history (June 2, commit bc498a16) had deleted
+them and git carried that deletion forward without asking anyone. So we rebuilt the screen side a different way (Method B):
+we undid that one bad save in a practice area, merged again, and only then touched the spare copy. The result compiles, builds,
+passes all 68 of the author's own screen tests, and the desktop program builds. The working Jarvis on port 8010 was never touched.
+
+#### 20.8.2 W90 - worktree, graft, merge, 26 non-frontend files [M]
+Worktree C:\Users\Admin\OpenJarvis-upgrade, branch upgrade/a6dcf846 from 3df27c53. Local graft git replace --graft f2fcb30c
+af21bc18 (replace ref local only, never pushed). git merge a6dcf846: 43 conflicted files as predicted by 20.7. 26 non-frontend
+files resolved and staged per the per-file decisions in Vol 3A section G.9 row group "backend" (full per-file text: ARCHIVE-W83
+s36). Two owner-reviewed departures from the W89 plan: (1) persona - author wins except native_openhands, because the author's
+BaseAgent._build_messages lets prompt_builder.build() replace the system prompt and would drop the OpenHands tool template;
+(2) sysmerge - the author's #823 folds only the agent and direct paths; ours also covers the managed-agent stream; kept pending
+V&V. The venv question was left for owner approval (closed W92, 20.8.4 step 6).
+
+#### 20.8.3 W91 - frontend hunk decisions for 14 of 17 files [M]
+115 diff3 hunks on disk (the W90 record of 117 was a counting error). Owner decisions: Option A (careful merge), Option 1
+(restore author code that our bc498a16 deleted, inside hunks), Option B (keep our CSP allowlist; App analytics stays out). Two
+silent defects found that a green build would not catch: H-W91-4 (taking the author's sse.ts hunk would send every chat POST
+twice) and H-W91-5 (the author's apiFetch is path-only; four Graystone calls kept their own getBase() prefix and would request
+8010http://...). The 550B model was asked about lib.rs, ChatArea and InputArea (paid, 170 s, USD 0.087): useful leads, lib.rs
+11 of 15 hunks mapped, InputArea answer unreliable and discarded. The W91 hunk specification (ARCHIVE s41) was SUPERSEDED in W92
+by Method B; its per-hunk reasoning was reused as knowledge.
+
+#### 20.8.4 W92 - what was found and what was done, in order [M]
+STEP 0 (open): state verified; port 8000 cause measured: PID 3488 is iphlpsvc serving netsh portproxy 0.0.0.0:8000 ->
+172.21.134.21:8000, so 8010 is a required Graystone port (Vol 3A G.9).
+FINDING: byte-true copies of the 17 files and of both sides (git archive, never a PowerShell text pipe) showed the author's
+MessageBubble has isLive, ResearchTimeline and citation plugins while the merged file had none of them - in CLEAN regions that
+no hunk covered. Audit instrument: resolve every hunk to the author's side, diff against the author's real file; every
+remaining line must be an intended Graystone change. Result: about 580 unexplained author lines missing inside the 17 files and
+about 280 in 13 files that merged clean and were never reviewed (SettingsPanel 153, index.css 37, types/index.ts 37, XRayFooter
+13, types/connectors.ts 12, UpdateChecker 7, Sidebar 7, SystemPanel 5, main.tsx 4, Layout 2).
+HYPOTHESIS REFUTED: "the graft base af21bc18 is older than our root" - our root f2fcb30c already contained those features.
+ATTRIBUTION: per-commit deletion totals root..HEAD: bc498a16 1867 deleted lines in 32 files (and the commit that removed
+isLive), 383ccd5e 1668 (SetupScreen/auth, deliberate), 0389255b 705 (TTS engine, deliberate), b76b1b13 26 (PWA removed,
+deliberate). ROOT CAUSE of bc498a16 (Vol 3A G.9, 20.8.5): a working folder holding older copies was committed wholesale.
+METHOD B (owner W92-D2, "scrap test case if it does not work and does not impact our current build") - full mechanism 20.8.7.
+Step 1 revert of bc498a16 on our side: 54 conflicts in 14 files, all decided (rules in 20.8.7). Step 2 merge with the author:
+52 hunks in 15 files (was 115 in 17; SetupScreen and DataSourcesPage merged clean), all decided. Sandbox gate on identical
+bytes: tsc -b 0 errors, vite build PASS, author vitest 12 files 68/68 PASS, exactly one chat POST in streamChat, zero apiFetch
+calls with a getBase() prefix, R4 fixed (our ChatArea send now sets streamState.conversationId), R5 closed.
+APPLY: the 103 files copied into the worktree from evidence\W92\W92-methodB-sandbox-result.zip (SHA256 DB38CD7E...61C5C3),
+every file re-hashed against the manifest, 0 conflict markers, ThinkingCircle.tsx removed (W92-D1), staged; staged frontend
+entries 66 reconciled exactly (60 source files differing from HEAD, 1 deletion, 5 author-changed non-source files).
+WORKTREE GATE: npm upgraded 11.12.1 -> 11.20.0 (author engines need >=11.19.0, enforced by the author's .npmrc engine-strict);
+npm ci exit 0 (784 packages), production build (tsc -b + vite) exit 0, vitest exit 0.
+COMMITS on upgrade/a6dcf846 (none pushed): 533f9bfe merge (parents 3df27c53 and a6dcf846; graft ref deleted after the commit);
+ac33e27f remove 36 tracked backup copies; 8eda697d uv.lock re-lock (W92-D5); 0dd22107 .python-version 3.12 (W92-D6); 6c9a2bc3
+author defect AD-W92-1 fix; 93f96395 tauri.conf Graystone values (W92-D7). A pre-commit guard refused the first merge commit
+because tsc -b had rewritten the tracked frontend\tsconfig.tsbuildinfo (H-W92-8); the file was restored from the index first.
+STEP 6 VENV (owner approval W92): uv sync --python 3.12 --extra desktop --extra inference-cloud --extra inference-google
+--group desktop-native in the worktree only - exactly the author's boot-time command plus the interpreter pin, so the author's
+boot sync is a no-op instead of re-shaping the venv (H-W92-10). Author release tags (235) fetched into local refs only
+(push.followTags unset; tags never pushed); version 1.0.5.dev161+gac33e27f; Python 3.12.10; openjarvis_rust imports (lead R1
+closed); jarvis --version runs.
+LOCK (W92-D5 P2): the merged uv.lock was stale against the merged pyproject; re-lock added 7 Graystone dependencies kept in s36
+and bumped the STT stack. Production venv measured: ctranslate2 4.8.0, av 17.1.0, onnxruntime 1.26.0. Locked to ctranslate2
+4.8.0 and av 17.1.0; onnxruntime stays at the author's 1.24.2 (a 1.26.0 pin collides with the author's python<3.11 constraint in
+uv's universal lock). This box has no NVIDIA driver in use: local STT runs on CPU in production and upgrade alike (H-W92-14).
+DESKTOP BUILD: tauri build --no-bundle exit 0, openjarvis-desktop.exe 23,270,912 bytes, after AD-W92-1 and W92-D7.
+
+#### 20.8.5 Negative results (what things turned out NOT to be, and how that was established)
+The graft base is not the cause (root f2fcb30c already had isLive, ResearchTimeline, citations). evidence\W91 held 5 files, not 6
+(the BRIEF counted two files stored elsewhere). bc498a16 is not only damage: it also added features still live at HEAD (Reconnect
+button, SetupScreen remote text, remote-mode lib.rs, frontendDist and updater settings) - the first four were accepted as
+removed (W92-D4), the last two were restored (W92-D7). The comment "Tauri transcribe path does not exist in Rust" was wrong:
+transcribe_audio is defined and registered in both lib.rs versions. Kokoro-onnx is not used by this repository's code (TTS is
+served by the kokoro-tts unit on 172.16.33.201); its absence from the upgrade venv is harmless. The resolve-45 bundle mojibake
+and bc498a16's config.toml mojibake share one mechanism: PowerShell text round-trips. A first onnxruntime 1.26.0 lock pin was
+refused by uv; nothing was written.
+
+#### 20.8.6 Hazards recorded W92
+H-W92-1 our send never set conversationId (fixed). H-W92-2 clean regions silently carry our post-root deletions; every merged
+file needs the take-theirs audit. H-W92-3 the author's boot runs uv sync in the project root every start; root = walk up from
+the exe, then C:\Users\Admin\OpenJarvis; a test exe must pin OPENJARVIS_ROOT. H-W92-4 npm >= 11.19.0. H-W92-5 bc498a16 root
+cause. H-W92-6 git archive output is CRLF (autocrlf); normalize before comparing. H-W92-7 Compress-Archive writes backslash
+paths. H-W92-8 any tsc -b dirties the tracked tsbuildinfo. H-W92-9 Windows PowerShell 5.1 mangles embedded double quotes in
+native-command arguments. H-W92-10 a manual uv sync must equal the author's boot command. H-W92-11 never pipe a long native
+command to Select-Object -Last; Tee-Object to a log. H-W92-12 Python must stay 3.12 (inference layer). H-W92-13 closed (see
+20.8.5). H-W92-14 no NVIDIA driver on this box. H-W92-15 PowerShell 5.1 ConvertFrom-Json cannot parse package-lock.json (empty
+root key). H-W92-16 production and the upgrade share C:\Users\Admin\.openjarvis (config, skills, memory.db) - POAM-68.
+H-W92-17 SDP edits go to main; the upgrade branch holds an older docs\SDP.
+
+#### 20.8.7 Method B and the sandbox instrument - setup and flow, gate by gate
+PLAIN: an old save overwrote good pages with old pages. Instead of repairing page by page, we took our history, undid exactly
+that one save, then merged with the author. Every place where our later work touched what the bad save wrote showed up as a
+visible question instead of a silent loss. Nothing touched the spare copy until the practice area passed every check.
+GATE 1 EXTRACT (Windows host, git, local disk): git archive --format=zip -o <absolute path> <rev> frontend [configs] for each
+side - HEAD, a6dcf846, af21bc18 and f2fcb30c (--no-replace-objects), bc498a16^, bc498a16; git diff --output=<absolute path> for
+the bc498a16 patch (863,774 bytes). Git writes the bytes; no PowerShell text pipe. SHA256 printed for every artifact.
+GATE 2 TRANSFER: one zip per upload; the sandbox verifies SHA256 before use; Python zipfile extraction (H-W92-7).
+GATE 3 NORMALIZE: CRLF to LF on every side (H-W92-6); worktree files are LF.
+GATE 4 SIMULATE: merge(base, ours, theirs): identical sides shortcut, one-side-changed shortcut, modify/delete reported,
+otherwise git merge-file -p --diff3. VALIDATION: the simulator's output equalled the real worktree bytes for all 17 conflicted
+files (17 of 17) before any decision was made on its output.
+GATE 5 RESOLVE: resolve.py consumes a per-file specification of per-hunk choices (ours, theirs, both in either order, explicit
+lines, or a function); it refuses an undecided hunk or a hunk number that does not exist. Clean-region edits are exact
+(old, new, expected count) replacements with the count asserted. Output asserted valid UTF-8 with zero markers.
+STEP 1 RULES: (R-S1-a) where HEAD only repaired bc498a16's mojibake, restore the original text; later deliberate Graystone work
+wins; COMBINE where both sides are real (MessageBubble option buttons with author isLive/citations; ChatArea attachment chips
+with author isLive and research-aware dots; SettingsPage audio probe with the author's speech-backend indicator; index.css);
+InputArea is a later whole-file Graystone rewrite - HEAD for all hunks; store signature keeps the author's research parameters
+at positions 7-8 and moves our persist to 9 with one caller edit; ThinkingCircle dropped (W92-D1).
+STEP 2 RULES: W91 reasoning reused; lib.rs = author file plus JARVIS_PORT 8010 (W92-D3); InputArea all ours (verified
+byte-identical to our file); App analytics calls removed (Option B); four getBase() prefixes stripped (H-W91-5, including
+confirmTool); our duplicate cloud-key effect in CommandPalette removed (C-W92-1).
+GATE 6 AUDIT: (a) HEAD lines lost that bc498a16 did not add - each explained; (b) bc498a16-deleted author lines still missing -
+each a recorded decision; (c) bc498a16 additions still live at HEAD that the method removes - produced the W92-D4 list.
+GATE 7 BUILD: author frontend tree plus the merged files; npm 11 in the sandbox; npm ci; tsc -b; vite build; vitest run.
+PACKAGE: evidence\W92\W92-methodB-sandbox-result.zip = final\ (103 files) + MANIFEST (SHA256, size, path) + tooling\ (all
+scripts and specifications). GAP FOUND LATER: the sandbox gate ran vite, not tauri build, so it could not see the tauri.conf
+pairing that Method B split (frontendDist vs the build script) - caught in the worktree by tauri build and fixed by W92-D7.
+Lesson: a gate must build every artifact the merge touches.
+Owner pin (W92): Jarvis and the Cody infrastructure agent need this sandbox capability (Vol 2 / program goals).
+
+#### 20.8.8 Status at W92 (measured)
+Merge committed and building (web, tests, desktop exe). Not yet done, in order: the confirmation gate at the author's new
+executor sites (POAM-67); separating the test instance's home directory from production's (POAM-68); serving on 8011 with
+OPENJARVIS_ROOT pinned (H-W92-3) and the inference source set in the author's setup screen (custom, engine ollama, host
+http://172.16.33.200:11434); V&V; the four VERIFIED requirements; GitHub Actions check (POAM-74); switch and push to both remotes.

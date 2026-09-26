@@ -16,6 +16,7 @@ Version 0.2 DRAFT - 2026-09-23 - NOT FOR SUBMISSION
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Claude with system owner | Initial package structure; W71 measured content; gap register |
 | 0.2 | 2026-09-23 | Claude with system owner (W82) | Harvest of ARCHIVE-W42..W81 (40 archives, section-hash deduplicated, 477 SDP-relevant sections) into Vols 1, 3, 4, 5, 6, 7, 8, 9, 10; Vol 3A section G added; Vol 2 unchanged |
+| 0.3 | 2026-09-26 | Claude with system owner (W92) | Upgrade execution W90-W92: Vol 4 SDD 20.8 (merge, Method B setup and flow gate by gate, gates, commits, negative results, hazards); Vol 3A G.9 (divergence re-baseline to a6dcf846, author defect AD-W92-1); Vol 8 POAM-67..79, POAM-66 status; Vol 6 version rows and rollback |
 ### 1.2 Approval block
 | Role | Name | Signature | Date |
 |---|---|---|---|
