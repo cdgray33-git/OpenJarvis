@@ -1,0 +1,109 @@
+﻿Auto-merging .gitignore
+CONFLICT (content): Merge conflict in .gitignore
+Auto-merging configs/openjarvis/config.toml
+CONFLICT (content): Merge conflict in configs/openjarvis/config.toml
+Auto-merging frontend/package-lock.json
+CONFLICT (content): Merge conflict in frontend/package-lock.json
+Auto-merging frontend/package.json
+CONFLICT (content): Merge conflict in frontend/package.json
+Auto-merging frontend/src-tauri/Cargo.lock
+CONFLICT (content): Merge conflict in frontend/src-tauri/Cargo.lock
+Auto-merging frontend/src-tauri/Cargo.toml
+CONFLICT (content): Merge conflict in frontend/src-tauri/Cargo.toml
+Auto-merging frontend/src-tauri/src/lib.rs
+CONFLICT (content): Merge conflict in frontend/src-tauri/src/lib.rs
+Auto-merging frontend/src-tauri/tauri.conf.json
+CONFLICT (content): Merge conflict in frontend/src-tauri/tauri.conf.json
+Auto-merging frontend/src/App.tsx
+CONFLICT (content): Merge conflict in frontend/src/App.tsx
+Auto-merging frontend/src/components/Chat/ChatArea.tsx
+CONFLICT (content): Merge conflict in frontend/src/components/Chat/ChatArea.tsx
+Auto-merging frontend/src/components/Chat/InputArea.tsx
+CONFLICT (content): Merge conflict in frontend/src/components/Chat/InputArea.tsx
+Auto-merging frontend/src/components/Chat/MessageBubble.tsx
+CONFLICT (content): Merge conflict in frontend/src/components/Chat/MessageBubble.tsx
+Auto-merging frontend/src/components/Chat/SystemPanel.tsx
+Auto-merging frontend/src/components/Chat/ToolCallCard.tsx
+Auto-merging frontend/src/components/CommandPalette.tsx
+CONFLICT (content): Merge conflict in frontend/src/components/CommandPalette.tsx
+Auto-merging frontend/src/components/Desktop/UpdateChecker.tsx
+Auto-merging frontend/src/components/Layout.tsx
+Auto-merging frontend/src/components/SetupScreen.tsx
+CONFLICT (content): Merge conflict in frontend/src/components/SetupScreen.tsx
+Auto-merging frontend/src/lib/api.ts
+CONFLICT (content): Merge conflict in frontend/src/lib/api.ts
+Auto-merging frontend/src/lib/sse.ts
+CONFLICT (content): Merge conflict in frontend/src/lib/sse.ts
+Auto-merging frontend/src/lib/store.ts
+CONFLICT (content): Merge conflict in frontend/src/lib/store.ts
+Auto-merging frontend/src/lib/useAgentEvents.ts
+Auto-merging frontend/src/pages/AgentsPage.tsx
+CONFLICT (content): Merge conflict in frontend/src/pages/AgentsPage.tsx
+Auto-merging frontend/src/pages/DataSourcesPage.tsx
+CONFLICT (content): Merge conflict in frontend/src/pages/DataSourcesPage.tsx
+Auto-merging frontend/src/pages/SettingsPage.tsx
+CONFLICT (content): Merge conflict in frontend/src/pages/SettingsPage.tsx
+Auto-merging frontend/src/types/connectors.ts
+Auto-merging frontend/src/types/index.ts
+CONFLICT (modify/delete): frontend/tsconfig.tsbuildinfo deleted in HEAD and modified in a6dcf846.  Version a6dcf846 of frontend/tsconfig.tsbuildinfo left in tree.
+Auto-merging frontend/vite.config.ts
+CONFLICT (content): Merge conflict in frontend/vite.config.ts
+Auto-merging pyproject.toml
+CONFLICT (content): Merge conflict in pyproject.toml
+Auto-merging scripts/quickstart.sh
+Auto-merging src/openjarvis/agents/_stubs.py
+CONFLICT (content): Merge conflict in src/openjarvis/agents/_stubs.py
+Auto-merging src/openjarvis/agents/morning_digest.py
+CONFLICT (content): Merge conflict in src/openjarvis/agents/morning_digest.py
+Auto-merging src/openjarvis/agents/native_openhands.py
+CONFLICT (content): Merge conflict in src/openjarvis/agents/native_openhands.py
+Auto-merging src/openjarvis/agents/orchestrator.py
+Auto-merging src/openjarvis/cli/agent_cmd.py
+Auto-merging src/openjarvis/cli/ask.py
+CONFLICT (content): Merge conflict in src/openjarvis/cli/ask.py
+Auto-merging src/openjarvis/cli/log_config.py
+Auto-merging src/openjarvis/cli/serve.py
+CONFLICT (content): Merge conflict in src/openjarvis/cli/serve.py
+Auto-merging src/openjarvis/core/config.py
+CONFLICT (content): Merge conflict in src/openjarvis/core/config.py
+Auto-merging src/openjarvis/core/events.py
+Auto-merging src/openjarvis/engine/_discovery.py
+Auto-merging src/openjarvis/engine/multi.py
+Auto-merging src/openjarvis/engine/ollama.py
+CONFLICT (content): Merge conflict in src/openjarvis/engine/ollama.py
+Auto-merging src/openjarvis/prompt/builder.py
+Auto-merging src/openjarvis/server/agent_manager_routes.py
+CONFLICT (content): Merge conflict in src/openjarvis/server/agent_manager_routes.py
+Auto-merging src/openjarvis/server/api_routes.py
+CONFLICT (content): Merge conflict in src/openjarvis/server/api_routes.py
+Auto-merging src/openjarvis/server/app.py
+Auto-merging src/openjarvis/server/auth_middleware.py
+CONFLICT (content): Merge conflict in src/openjarvis/server/auth_middleware.py
+Auto-merging src/openjarvis/server/cloud_router.py
+Auto-merging src/openjarvis/server/connectors_router.py
+CONFLICT (content): Merge conflict in src/openjarvis/server/connectors_router.py
+Auto-merging src/openjarvis/server/digest_routes.py
+Auto-merging src/openjarvis/server/models.py
+Auto-merging src/openjarvis/server/routes.py
+CONFLICT (content): Merge conflict in src/openjarvis/server/routes.py
+Auto-merging src/openjarvis/server/stream_bridge.py
+CONFLICT (content): Merge conflict in src/openjarvis/server/stream_bridge.py
+Auto-merging src/openjarvis/server/ws_bridge.py
+Auto-merging src/openjarvis/speech/faster_whisper.py
+CONFLICT (content): Merge conflict in src/openjarvis/speech/faster_whisper.py
+Auto-merging src/openjarvis/telemetry/gpu_monitor.py
+CONFLICT (content): Merge conflict in src/openjarvis/telemetry/gpu_monitor.py
+Auto-merging src/openjarvis/tools/__init__.py
+CONFLICT (content): Merge conflict in src/openjarvis/tools/__init__.py
+Auto-merging src/openjarvis/tools/_stubs.py
+CONFLICT (content): Merge conflict in src/openjarvis/tools/_stubs.py
+Auto-merging src/openjarvis/tools/code_interpreter.py
+CONFLICT (content): Merge conflict in src/openjarvis/tools/code_interpreter.py
+Auto-merging src/openjarvis/tools/knowledge_sql.py
+CONFLICT (content): Merge conflict in src/openjarvis/tools/knowledge_sql.py
+Auto-merging src/openjarvis/tools/shell_exec.py
+Auto-merging src/openjarvis/tools/storage/sqlite.py
+Auto-merging tests/traces/test_store_fts.py
+Auto-merging uv.lock
+CONFLICT (content): Merge conflict in uv.lock
+Automatic merge failed; fix conflicts and then commit the result.
