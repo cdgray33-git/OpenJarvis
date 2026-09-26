@@ -1,5 +1,5 @@
 # VOL 4 - SOFTWARE DESIGN DESCRIPTION (SDD)
-Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16 incl. 16.4), harvested from ARCHIVE-W42..W81 plus W82 measurement. W93 update 2026-09-26: 6.5 pointer, 20.9 (POAM-67 executor sites, gate harness).
+Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16 incl. 16.4), harvested from ARCHIVE-W42..W81 plus W82 measurement. W93 update 2026-09-26: 6.5 pointer, 20.9 (POAM-67 executor sites, gate harness), 20.10 (POAM-68 home, logs, port).
 Every fact carries a grade and the window that established it. Line numbers are as recorded in that window; files have since
 changed, so a line cite is a pointer to verify, not a guarantee (the gate moved from _stubs.py:265 to :390 in W58, for example).
 Interfaces (ports, protocols, encoding) are in Vol 3; this volume references them by IF number.
@@ -940,3 +940,114 @@ POAM-67 closed on the upgrade branch: no executor in the upgrade can approve a c
 recorded answer or a named, logged policy. Remaining before 8011 is served, in order: POAM-68 (separate home, now including the
 dispatch.log location), the ARCHIVE s37 post-merge items, serve on 8011, V&V. Program goal: VERIFIED 4/28 unchanged; W93 removed
 a precondition to serving the upgrade that the remaining requirements are built on.
+
+### 20.10 POAM-68 - separating the upgrade instance's home, logs and port from production (W93, 2026-09-26) [M evidence\W93\step2a..3d; R upgrade/a6dcf846 e9acdacd, 70a74188]
+#### 20.10.1 Plain language
+Jarvis keeps its memory, settings, skills and diaries in one home folder. The working Jarvis and the upgraded copy were going
+to share that folder, the same diary folder, and the same door number (port 8010). Two programs writing one diary at once
+mix their entries; two programs on one door means the new screen can quietly talk to the old Jarvis and every test would be a
+lie. The author already built a switch to give Jarvis a different home (OPENJARVIS_HOME), but three parts ignored it: the
+desktop program's own settings writer, Graystone's four diaries, and one fallback in the code tool. We taught all three to
+honor the switch, and we added the port switch the author had written down as a to-do. With no switch set, everything behaves
+exactly as before, so the working Jarvis is unchanged.
+
+#### 20.10.2 How it was measured (instruments) [M]
+STEP 2a inventory: Select-String over every *.py under the worktree src and every *.rs under frontend\src-tauri\src for
+get_config_dir | DEFAULT_CONFIG_DIR | OPENJARVIS_* | .openjarvis | LOCALAPPDATA | APPDATA | Path.home() | expanduser( ; plus the
+author's *.md docs for home mentions; 158 code files zipped whole (evidence\W93\W93-home-files.zip, 686,490 bytes) and read in
+the analysis sandbox. STEP 2b inventory: production home top level (name, size or file count, last write), config.toml lines
+that carry paths, hosts or ports only (cloud-keys.env and connector credentials never opened), inference.json presence, the
+worktree CSP, and every hard-coded port or base-URL source in the frontend and Tauri code. STEP 3a: the four frontend files plus
+lib.rs and tauri.conf.json zipped whole with SHA256, so the Rust patch was written against exact bytes and refused otherwise.
+
+#### 20.10.3 Findings [R/M W93]
+AUTHOR MECHANISM: core\paths.py get_config_dir(): OPENJARVIS_HOME > XDG_DATA_HOME\openjarvis > ~\.openjarvis; refuses a home
+inside the source tree (ConfigurationError); DEFAULT_CONFIG_DIR is fixed at import (config.py:62), so the variable must be set
+before the process starts. Documented in docs\getting-started\configuration.md:25-57. About 150 Python sites use it.
+BREAK 1 (author defect AD-W93-1, Vol 3A G.10): lib.rs hard-coded <HOME or USERPROFILE>\.openjarvis at four sites -
+legacy_cloud_keys_path, inference_config_path, set_engine_host_in_config (writes [engine.<x>] host into config.toml during
+setup), conversation_path (macOS overlay). The backend the exe spawns inherits the environment and honors OPENJARVIS_HOME, so
+the setup screen would write the Ollama host into PRODUCTION's config.toml while the separated backend read its own file.
+BREAK 2 (author design): lib.rs:10 const JARVIS_PORT 8010 was compiled in. At start the exe probes 127.0.0.1:<port>/health
+and, if a healthy server answers, ATTACHES to it instead of spawning (lib.rs:1302-1388, #455). Launched beside production, the
+upgrade exe would silently use production's backend (H-W93-5). The author's own comment asks for a port override (TODO #455).
+BREAK 3 (Graystone): backend.log (cli\serve.py:148), engine.log (engine\ollama.py:566), agent.log (agents\native_openhands.py:414)
+and dispatch.log (tools\_stubs.py:223) were written to %LOCALAPPDATA%\OpenJarvis\logs regardless of home. LOCALAPPDATA itself
+must not be redirected: uv's cache and the exe's binary search (lib.rs:203-220) depend on it.
+BREAK 4 (Graystone W83): code_interpreter _oj_workdir fallback hard-coded Path.home()\.openjarvis\workspace (only on an
+exception from load_config).
+FRONTEND: getBase() (api.ts:71) order is localStorage openjarvis-settings.apiUrl, then VITE_API_URL, then the Rust value from
+invoke('get_api_base') (api.ts:52 -> lib.rs:1687 api_base), then a fallback http://127.0.0.1:8010. The CSP connect-src already
+allows http://127.0.0.1:* and ws://127.0.0.1:*, so no CSP change is needed. Fallbacks that still name 8010: api.ts:58,
+useTauriApi.ts:30 (browser fallback), SettingsPanel.tsx:15 (default saved setting), AdminPanel.tsx:276 (Start button runs
+serve --port 8010).
+WEBVIEW PROFILE (H-W93-6): both exes carry identifier com.openjarvis.desktop and set no data directory, so they share one
+WebView2 profile, including localStorage. A saved apiUrl from the production UI would override the Rust base in the upgrade UI.
+PRODUCTION HOME (measured): config.toml 915 bytes holds no absolute paths; [engine.ollama] host http://172.16.33.200:11434;
+[server] host 0.0.0.0 port 8010 (the production backend listens on all interfaces - observation, recorded for the end-of-build
+review). inference.json absent. Largest items: memory.db.old 21,356,789,760 bytes (not to be copied), skill-cache 4,809 files
+(regenerable cache), skills 65 files, workspace 7 files, connectors 2 files (IMAP credentials), cloud-keys.env.
+
+#### 20.10.4 Options, risks and the owner decision [S W93: "B brother"]
+A - backend only on 8011 (uv run jarvis serve --port 8011 with OPENJARVIS_HOME): fixes 3 and 4 only; low risk; but no UI V&V
+(TTS/STT, Approve/Deny buttons, persona in the app) until the switch, which then needs a production outage.
+B - full side by side: A plus two Rust changes (home resolver mirroring core\paths.py; OPENJARVIS_PORT with default 8010), then
+a rebuild. Full UI V&V without downtime; with no variables set production behaves exactly as today. Risk: one more Rust change
+and a rebuild, gated by the author's tests. CHOSEN.
+C - stop production for V&V and run the upgrade on 8010 with production's home: no separation code, but downtime and V&V
+against live family data and live config.
+
+#### 20.10.5 What was changed, and the flow gate by gate after the change
+e9acdacd (Python): new core\log_paths.py get_log_dir() (openjarvis-log-home-v1): OPENJARVIS_HOME or XDG_DATA_HOME set ->
+get_config_dir()\logs; neither -> %LOCALAPPDATA%\OpenJarvis\logs exactly as before. The four loggers call it. code_interpreter
+fallback uses get_config_dir()\workspace. Side effect: engine.log's fallback when LOCALAPPDATA is missing moves from the current
+directory to the user home (never occurs on Windows).
+70a74188 (Rust, lib.rs): DEFAULT_JARVIS_PORT 8010 + parse_jarvis_port + jarvis_port() (OnceLock, reads OPENJARVIS_PORT once;
+unset, empty, non-numeric or below 1024 -> 8010), used at all 19 code sites (openjarvis-desktop-port-v1); resolve_openjarvis_home
++ openjarvis_home() with the core\paths.py precedence, used at the four hard-coded sites (openjarvis-desktop-home-v1). The
+author's TODO comment is left in place.
+FLOW (Windows box, all local unless stated):
+GATE 1 LAUNCH: the operator's PowerShell session sets OPENJARVIS_ROOT (worktree), OPENJARVIS_HOME, OPENJARVIS_PORT and
+WEBVIEW2_USER_DATA_FOLDER, then starts the exe from the worktree target. Environment variables are inherited by every child.
+GATE 2 EXE (Rust): find_project_root -> OPENJARVIS_ROOT; jarvis_port() -> 8011; health probe GET http://127.0.0.1:8011/health
+(HTTP/1.1, TCP loopback) finds nothing and proceeds to spawn; setup writes inference.json and the engine host into
+openjarvis_home()\config.toml (TOML UTF-8).
+GATE 3 SPAWN: uv sync (author boot, H-W92-3) then uv run jarvis serve --port 8011 in the worktree; the child inherits
+OPENJARVIS_HOME.
+GATE 4 BACKEND (Python): config.py import fixes DEFAULT_CONFIG_DIR = get_config_dir() = the separate home; every database,
+skills, persona file and credential resolves there; get_log_dir() puts backend, engine, agent and dispatch logs in <home>\logs.
+GATE 5 UI: WebView2 loads the static frontend; getBase() -> invoke get_api_base -> http://127.0.0.1:8011 (unless a localStorage
+apiUrl overrides it, H-W93-6); chat POST and SSE on HTTP 127.0.0.1:8011 (JSON and text/event-stream, UTF-8); confirm events on
+WS ws://127.0.0.1:8011/v1/agents/events; answers POST /v1/tools/confirm on the same port.
+GATE 6 INFERENCE: backend -> Ollama HTTP http://172.16.33.200:11434 (JSON UTF-8), unchanged.
+
+#### 20.10.6 Verification [M W93]
+Log harness (evidence\W93\step2d): a child Python process started with OPENJARVIS_HOME = evidence\W93\harness-home and
+SyntaxWarning promoted to an error wrote a unique marker through all four real loggers and forced the code_interpreter
+fallback: all four files and the workspace resolved under harness-home, the marker was in all four, the resolver with no
+variables returned C:\Users\Admin\AppData\Local\OpenJarvis\logs, and production's four logs did not contain the marker. PASS.
+Rust (evidence\W93\step3b, step3c): the patch script refused to run unless lib.rs had the reviewed SHA256 (6d6968ce...), made
+exactly 19 port replacements and 4 home replacements, left no hard-coded .openjarvis join, and produced 82bd8053...;
+cargo test graystone_w93 4 of 4 (default port, valid override, invalid values, home precedence); cargo test --lib 51 of 51
+including all 47 author tests.
+NOT YET VERIFIED: the rebuilt exe (the exe in the worktree target is from 93f96395 and predates both commits - do not run it);
+WebView2 profile separation by WEBVIEW2_USER_DATA_FOLDER (to be measured at first launch).
+
+#### 20.10.7 Negative results
+- No CSP change is needed (127.0.0.1:* already allowed). No TypeScript change is needed on the main path (the base comes from Rust).
+- config.toml holds no absolute paths; production has no inference.json.
+- The first log-harness run FAILED for two instrument faults, not product faults: a docstring escape in the new file written by
+  the patch script (fixed before commit; the fix compiles with warnings as errors) and `from openjarvis.cli import serve`
+  returning the click command that cli\__init__ exports under that name (H-W93-7). The code edits were correct on the first run.
+
+#### 20.10.8 Hazards recorded W93 (continued)
+H-W93-5 a desktop exe attaches to any healthy backend already on its port; always set OPENJARVIS_PORT for a second instance and
+check /health is free first. H-W93-6 shared WebView2 profile (identifier com.openjarvis.desktop): a saved apiUrl in localStorage
+overrides the Rust base. H-W93-7 `from openjarvis.cli import serve` yields a click Command, not the module; use
+importlib.import_module("openjarvis.cli.serve"). H-W93-8 production config binds the backend to 0.0.0.0 (observation).
+
+#### 20.10.9 Status
+POAM-68 code complete on upgrade/a6dcf846 (e9acdacd, 70a74188, gitlab only). Remaining in order: rebuild the exe (tauri build
+--no-bundle; restore tsbuildinfo, H-W92-8); owner decision on what to seed into the separate home (memory.db copy, persona
+files, skills, IMAP connectors, cloud keys - each with risk); launch per 20.10.5 and measure the WebView2 profile location;
+V&V. Program goal: VERIFIED 4/28 unchanged; the upgrade can now be exercised without touching production's data or port.

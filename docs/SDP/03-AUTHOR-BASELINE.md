@@ -578,3 +578,14 @@ Method: every row decided with the author's intent, the options and the risks (o
 | cli\agent_cmd.py ask --yes (default) | lambda _prompt: True | ConfirmPolicy site=cli-agent-ask-yes, human_present=True | author-documented posture kept; attribution added | attribute only (W93 C); POAM-81 |
 | cli\agent_cmd.py ask --no-yes, cli\skill_cmd.py run, cli\chat_cmd.py chat | click.confirm / input() prompt, no registry write | TerminalConfirmGate(site=cli-agent-ask / cli-skill-run / cli-chat) | Graystone three-way result contract: an unrecorded False is reported as TIMEOUT | fix (W93 D); integration defect, not an author defect in isolation; POAM-82 for main |
 | cli\ask.py TerminalConfirmGate | absent | optional site= keyword, default cli-ask | one class, per-site attribution | W93 D |
+| desktop home (lib.rs) | <HOME or USERPROFILE>\.openjarvis hard-coded at 4 sites | openjarvis_home() with the core\paths.py precedence | author defect AD-W93-1 (below) | fix (W93, 70a74188) |
+| desktop backend port (lib.rs) | const JARVIS_PORT (8010 in Graystone, 8000 upstream) | OPENJARVIS_PORT, default 8010 | author TODO #455 follow-up; side-by-side V&V | W93 owner option B, 70a74188 |
+| Graystone log folder | (Graystone code) %LOCALAPPDATA%\OpenJarvis\logs always | core\log_paths.get_log_dir: <home>\logs when the home is relocated | separate audit records per instance | W93, e9acdacd |
+AUTHOR DEFECT AD-W93-1 (fixed 70a74188). SYMPTOM: with OPENJARVIS_HOME set, the desktop setup screen writes the inference
+source (inference.json) and the engine host (config.toml [engine.<x>] host) into <USERPROFILE>\.openjarvis, while the backend
+it launches reads the relocated home: the backend never sees the chosen host, and the default home's config is modified.
+CONDITIONS: any desktop run with OPENJARVIS_HOME or XDG_DATA_HOME set (the relocation the author documents in
+docs\getting-started\configuration.md). CAUSE: lib.rs builds these paths from home_dir() joined with .openjarvis instead of the
+resolver core\paths.py get_config_dir, whose docstring says hard-coded homes should move to the resolver. FIX: openjarvis_home()
+mirrors the precedence (OPENJARVIS_HOME > XDG_DATA_HOME\openjarvis > <home>\.openjarvis) at all four sites; unit test
+home_precedence_matches_core_paths. VERIFIED: cargo test --lib 51/51. Candidate upstream report.

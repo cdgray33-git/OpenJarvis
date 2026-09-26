@@ -62,6 +62,8 @@ repo alone misses all of these (GAP-041, new).
 | 13dbd764 | W93 | upgrade/a6dcf846 (gitlab only): POAM-67 site A - ConfirmPolicy site=managed-agent-tool restored verbatim on stream_tool_executor (SDD 20.9) |
 | 6edfe885 | W93 | upgrade/a6dcf846 (gitlab only): POAM-67 site B - skills pipeline_executor real terminal gate SkillPipelineConfirmGate site=cli-ask-skill |
 | da752fbd | W93 | upgrade/a6dcf846 (gitlab only): POAM-67 sites C+D - agent ask --yes attributed (cli-agent-ask-yes); agent ask --no-yes, skill run, chat use TerminalConfirmGate with recorded decision; site= keyword; dead chat _confirm removed |
+| e9acdacd | W93 | upgrade/a6dcf846 (gitlab only): POAM-68 part 1 - core/log_paths.get_log_dir; backend, engine, agent, dispatch logs follow OPENJARVIS_HOME; code_interpreter fallback via get_config_dir (SDD 20.10) |
+| 70a74188 | W93 | upgrade/a6dcf846 (gitlab only): POAM-68 part 2 - lib.rs OPENJARVIS_PORT (default 8010, 19 sites) and openjarvis_home() at 4 sites (AD-W93-1); 4 Rust unit tests; cargo test --lib 51/51 |
 Also recorded without hash in the harvest: W46 dispatch-outcome wrapper, W51-W52 test-execute argument guard, W54 toolkit bind,
 W56 ConfirmPolicy, W58 argument-aware gate, W59 prose-approval removal, W61 protected senders v2 and CLI gate, W63 CDP removal,
 W66-W68 audio fixes, W69 stop button. Hash each at GAP-018.
@@ -79,3 +81,7 @@ W93 (upgrade branch, gitlab only): undo one POAM-67 site with git -C C:\Users\Ad
 da752fbd. Pre-patch copies: evidence\W93\bak\agent_manager_routes.py.W93-pre-A.bak, ask.py.W93-pre-B.bak,
 {ask,agent_cmd,skill_cmd,chat_cmd}.py.W93-pre-CD.bak. Evidence logs evidence\W93\step*.log; harness log
 evidence\W93\harness\OpenJarvis\logs\dispatch.log.
+W93 POAM-68: undo with git -C C:\Users\Admin\OpenJarvis-upgrade revert 70a74188 (Rust) or e9acdacd (Python; also removes
+core\log_paths.py). Pre-patch copies: evidence\W93\bak\*.W93-pre-logs.bak (serve, ollama, native_openhands, _stubs,
+code_interpreter) and evidence\W93\bak\lib.rs.W93-pre-port-home.bak. Patch script evidence\W93\W93-rustpatch.py
+(SHA256 b91eef5b...). Harness home evidence\W93\harness-home (test artifacts only).
