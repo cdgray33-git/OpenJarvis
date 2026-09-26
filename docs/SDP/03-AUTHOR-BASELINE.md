@@ -568,3 +568,13 @@ only, 2 crates moved, 155 unchanged. VERIFIED: the version gate passes and the r
 OBSERVATION (not a defect): the author tracks frontend\tsconfig.tsbuildinfo, a build cache (POAM-75).
 Upstream tags: the author's 235 release tags were fetched into local refs so hatch-vcs stamps the author's version
 (1.0.5.dev...); they are never pushed (push.followTags unset; push commands never use --tags).
+
+### G.10 W93 - confirmation callbacks at the author's executor sites (appended 2026-09-26, W93)
+Method: every row decided with the author's intent, the options and the risks (owner rule 09/23); evidence SDD 20.9.
+| Item | Author a6dcf846 | Graystone as built (upgrade da752fbd) | Reason | Decision |
+|---|---|---|---|---|
+| agent_manager_routes stream_tool_executor | lambda _prompt: True | ConfirmPolicy site=managed-agent-tool (verbatim from main) | attribution was Graystone W56; lost silently in the merge | restore (W93 A); real gate impossible on the event loop, POAM-80 |
+| cli\ask.py skills pipeline_executor | lambda prompt: True | SkillPipelineConfirmGate (TerminalConfirmGate, site cli-ask-skill) | skill steps bypassed the terminal gate the agent uses; third-party skills (POAM-78) | real gate (W93 B, option 1) |
+| cli\agent_cmd.py ask --yes (default) | lambda _prompt: True | ConfirmPolicy site=cli-agent-ask-yes, human_present=True | author-documented posture kept; attribution added | attribute only (W93 C); POAM-81 |
+| cli\agent_cmd.py ask --no-yes, cli\skill_cmd.py run, cli\chat_cmd.py chat | click.confirm / input() prompt, no registry write | TerminalConfirmGate(site=cli-agent-ask / cli-skill-run / cli-chat) | Graystone three-way result contract: an unrecorded False is reported as TIMEOUT | fix (W93 D); integration defect, not an author defect in isolation; POAM-82 for main |
+| cli\ask.py TerminalConfirmGate | absent | optional site= keyword, default cli-ask | one class, per-site attribution | W93 D |

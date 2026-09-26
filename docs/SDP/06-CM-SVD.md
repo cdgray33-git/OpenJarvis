@@ -59,6 +59,9 @@ repo alone misses all of these (GAP-041, new).
 | 0dd22107 | W92 | upgrade/a6dcf846: .python-version 3.12 + labeled .gitignore exception (W92-D6) |
 | 6c9a2bc3 | W92 | upgrade/a6dcf846: fix author defect AD-W92-1 (Tauri plugin crates aligned with npm) |
 | 93f96395 | W92 | upgrade/a6dcf846: tauri.conf Graystone values restored - frontendDist, updater off (W92-D7) |
+| 13dbd764 | W93 | upgrade/a6dcf846 (gitlab only): POAM-67 site A - ConfirmPolicy site=managed-agent-tool restored verbatim on stream_tool_executor (SDD 20.9) |
+| 6edfe885 | W93 | upgrade/a6dcf846 (gitlab only): POAM-67 site B - skills pipeline_executor real terminal gate SkillPipelineConfirmGate site=cli-ask-skill |
+| da752fbd | W93 | upgrade/a6dcf846 (gitlab only): POAM-67 sites C+D - agent ask --yes attributed (cli-agent-ask-yes); agent ask --no-yes, skill run, chat use TerminalConfirmGate with recorded decision; site= keyword; dead chat _confirm removed |
 Also recorded without hash in the harvest: W46 dispatch-outcome wrapper, W51-W52 test-execute argument guard, W54 toolkit bind,
 W56 ConfirmPolicy, W58 argument-aware gate, W59 prose-approval removal, W61 protected senders v2 and CLI gate, W63 CDP removal,
 W66-W68 audio fixes, W69 stop button. Hash each at GAP-018.
@@ -72,3 +75,7 @@ W92 upgrade branch (not pushed; production untouched). Abandon the upgrade: git 
 C:\Users\Admin\OpenJarvis-upgrade, then git branch -D upgrade/a6dcf846 (the replace ref was already deleted at 533f9bfe).
 Undo one commit on the branch: git -C C:\Users\Admin\OpenJarvis-upgrade revert <hash>. Method B result and tooling:
 evidence\W92\W92-methodB-sandbox-result.zip (DB38CD7E...61C5C3). Author tags are local refs only (git tag -d to remove).
+W93 (upgrade branch, gitlab only): undo one POAM-67 site with git -C C:\Users\Admin\OpenJarvis-upgrade revert 13dbd764 | 6edfe885 |
+da752fbd. Pre-patch copies: evidence\W93\bak\agent_manager_routes.py.W93-pre-A.bak, ask.py.W93-pre-B.bak,
+{ask,agent_cmd,skill_cmd,chat_cmd}.py.W93-pre-CD.bak. Evidence logs evidence\W93\step*.log; harness log
+evidence\W93\harness\OpenJarvis\logs\dispatch.log.

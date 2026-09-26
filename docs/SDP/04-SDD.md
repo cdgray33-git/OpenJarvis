@@ -1,5 +1,5 @@
 # VOL 4 - SOFTWARE DESIGN DESCRIPTION (SDD)
-Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16 incl. 16.4), harvested from ARCHIVE-W42..W81 plus W82 measurement.
+Governing DID: DI-IPSC-81435 (verify, GAP-002). v0.2 DRAFT 2026-09-23 (W82), W83 update 2026-09-24 (sections 11, 14, 16 incl. 16.4), harvested from ARCHIVE-W42..W81 plus W82 measurement. W93 update 2026-09-26: 6.5 pointer, 20.9 (POAM-67 executor sites, gate harness).
 Every fact carries a grade and the window that established it. Line numbers are as recorded in that window; files have since
 changed, so a line cite is a pointer to verify, not a guarantee (the gate moved from _stubs.py:265 to :390 in W58, for example).
 Interfaces (ports, protocols, encoding) are in Vol 3; this volume references them by IF number.
@@ -144,6 +144,13 @@ frozen by QuickEdit, W62) delays the answer and can expire an approval with the 
 ConfirmPolicy (openjarvis-confirm-policy-v1) returns True unconditionally BY DESIGN; its contract is attribution, not
 enforcement. Turning it into a gate would change five sites at once [R W56]. Open owner question: are the DR sites inert by
 intent or oversight (never ruled).
+W93 UPDATE (upgrade branch upgrade/a6dcf846 at da752fbd; production main unchanged): the author's merge added executor sites.
+Full measured table, options, risks and decisions in 20.9.4. New tokens: cli-ask-skill (real terminal gate on the skills
+pipeline), cli-agent-ask / cli-skill-run / cli-chat (real terminal gate, decision recorded), cli-agent-ask-yes (ConfirmPolicy,
+human_present=True, author --yes default kept). managed-agent-tool restored after the merge dropped it; in the upgrade it is one
+request-local executor per stream (author design with taint seeding), not one per call. cli-ask build status: TerminalConfirmGate
+behaviour measured through the real ToolExecutor by the W93 harness (20.9.5) [M W93]. Threading note: 6.4 applies to the chat
+path; the managed-agent stream runs tools on the event-loop thread (H-W93-1), which is why that site cannot host a real gate.
 
 ### 6.6 Two mechanisms called "confirmation" (do not conflate) [M/S W57, W59]
 A - the real gate above (buttons, structurally enforced). B - the mailbox model-side interlock: dry_run defaults TRUE and
@@ -783,3 +790,153 @@ Merge committed and building (web, tests, desktop exe). Not yet done, in order: 
 executor sites (POAM-67); separating the test instance's home directory from production's (POAM-68); serving on 8011 with
 OPENJARVIS_ROOT pinned (H-W92-3) and the inference source set in the author's setup screen (custom, engine ollama, host
 http://172.16.33.200:11434); V&V; the four VERIFIED requirements; GitHub Actions check (POAM-74); switch and push to both remotes.
+
+### 20.9 POAM-67 - the confirmation gate at every tool-executor site of the upgrade (W93, 2026-09-26) [M evidence\W93\step1a..1i; R upgrade/a6dcf846]
+#### 20.9.1 Plain language
+Some of Jarvis's tools can change things that matter: run a command, commit code, move mail to the trash. Before one of those
+runs, Jarvis has to ask. The part of Jarvis that runs tools is called an executor, and every executor has one slot for
+"who do I ask". In the author's newest code, a few new executors had that slot filled with a note that just says "yes, always"
+and leaves no trace. That is like a door with a doorbell wired straight to the lock: the door opens and nobody knows anybody
+rang. W93 went through every executor in the upgrade and did one of three things. Where a person is sitting at the keyboard,
+the slot now really asks them, and "no" means no. Where the author deliberately chose "yes, always" (and a person chose it by
+typing --yes), the "yes" stays but is now written down with a name, so the record can tell an automatic yes from a person's yes.
+Where Graystone had already named the automatic yes and the merge quietly lost the name, the name was put back. One more fix:
+at three keyboard prompts, when you answered "no", Jarvis was told "the user did not answer, ask again" - so it could keep asking
+after you refused. Now your "no" is recorded and Jarvis is told you refused. Nothing here touched the working Jarvis on port 8010.
+
+#### 20.9.2 How the gate decides, and why only some sites matter [R W93 tools\_stubs.py:600-700 at da752fbd]
+The executor asks only when BOTH are true: the tool declares requires_confirmation (and its per-call predicate agrees, 6.2), and
+the executor was built with interactive=True AND a callback in the slot. If either construction condition is missing, a
+confirmable tool is refused outright (fail-closed). So an executor with an empty slot is safe; an executor whose slot holds an
+approve-all function is the only kind that can let a confirmable tool run without a person. When a callback returns False, the
+executor re-reads confirm_registry: a recorded DENIED is reported to the model as "denied by user"; no recorded decision is
+reported as TIMEOUT - "the user did not deny it, ask the user again" (openjarvis-confirm-resolved-v1). CONTRACT (H-W93-4): every
+callback that can return False must write its decision into confirm_registry, or a refusal is reported as a timeout.
+
+#### 20.9.3 The inventory instrument - setup and flow [M evidence\W93\step1a-poam67-inventory.log]
+Host: the Windows box, Windows PowerShell 5.1, run from the main repo root. Input: every *.py under
+C:\Users\Admin\OpenJarvis-upgrade\src (worktree at 93f96395). Mechanism: Select-String with the pattern
+ToolExecutor\( | confirm_callback | _confirm_callback | stream_tool_executor | ConfirmPolicy | confirm_registry |
+requires_confirmation. Output: file:line: text to the log; every matching file copied WHOLE with its relative path into
+evidence\W93\poam67-stage and zipped (evidence\W93\W93-poam67-files.zip, 182,419 bytes, 28 files, 88 hits). The zip was read
+whole in the analysis sandbox (not piecemeal). A second instrument (step1b) printed the same pattern from main's committed files
+(git show main:<path>, no working-tree text round trip) to establish what production had before the merge; step1c printed
+main:agent_manager_routes.py 1240-1275 so the restored text could be verbatim. Encoding: git object bytes and UTF-8 source; the
+PowerShell console renders the author's UTF-8 em dash as three characters (display only, file bytes unchanged).
+
+#### 20.9.4 Site-by-site record: before, after, options, risks, decision, evidence
+Every executor construction in the upgrade, measured W93. Human present = could a person answer a prompt on this path.
+
+| Site token | Where (upgrade) | Path | Human | Before (author a6dcf846 / merge) | Main (production) before merge | After W93 | Commit |
+|---|---|---|---|---|---|---|---|
+| managed-agent-tool | server\agent_manager_routes.py:1326 stream_tool_executor | managed-agent SSE stream (_stream_managed_agent, execution path 2) | desktop user, but no prompt channel on this path | bare lambda _prompt: True, no trace | ConfirmPolicy site=managed-agent-tool (main:1256), fresh executor per call | ConfirmPolicy site=managed-agent-tool restored VERBATIM (reason, human_present=False) | 13dbd764 |
+| cli-ask-skill | cli\ask.py:600 pipeline_executor (SkillPipelineConfirmGate) | jarvis ask with skills enabled; skill steps execute through this executor | YES, terminal | bare lambda prompt: True - skill steps bypassed the agent's TerminalConfirmGate | site did not exist | real terminal gate, deny by default, non-TTY denies without reading, decision recorded | 6edfe885 |
+| cli-agent-ask-yes | cli\agent_cmd.py:845 (--yes, default ON) | jarvis agent ask | YES, the operator chose --yes | bare lambda _prompt: True, no trace | site did not exist | ConfirmPolicy site=cli-agent-ask-yes, human_present=True: same approval, now logged | da752fbd |
+| cli-agent-ask | cli\agent_cmd.py:857 (--no-yes) | jarvis agent ask --no-yes | YES | click.confirm, decision NOT recorded (a no reached the model as TIMEOUT) | site did not exist | TerminalConfirmGate(site="cli-agent-ask") | da752fbd |
+| cli-skill-run | cli\skill_cmd.py:191 | jarvis skill run | YES | click.confirm, decision NOT recorded | no executor on main | TerminalConfirmGate(site="cli-skill-run") | da752fbd |
+| cli-chat | cli\chat_cmd.py:240 | jarvis chat | YES | input() prompt, decision NOT recorded | same defect on main (chat_cmd.py:123) | TerminalConfirmGate(site="cli-chat"); dead _confirm removed | da752fbd |
+| cli-ask | cli\ask.py:650 agent executor | jarvis ask | YES | TerminalConfirmGate (Graystone W61, kept by the merge) | same | unchanged; class gained an optional site= keyword, default token still cli-ask | da752fbd |
+| chat-agent-live | cli\serve.py:520 _server_confirm_callback | server chat agent (path 1b) | YES, desktop Approve/Deny | real gate (Graystone Defect 6, kept) | same | unchanged | - |
+| dr-sse-stream, imessage-daemon, sendblue-bridge | agent_manager_routes.py:1035, :1942, :2031 | deep research SSE, channel daemons | no | ConfirmPolicy (Graystone W56, kept) | same | unchanged | - |
+
+Fail-closed constructions (no callback; confirmable tools refused; no action) [R W93]: cli\serve.py:811 scheduler executor;
+agents\rlm.py:246 REPL executor; system\builder.py:219 and :253; mcp\server.py:78; security\runtime.py:148
+execute_secured_tool; learning\intelligence\orchestrator\environment.py:51; skills\manager.py _NullToolExecutor.
+agents\executor.py:520 (AgentExecutor) forwards whatever callback its caller sets - that is how the cli-agent-ask sites reach
+the managed agent. deep_research.py and the other agent classes only pass their callback parameter through.
+
+SITE A - managed-agent-tool. Author intent: tools the user selected for a managed agent run without prompting (the author's own
+comment on main: selecting the tool in the wizard is the confirmation). Graystone intent on main: the same approval, attributed.
+What happened: the merge took the author's rewrite of this block (one request-local executor with taint seeding via
+begin_session - kept, it is an improvement) and with it the author's bare lambda; our named policy vanished in a region with no
+conflict marker (the H-W92-2 pattern). Options: (1) restore ConfirmPolicy - behaviour unchanged, attribution back; (2) remove the
+callback - fail-closed, a posture main never had, breaks shell_exec/apply_patch/mailbox tools on managed agents; (3) the real
+gate - NOT POSSIBLE here: stream_tool_executor.execute() is called inside async def generate() (upgrade :1437/:1584 at da752fbd; main
+:1062/:1264), i.e. on the event-loop thread, while the answer arrives by POST /v1/tools/confirm on that same loop; a blocking
+wait would freeze the loop, no answer could ever be served, and every prompt would expire as TIMEOUT (H-W93-1, POAM-80).
+Decision: option 1, verbatim from main:1256 (the reason text says "toolkit bind enforced above", describing main's layout; the
+bind openjarvis-toolkit-bind-v1 is still present in the upgrade and still runs before dispatch). Risk: none to behaviour.
+Verify [M W93 step1d]: AST OK; site count 1; bare lambda count 0; ConfirmPolicy import present; module imports.
+
+SITE B - cli-ask-skill. Author intent: skill pipelines run their steps unprompted. Effect: a skill (65 files in the shared home,
+several third-party - POAM-78) could run shell_exec, git_* or a destructive mailbox tool that the agent itself must ask about.
+Options: (1) the real terminal gate with its own site token; (2) ConfirmPolicy - attribution only, bypass kept. Risk of (1):
+scripted, non-TTY runs of a skill that uses a confirmable tool are now denied; that is the posture W61 already chose for the
+agent on this same command. Decision: option 1 [S W93 - owner ran the offered block and approved the result].
+Verify [M W93 step1f harness]: non-TTY -> not run, "denied by user"; typed n -> not run, "denied by user"; typed y -> ran;
+POLICY lines DENY_NO_TTY, WAIT, DENY, WAIT, APPROVE under site=cli-ask-skill, every decision registry=recorded.
+
+SITE C - cli-agent-ask-yes. Author intent: explicit and documented in the option help - --yes is the default for
+non-interactive CLI use. Options: (1) attribute with ConfirmPolicy (behaviour unchanged); (2) flip the default to --no-yes
+(changes the author's user experience). Decision: option 1, staying true to the author's intent. Residual risk recorded, not
+changed: a person who types a destructive request on jarvis agent ask without --no-yes is auto-approved (POAM-81).
+Verify [M W93 step1h]: ConfirmPolicy run -> tool ran, POLICY decision=AUTO_APPROVE site=cli-agent-ask-yes.
+
+SITE D - cli-agent-ask, cli-skill-run, cli-chat (integration defect, found W93). Author intent: ask the person, deny by default -
+these three already did that. Defect: none recorded the decision, so under Graystone's three-way result contract (20.9.2) a
+person's "no" reached the model as TIMEOUT "ask again". Symptom: after a refusal the model may re-request the same tool or tell
+the user they did not answer. Trigger: any of the three CLI commands, a confirmable tool, the person answers no. Origin: the
+author's callbacks predate Graystone's registry contract; not an author defect in isolation. The chat_cmd instance predates the
+merge (main:123) and remains in production until the switch (POAM-82). Fix: TerminalConfirmGate with a per-site token (one
+optional site= keyword added to the class; default unchanged). Side effect (improvement): a non-TTY or end-of-input now denies
+cleanly instead of raising click.Abort or EOFError. Cleanup register: the dead chat _confirm function removed (backup
+evidence\W93\bak\chat_cmd.py.W93-pre-CD.bak). Verify [M W93 step1h]: AST site lists exactly [cli-agent-ask], [cli-agent-ask-yes],
+[cli-skill-run], [cli-chat]; zero approve-all lambdas in the three files; four modules import; defaults cli-ask and
+cli-ask-skill unchanged; 12 of 12 gate cases PASS plus the ConfirmPolicy case.
+
+#### 20.9.5 The non-interactive gate harness - setup and flow, gate by gate (reusable instrument)
+Purpose: prove a confirm callback's behaviour through the REAL ToolExecutor without a person, a server, a port, or the network
+(owner rule 08/22: tests run to completion on their own).
+GATE 1 HOST: Windows box; the worktree venv interpreter C:\Users\Admin\OpenJarvis-upgrade\.venv\Scripts\python.exe (3.12.10);
+the script is an ASCII PowerShell single-quoted here-string piped to python on stdin; working directory pushed to the worktree
+so the editable package resolves to the upgrade source.
+GATE 2 ISOLATION: LOCALAPPDATA is set to C:\Users\Admin\OpenJarvis\evidence\W93\harness inside the process BEFORE the first
+dispatch-logger call; the dispatch logger derives its path from LOCALAPPDATA, so the harness writes
+evidence\W93\harness\OpenJarvis\logs\dispatch.log and production's dispatch.log is untouched. confirm_registry is process memory.
+GATE 3 CONSTRUCTION: a dummy BaseTool w93_dummy with requires_confirmation=True (per-call predicate default True) and an execute
+that increments a side-effect counter; a real ToolExecutor(interactive=True, confirm_callback=<gate under test>).
+GATE 4 INPUT: injected streams replace the terminal - NoTTY (isatty False, empty), TTY with "n\n", TTY with "y\n"; stderr is a
+StringIO that captures the prompt text.
+GATE 5 DISPATCH: executor.execute(ToolCall(name="w93_dummy", arguments="{}")) runs the full chain (rate limit, boundary,
+capability, taint, then the gate): register -> CURRENT_CONFIRM_ID set -> callback -> registry resolve -> three-way result.
+GATE 6 ASSERT: success flag; whether the tool body ran (counter); that a refusal says "denied by user" (DENIED, not TIMEOUT).
+GATE 7 READ-BACK: the harness dispatch.log is read and each POLICY line reduced to (site, decision).
+STATIC CHECK: an AST walk of each patched file lists every TerminalConfirmGate(...) and ConfirmPolicy(...) call and its site=
+constant, so the wiring is proven without executing the CLI command.
+PATCH MECHANISM (all W93 patches): Python in the worktree venv; every anchor must occur exactly once and all anchors are checked
+before any file is written (a miss aborts with nothing written); the result must parse (ast); the original is copied to
+evidence\W93\bak\<file>.W93-pre-<site>.bak before the write; files are read and written UTF-8 with newline="" so LF is preserved.
+
+#### 20.9.6 Negative results (what things turned out NOT to be, and how that was established)
+- The deep-research agent is NOT a bypass site: deep_research.py only passes its callback through, and all three of its
+  construction sites already carry ConfirmPolicy (dr-sse-stream, imessage-daemon, sendblue-bridge) [R W93].
+- POAM-67 as written in W92 named "two more sites in agent_manager_routes"; measured, there is ONE bare lambda there (:1330);
+  the other hits are the three ConfirmPolicy sites above.
+- The nine other executor constructions are NOT exposures: none has a callback, so confirmable tools fail closed.
+- The mailbox_tools.py docstring citing cli/serve.py:310 (the callback now sits at :520) is NOT a defect: it is a dated W49
+  status paragraph, and SDD section 1 records that a line cite is valid as of its window. Left unchanged.
+- The TIMEOUT misreport at chat_cmd was NOT introduced by the upgrade: main carries it (main:123).
+- A real gate at site A was NOT rejected by preference; it is structurally impossible while execute() runs on the event loop.
+
+#### 20.9.7 Hazards recorded W93
+H-W93-1 the managed-agent stream executes tools on the event-loop thread; no blocking gate can be placed there without moving
+execution to a worker (asyncio.to_thread), and any slow tool already stalls the loop for every request (POAM-80).
+H-W93-2 dispatch.log lives at %LOCALAPPDATA%\OpenJarvis\logs\dispatch.log - a second location shared by production and the
+upgrade instance, beyond C:\Users\Admin\.openjarvis (POAM-68).
+H-W93-3 SkillPipelineConfirmGate and the per-site instances print repr "<TerminalConfirmGate site=... default=DENY>" (inherited
+__repr__); the site token is correct; cosmetic.
+H-W93-4 callback contract: a callback that can return False must record its decision in confirm_registry, or the refusal is
+reported to the model as a TIMEOUT.
+
+#### 20.9.8 Configuration management and rollback [M W93]
+Commits on upgrade/a6dcf846, each pushed to gitlab only (origin excluded until POAM-74): 13dbd764 site A; 6edfe885 site B;
+da752fbd sites C and D. Each patch was verified before its commit, and each commit was its own block with the staged set
+guarded to the named files. Backups: evidence\W93\bak\agent_manager_routes.py.W93-pre-A.bak, ask.py.W93-pre-B.bak,
+{ask,agent_cmd,skill_cmd,chat_cmd}.py.W93-pre-CD.bak. Undo one site: git -C C:\Users\Admin\OpenJarvis-upgrade revert <hash>.
+Production (main, 8010, PID 27988) was not touched.
+
+#### 20.9.9 Status and program goal
+POAM-67 closed on the upgrade branch: no executor in the upgrade can approve a confirmable tool without either a person's
+recorded answer or a named, logged policy. Remaining before 8011 is served, in order: POAM-68 (separate home, now including the
+dispatch.log location), the ARCHIVE s37 post-merge items, serve on 8011, V&V. Program goal: VERIFIED 4/28 unchanged; W93 removed
+a precondition to serving the upgrade that the remaining requirements are built on.
